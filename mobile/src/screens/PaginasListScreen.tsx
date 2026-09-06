@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -35,6 +35,17 @@ export function PaginasListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // Mismo patrón que el "✕" de "Tus páginas" en dashboard/src/components/AppShell.tsx
+  // (`confirmingDeletePageId`) — el propio botón "Borrar" pide confirmar cambiando su texto en
+  // vez de un diálogo aparte; sin hover/mouseleave en táctil para cancelarlo solo, así que se
+  // cancela a los 3s si no se toca una segunda vez (ver el efecto de abajo).
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (confirmingDeleteId === null) return;
+    const timer = setTimeout(() => setConfirmingDeleteId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmingDeleteId]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -65,6 +76,11 @@ export function PaginasListScreen({ navigation }: Props) {
   };
 
   const handleDelete = async (id: number) => {
+    if (confirmingDeleteId !== id) {
+      setConfirmingDeleteId(id);
+      return;
+    }
+    setConfirmingDeleteId(null);
     await deleteCustomPage(id);
     await reload();
   };
@@ -108,7 +124,9 @@ export function PaginasListScreen({ navigation }: Props) {
                   <Text style={[styles.actionText, index === pages.length - 1 && styles.actionDisabled]}>↓</Text>
                 </Pressable>
                 <Pressable onPress={() => handleDelete(page.id)} hitSlop={8}>
-                  <Text style={[styles.actionText, styles.actionDelete]}>Borrar</Text>
+                  <Text style={[styles.actionText, styles.actionDelete, confirmingDeleteId === page.id && styles.actionDeleteConfirming]}>
+                    {confirmingDeleteId === page.id ? "¿Confirmar?" : "Borrar"}
+                  </Text>
                 </Pressable>
               </View>
             </Pressable>
@@ -154,6 +172,9 @@ const styles = StyleSheet.create({
   actionText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.mutedForeground },
   actionDisabled: { opacity: 0.3 },
   actionDelete: { color: colors.destructive },
+  // font-bold text-destructive de la web al confirmar (AppShell.tsx) — un tono más marcado que el
+  // "Borrar" suelto de antes de tocarlo.
+  actionDeleteConfirming: { fontFamily: fonts.sansBold, fontWeight: "700" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(45,41,38,0.4)", justifyContent: "flex-end" },
   modalSheet: {

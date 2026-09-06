@@ -176,7 +176,23 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     setEditingEntry(null);
   };
 
+  // Mismo patrón que "Eliminar página" en dashboard/src/pages/CustomPagePage.tsx:56-199
+  // (`confirmingDelete`) — el propio botón pide confirmar cambiando su texto/color en vez de un
+  // diálogo aparte; sin blur en táctil para cancelarlo solo, así que se cancela solo a los 3s
+  // (ver el efecto de abajo) si no se toca una segunda vez.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmingDelete]);
+
   const handleDeletePage = async () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
     await deleteCustomPage(id);
     navigation.goBack();
   };
@@ -275,8 +291,13 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        <Pressable style={styles.deletePageButton} onPress={handleDeletePage}>
-          <Text style={styles.deletePageText}>Eliminar página</Text>
+        <Pressable
+          style={[styles.deletePageButton, confirmingDelete && styles.deletePageButtonConfirming]}
+          onPress={handleDeletePage}
+        >
+          <Text style={[styles.deletePageText, confirmingDelete && styles.deletePageTextConfirming]}>
+            {confirmingDelete ? "¿Confirmar eliminar?" : "Eliminar página"}
+          </Text>
         </Pressable>
       </ScrollView>
 
@@ -1174,8 +1195,12 @@ const styles = StyleSheet.create({
   },
   fallbackText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground, lineHeight: 19 },
 
-  deletePageButton: { alignItems: "center", padding: 14, marginTop: 12 },
+  deletePageButton: { alignItems: "center", padding: 14, marginTop: 12, borderRadius: radius.full },
+  // bg-destructive text-destructive-foreground de la web al confirmar (CustomPagePage.tsx) — antes
+  // de tocarlo, texto suelto sin fondo (igual que ya era).
+  deletePageButtonConfirming: { backgroundColor: colors.destructive },
   deletePageText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
+  deletePageTextConfirming: { color: colors.destructiveForeground, fontWeight: "700" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(45,41,38,0.4)", justifyContent: "flex-end" },
   modalSheet: {
