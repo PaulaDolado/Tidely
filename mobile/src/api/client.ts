@@ -98,7 +98,11 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
   if (!response.ok) {
     const message =
       body && typeof body === "object" && "error" in body ? String((body as { error: unknown }).error) : `Error ${response.status}`;
-    throw new ApiError(message, response.status);
+    // `detail` solo viene del backend fuera de producción (ver errorHandler.ts) — un 500 genérico
+    // ("Error interno del servidor") por sí solo no dice nada útil; con esto se ve la causa real
+    // sin tener que mirar los logs del servidor.
+    const detail = body && typeof body === "object" && "detail" in body ? String((body as { detail: unknown }).detail) : null;
+    throw new ApiError(detail && detail !== message ? `${message}: ${detail}` : message, response.status);
   }
 
   return body as T;

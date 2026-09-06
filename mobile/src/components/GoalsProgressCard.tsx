@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { G, Circle } from "react-native-svg";
+import { useFocusEffect } from "@react-navigation/native";
 import { listGoals, Goal } from "../api/goals";
 import { colors, fonts, radius } from "../theme";
 
@@ -87,17 +88,25 @@ function GoalsDonutChart({ goals, overallPercent }: { goals: Goal[]; overallPerc
 /** Puerto de la función GoalsProgressCard definida dentro de dashboard/src/pages/AgendaPage.tsx.
  * A diferencia de Hábitos/Notas, Objetivos NO pasa por SQLite (ver api/goals.ts: no forma parte
  * del contrato de sync offline), así que este componente hace su propia llamada REST y necesita
- * conexión, igual que MetasPage/ObjetivosScreen. */
+ * conexión, igual que MetasPage/ObjetivosScreen.
+ *
+ * useFocusEffect (no un useEffect de montaje único): Agenda y Objetivos son pestañas hermanas del
+ * mismo Tab.Navigator (ver App.tsx), así que esta tarjeta se queda montada de fondo mientras el
+ * usuario registra progreso en Objetivos — sin recargar al recuperar el foco, se quedaba con los
+ * datos de la primera vez que se montó Agenda hasta reiniciar la app entera. Mismo patrón que ya
+ * usa ObjetivosScreen.tsx para su propio listGoals. */
 export function GoalsProgressCard() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    listGoals("active")
-      .then(setGoals)
-      .catch(() => setGoals([]))
-      .finally(() => setLoaded(true));
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      listGoals("active")
+        .then(setGoals)
+        .catch(() => setGoals([]))
+        .finally(() => setLoaded(true));
+    }, [])
+  );
 
   if (!loaded) return null;
 

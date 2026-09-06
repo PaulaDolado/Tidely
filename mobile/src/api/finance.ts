@@ -48,6 +48,7 @@ export async function listTransactions(limit = 15): Promise<Transaction[]> {
 }
 
 export const createTransaction = (input: NewTransactionInput) => api.post<Transaction>("/finance/transactions", input);
+export const updateTransaction = (id: number, input: NewTransactionInput) => api.put<Transaction>(`/finance/transactions/${id}`, input);
 export const deleteTransaction = (id: number) => api.delete<{ message: string }>(`/finance/transactions/${id}`);
 
 export const getAnalytics = () => api.get<FinanceAnalytics>("/finance/analytics");

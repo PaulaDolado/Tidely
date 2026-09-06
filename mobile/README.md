@@ -16,13 +16,18 @@ abajo por qué planas y no anidadas como en el menú de escritorio de la web:
 - **Agenda** (`src/screens/AgendaScreen.tsx`): franja semanal + lista cronológica del día
   seleccionado. CRUD completo de eventos (título, descripción, tipo, horario, ubicación,
   recurrencia, avisos, invitados) — crear/editar/borrar funcionan sin conexión.
-- **Planificador** (`src/screens/PlanificadorScreen.tsx`): un único tablero (el "planner por
-  defecto" del usuario — el mismo fallback que ya usaba el backend de sync antes de que existiera
-  el concepto de multi-tablero), 3 secciones fijas (Por hacer / En progreso / Hecho). CRUD
-  completo de tareas (título, descripción, prioridad, fecha límite, tags, estado) y subtareas.
-  Cambiar de sección es un botón, no arrastrar — más natural en pantalla de teléfono; el `order`
-  fraccionario se calcula igual que `moveTask` en `dashboard/src/pages/PlanificadorPage.tsx`, así
-  que no rompe el orden con lo creado desde la web.
+- **Planificador** (`src/screens/PlanificadorScreen.tsx`): con paridad completa con la web —
+  el usuario puede tener varios tableros con nombre propio (`src/api/planner.ts`, contra
+  `/planner/boards`; los tableros en sí no pasan por SQLite, igual que Horario), cada uno con sus
+  3 secciones fijas (Por hacer / En progreso / Hecho). Los dos modos de vista de tableros
+  ("Flechas" — uno a la vez — y "Apilado" — todos uno debajo de otro, cada uno como un Kanban
+  simple), persistido con `expo-secure-store` igual que el resto de preferencias del móvil. CRUD
+  completo de tareas (título, descripción, prioridad, fecha límite, tags, estado) y subtareas —
+  las tareas sí pasan por SQLite (offline-first) y ya llevan su `plannerId`. Cambiar de sección es
+  un botón, no arrastrar — más natural en pantalla de teléfono; el `order` fraccionario se calcula
+  igual que `moveTask` en `dashboard/src/pages/PlanificadorPage.tsx`, así que no rompe el orden con
+  lo creado desde la web. Mover una tarea a OTRO tablero no existe todavía, ni aquí ni en la web
+  (el campo es inmutable tras crear la tarea).
 - **Horario** (`src/screens/HorarioScreen.tsx`): puerto directo de
   `dashboard/src/pages/SchedulePage.tsx` — varios horarios con nombre propio (uno por trimestre,
   p.ej.), cada uno una tabla lunes-viernes de celdas de texto libre (sin fechas ni recurrencia,
@@ -74,8 +79,9 @@ notificaciones locales programadas para los avisos de evento (`expo-notification
 se guardan/sincronizan como dato, pero no se programa ninguna notificación nativa); excepciones
 por-ocurrencia de un evento recurrente (mover/cancelar solo una vez — se leen y se aplican al
 expandir, pero no se crean desde el móvil); import/export ICS; integración Google Calendar; panel
-de tiempo libre; vistas mes/año de Agenda; selector de tablero / múltiples tableros y campos
-personalizados del Planificador; imagen y seguimiento de tiempo (`estimatedMinutes`/
+de tiempo libre; vistas mes/año de Agenda; campos personalizados del Planificador (`PlannerField`
+— el selector de tableros en sí ya está, ver arriba); mover una tarea a otro tablero (el campo es
+inmutable tras crearla, ni aquí ni en la web); imagen y seguimiento de tiempo (`estimatedMinutes`/
 `actualMinutes`) de una tarea; vincular una tarea a un proyecto; reordenar tareas por arrastre
 dentro de una columna (se puede añadir después con `react-native-draggable-flatlist` sin tocar el
 backend); exportación CSV de Finanzas; edición de un movimiento ya creado (la web tampoco lo

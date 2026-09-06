@@ -1,20 +1,51 @@
-import { useCallback, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as SecureStore from "expo-secure-store";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
+import { ApiError } from "../api/client";
+import { createPlanner, deletePlanner, listPlanners, movePlanner, Planner, renamePlanner } from "../api/planner";
 import { runSync } from "../sync";
-import {listAllTasks,createTaskLocal,updateTaskLocal,moveTask,deleteTaskLocal,parseTaskTags,} from "../db/tasksRepo";
+import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, deleteTaskLocal, parseTaskTags } from "../db/tasksRepo";
 import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal } from "../db/subtasksRepo";
 import { LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
 import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
+// Puerto de dashboard/src/pages/PlanificadorPage.tsx: el usuario puede tener varios tableros de
+// Planificador con nombre propio (uno por área de vida — "Trabajo", "Personal"...), cada uno con
+// sus 3 columnas fijas (Por hacer/En progreso/Hecho) — mismo modelo `Planner` que ya usa la web
+// (ver src/api/planner.ts) y mismo patrón "lista con nombre + Flechas/Apilado" que ya tenía
+// HorarioScreen.tsx para "Horario" (persistencia con expo-secure-store incluida). A diferencia de
+// los tableros en sí (que no pasan por SQLite, igual que Horario — necesitan conexión para crear/
+// renombrar/borrar/reordenar), las TAREAS de cada tablero siguen siendo offline-first como hasta
+// ahora (ver db/tasksRepo.ts: la tabla `tasks` ya traía una columna `plannerId`, hasta ahora sin
+// usar porque solo existía un tablero implícito — el "planner por defecto" del fallback del
+// backend, ver getOrCreateDefaultPlanner en plannerService.ts).
+//
+// En modo "Flechas" (un tablero a la vez) se ve exactamente la misma pantalla de siempre (Kanban/
+// Lista + su propio Flechas/Apilado de columnas), solo que las tareas ahora están filtradas por
+// `plannerId`. En modo "Apilado" (todos los tableros a la vez) cada uno se pinta como un Kanban
+// simple y completo (las 3 columnas siempre visibles, sin el Flechas/Apilado de columnas ni el
+// modo Lista — igual de simplificado que cada ScheduleTableCard de HorarioScreen.tsx en su propio
+// Apilado), para que "ver un kanban debajo de otro" no arrastre además una segunda capa de
+// paginación dentro de cada uno.
+
 const VIEW_MODES = ["kanban", "tabla"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
 
-const BOARD_VIEWS = ["flechas", "apilado"] as const;
-type BoardViewMode = (typeof BOARD_VIEWS)[number];
+// Vista de las COLUMNAS (Por hacer/En progreso/Hecho) dentro de UN tablero — a propósito con
+// nombre distinto de `PlannerViewMode` de abajo (esa es la vista de TABLEROS): antes se llamaba
+// `BoardViewMode`/`boardView`, un nombre que habría colisionado en significado con el nuevo
+// selector de tableros.
+const COLUMN_VIEWS = ["flechas", "apilado"] as const;
+type ColumnViewMode = (typeof COLUMN_VIEWS)[number];
+
+// Vista de TABLEROS (varios Planner) — mismo patrón/persistencia que VIEW_MODE_KEY en
+// HorarioScreen.tsx.
+const PLANNER_VIEW_MODE_KEY = "life-organizer.planificador-tableros-view-mode";
+type PlannerViewMode = "flechas" | "apilado";
 
 // Estilos de columnas por estado (igual que web)
 const COLUMN_BG_COLORS: Record<TaskStatus, string> = {
@@ -75,6 +106,27 @@ function toForm(task: LocalTask): TaskForm {
 
 export function PlanificadorScreen() {
   const { collapsed } = useSidebar();
+
+  // TABLEROS
+  const [planners, setPlanners] = useState<Planner[]>([]);
+  const [plannerIndex, setPlannerIndex] = useState(0);
+  const [plannerViewMode, setPlannerViewModeState] = useState<PlannerViewMode>("flechas");
+  const [loadingPlanners, setLoadingPlanners] = useState(false);
+  const [plannerError, setPlannerError] = useState<string | null>(null);
+  const [showCreatePlanner, setShowCreatePlanner] = useState(false);
+  const [newPlannerName, setNewPlannerName] = useState("");
+  const [renamingPlanner, setRenamingPlanner] = useState(false);
+  const [plannerNameDraft, setPlannerNameDraft] = useState("");
+  const [pendingFocusPlannerId, setPendingFocusPlannerId] = useState<number | null>(null);
+  // Se incrementa tras cualquier cambio que pueda afectar a una tarea de CUALQUIER tablero (el
+  // modal de edición no sabe de qué tablero es la tarea que edita, y en modo Apilado hay varios
+  // PlannerBoardCard montados a la vez) — cada uno reacciona a este número para recargar sus
+  // propias tareas sin que el padre necesite saber a cuál pertenecen.
+  const [refreshToken, setRefreshToken] = useState(0);
+
+  const active = planners[plannerIndex] ?? null;
+
+  // TAREAS del tablero activo (vista Flechas)
   const [tasks, setTasks] = useState<LocalTask[]>([]);
   const [drafts, setDrafts] = useState<Record<TaskStatus, string>>({ todo: "", in_progress: "", done: "" });
   const [syncing, setSyncing] = useState(false);
@@ -84,12 +136,74 @@ export function PlanificadorScreen() {
   const [subtaskDraft, setSubtaskDraft] = useState("");
   const [showDuePicker, setShowDuePicker] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
-  const [boardView, setBoardView] = useState<BoardViewMode>("apilado");
+  const [columnViewMode, setColumnViewMode] = useState<ColumnViewMode>("apilado");
   const [activeStatusIndex, setActiveStatusIndex] = useState(0);
 
-  const reload = useCallback(async () => {
-    setTasks(await listAllTasks());
+  // Preferencia persistida — equivalente móvil del `localStorage` que usa PlanificadorPage.tsx,
+  // pero asíncrono (SecureStore): arranca en "flechas" y cambia en cuanto carga el valor guardado.
+  useEffect(() => {
+    SecureStore.getItemAsync(PLANNER_VIEW_MODE_KEY).then((stored) => {
+      if (stored === "apilado" || stored === "flechas") setPlannerViewModeState(stored);
+    });
   }, []);
+
+  const changePlannerViewMode = (mode: PlannerViewMode) => {
+    setPlannerViewModeState(mode);
+    SecureStore.setItemAsync(PLANNER_VIEW_MODE_KEY, mode);
+  };
+
+  const reloadPlanners = useCallback(async () => {
+    setLoadingPlanners(true);
+    setPlannerError(null);
+    try {
+      let list = await listPlanners();
+      // Siempre hay al menos un tablero por defecto — igual que ya garantizaba el propio backend
+      // para las tareas sin plannerId (ver getOrCreateDefaultPlanner en plannerService.ts), pero
+      // aquí explícito para que el usuario nunca aterrice en la pantalla vacía de "crea tu primer
+      // tablero": ya tiene uno de fábrica ("Planificador"), y puede añadir más con "+ Nuevo".
+      if (list.length === 0) {
+        await createPlanner("Planificador");
+        list = await listPlanners();
+      }
+      setPlanners(list);
+    } catch (err) {
+      setPlannerError(err instanceof ApiError ? err.message : "No se pudieron cargar los tableros");
+    } finally {
+      setLoadingPlanners(false);
+    }
+  }, []);
+
+  // Si se borra el tablero activo (o cambia el total), el índice no debe quedar fuera de rango —
+  // mismo efecto que HorarioScreen.tsx.
+  useEffect(() => {
+    if (plannerIndex > planners.length - 1) setPlannerIndex(Math.max(0, planners.length - 1));
+  }, [planners.length, plannerIndex]);
+
+  // En cuanto el tablero recién creado aparece en `planners`, salta a él.
+  useEffect(() => {
+    if (pendingFocusPlannerId === null) return;
+    const index = planners.findIndex((p) => p.id === pendingFocusPlannerId);
+    if (index !== -1) {
+      setPlannerIndex(index);
+      setPendingFocusPlannerId(null);
+    }
+  }, [planners, pendingFocusPlannerId]);
+
+  const reload = useCallback(async () => {
+    if (active) setTasks(await listTasksByPlanner(active.id));
+    // También al resto de tableros visibles en Apilado, aunque la tarea que cambió no fuera la de
+    // `active` — cada PlannerBoardCard se recarga solo al ver cambiar este número.
+    setRefreshToken((n) => n + 1);
+  }, [active]);
+
+  // Al cambiar de tablero activo (flechas ‹ ›, o al terminar de cargar `planners`), recarga sus
+  // tareas — mismo patrón que `reloadRows`/`active?.id` en HorarioScreen.tsx.
+  useEffect(() => {
+    if (active) reload();
+    else setTasks([]);
+    setRenamingPlanner(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.id]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -102,11 +216,109 @@ export function PlanificadorScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      reload();
+      reloadPlanners();
       sync();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
   );
+
+  // Con try/catch a propósito en las seis (a diferencia del equivalente en HorarioScreen.tsx,
+  // que no lo tiene): un fallo del servidor aquí (sesión caducada, 500 puntual…) se quedaba sin
+  // capturar y no pasaba nada visible — ni error ni reintento, solo un cuadro rojo de "unhandled
+  // promise rejection" en desarrollo y un fallo silencioso en producción. Mismo `plannerError` que
+  // ya usa `reloadPlanners`, así que el aviso sale en el mismo sitio.
+  const handleCreatePlanner = async () => {
+    const trimmed = newPlannerName.trim();
+    if (!trimmed) return;
+    try {
+      const created = await createPlanner(trimmed);
+      setNewPlannerName("");
+      setShowCreatePlanner(false);
+      setPendingFocusPlannerId(created.id);
+      await reloadPlanners();
+    } catch (err) {
+      setPlannerError(err instanceof ApiError ? err.message : "No se pudo crear el tablero");
+    }
+  };
+
+  const handleRenamePlanner = async () => {
+    if (!active) return;
+    const trimmed = plannerNameDraft.trim();
+    setRenamingPlanner(false);
+    if (!trimmed || trimmed === active.name) return;
+    try {
+      await renamePlanner(active.id, trimmed);
+      await reloadPlanners();
+    } catch (err) {
+      setPlannerError(err instanceof ApiError ? err.message : "No se pudo renombrar el tablero");
+    }
+  };
+
+  // Borrar un tablero se lleva por delante TODAS sus tareas (cascada, ver DELETE /planner/boards/:id
+  // en plannerService.ts) — a diferencia del resto de acciones de esta pantalla (renombrar, mover),
+  // esto sí pide confirmar, mismo patrón que confirmDeleteProject en ProyectoDetailScreen.tsx (que
+  // también borra en cascada). El resto de borrados de un solo toque en el móvil (columnas de
+  // kanban, horarios…) no arrastran nada tan grande como "todas las tareas de un tablero entero".
+  const confirmDeletePlanner = (id: number, name: string, onDeleted: () => Promise<void>) => {
+    Alert.alert("Eliminar tablero", `¿Seguro que quieres eliminar "${name}" y todas sus tareas?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deletePlanner(id);
+            await onDeleted();
+          } catch (err) {
+            setPlannerError(err instanceof ApiError ? err.message : "No se pudo eliminar el tablero");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeletePlanner = () => {
+    if (!active) return;
+    confirmDeletePlanner(active.id, active.name, async () => {
+      await reloadPlanners();
+      setRefreshToken((n) => n + 1);
+    });
+  };
+
+  const handleMovePlanner = async (direction: "up" | "down") => {
+    if (!active) return;
+    try {
+      await movePlanner(active.id, direction);
+      await reloadPlanners();
+    } catch (err) {
+      setPlannerError(err instanceof ApiError ? err.message : "No se pudo mover el tablero");
+    }
+  };
+
+  // Versiones "por id" de las acciones de arriba, para el modo Apilado — igual patrón que
+  // renameScheduleById/deleteScheduleById/moveScheduleById en HorarioScreen.tsx.
+  const renamePlannerById = async (id: number, name: string) => {
+    try {
+      await renamePlanner(id, name);
+      await reloadPlanners();
+    } catch (err) {
+      setPlannerError(err instanceof ApiError ? err.message : "No se pudo renombrar el tablero");
+    }
+  };
+  const deletePlannerById = (id: number, name: string) => {
+    confirmDeletePlanner(id, name, async () => {
+      await reloadPlanners();
+      setRefreshToken((n) => n + 1);
+    });
+  };
+  const movePlannerById = async (id: number, direction: "up" | "down") => {
+    try {
+      await movePlanner(id, direction);
+      await reloadPlanners();
+    } catch (err) {
+      setPlannerError(err instanceof ApiError ? err.message : "No se pudo mover el tablero");
+    }
+  };
 
   const reloadSubtasks = useCallback(async (taskId: string) => {
     setSubtasks(await listForTask(taskId));
@@ -125,10 +337,11 @@ export function PlanificadorScreen() {
   };
 
   const handleQuickAdd = async (status: TaskStatus) => {
+    if (!active) return;
     const title = drafts[status].trim();
     if (!title) return;
     setDrafts({ ...drafts, [status]: "" });
-    await createTaskLocal({ title, description: null, status, priority: "medium", dueDate: null, tags: [] });
+    await createTaskLocal({ plannerId: active.id, title, description: null, status, priority: "medium", dueDate: null, tags: [] });
     await reload();
     sync();
   };
@@ -206,69 +419,36 @@ export function PlanificadorScreen() {
     setForm({ ...form, dueDate: selected });
   };
 
-  const visibleStatuses = boardView === "flechas" ? [TASK_STATUSES[activeStatusIndex]] : TASK_STATUSES;
+  const visibleStatuses = columnViewMode === "flechas" ? [TASK_STATUSES[activeStatusIndex]] : TASK_STATUSES;
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, collapsed && { paddingLeft: SIDEBAR_CLIP_CLEARANCE }]}>
         <Text style={styles.title}>Planificador</Text>
+        <Pressable style={styles.newButton} onPress={() => setShowCreatePlanner(true)}>
+          <Text style={styles.newButtonText}>+ Nuevo</Text>
+        </Pressable>
       </View>
 
-      {/* VISTA Y NAVEGACIÓN */}
-      <View style={styles.controlBar}>
-        <View style={styles.viewToggle}>
-          {VIEW_MODES.map((mode) => (
-            <Pressable
-              key={mode}
-              style={[styles.viewToggleButton, viewMode === mode && styles.viewToggleButtonActive]}
-              onPress={() => setViewMode(mode)}
-            >
-              <Text style={[styles.viewToggleText, viewMode === mode && styles.viewToggleTextActive]}>
-                {mode === "kanban" ? "Kanban" : "Lista"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.boardToggle}>
-          {BOARD_VIEWS.map((mode) => (
-            <Pressable
-              key={mode}
-              style={[styles.boardToggleButton, boardView === mode && styles.boardToggleButtonActive]}
-              onPress={() => setBoardView(mode)}
-            >
-              <Text style={[styles.boardToggleText, boardView === mode && styles.boardToggleTextActive]}>
-                {mode === "flechas" ? "Flechas" : "Apilado"}
-              </Text>
-            </Pressable>
-          ))}
+      <View style={styles.viewModeRow}>
+        <View style={styles.viewModePill}>
+          <Pressable
+            style={[styles.viewModeButton, plannerViewMode === "flechas" && styles.viewModeButtonActive]}
+            onPress={() => changePlannerViewMode("flechas")}
+          >
+            <Text style={[styles.viewModeButtonText, plannerViewMode === "flechas" && styles.viewModeButtonTextActive]}>Flechas</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.viewModeButton, plannerViewMode === "apilado" && styles.viewModeButtonActive]}
+            onPress={() => changePlannerViewMode("apilado")}
+          >
+            <Text style={[styles.viewModeButtonText, plannerViewMode === "apilado" && styles.viewModeButtonTextActive]}>Apilado</Text>
+          </Pressable>
         </View>
       </View>
 
+      {plannerError && <Text style={styles.errorBanner}>{plannerError}</Text>}
       {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
-
-      {/* NAVEGACIÓN FLECHAS (solo en vista flechas) */}
-      {boardView === "flechas" && (
-        <View style={styles.navigationBar}>
-          <Pressable
-            style={[styles.navButton, activeStatusIndex === 0 && styles.navButtonDisabled]}
-            onPress={() => setActiveStatusIndex(Math.max(0, activeStatusIndex - 1))}
-            disabled={activeStatusIndex === 0}
-          >
-            <Text style={styles.navButtonText}>‹</Text>
-          </Pressable>
-          <Text style={styles.navLabel}>
-            {COLUMN_HEADERS[TASK_STATUSES[activeStatusIndex]]} ({activeStatusIndex + 1}/{TASK_STATUSES.length})
-          </Text>
-          <Pressable
-            style={[styles.navButton, activeStatusIndex === TASK_STATUSES.length - 1 && styles.navButtonDisabled]}
-            onPress={() => setActiveStatusIndex(Math.min(TASK_STATUSES.length - 1, activeStatusIndex + 1))}
-            disabled={activeStatusIndex === TASK_STATUSES.length - 1}
-          >
-            <Text style={styles.navButtonText}>›</Text>
-          </Pressable>
-        </View>
-      )}
 
       {syncing && (
         <View style={styles.syncBar}>
@@ -278,103 +458,234 @@ export function PlanificadorScreen() {
       )}
 
       <ScrollView contentContainerStyle={styles.content}>
-        {viewMode === "kanban" ? (
-          <View style={styles.kanbanContainer}>
-            {visibleStatuses.map((status) => {
-              const columnTasks = tasks.filter((t) => t.status === status);
-              return (
-                <View
-                  key={status}
-                  style={[
-                    styles.kanbanColumn,
-                    {
-                      backgroundColor: COLUMN_BG_COLORS[status],
-                      borderColor: COLUMN_BORDER_COLORS[status],
-                    },
-                  ]}
+        {loadingPlanners && planners.length === 0 ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+        ) : planners.length === 0 ? (
+          <Text style={styles.emptyText}>Aún no tienes ningún tablero. Crea uno para empezar (p. ej. "Trabajo" o "Personal").</Text>
+        ) : plannerViewMode === "flechas" ? (
+          <>
+            {/* NAVEGACIÓN DE TABLEROS */}
+            <View style={styles.plannerNav}>
+              <Pressable disabled={plannerIndex === 0} onPress={() => setPlannerIndex((i) => i - 1)}>
+                <Text style={[styles.plannerNavArrow, plannerIndex === 0 && styles.plannerNavArrowDisabled]}>‹</Text>
+              </Pressable>
+
+              {renamingPlanner ? (
+                <TextInput
+                  style={styles.plannerNameInput}
+                  value={plannerNameDraft}
+                  onChangeText={setPlannerNameDraft}
+                  onBlur={handleRenamePlanner}
+                  onSubmitEditing={handleRenamePlanner}
+                  autoFocus
+                />
+              ) : (
+                <Pressable
+                  style={styles.plannerNameButton}
+                  onPress={() => {
+                    setPlannerNameDraft(active?.name ?? "");
+                    setRenamingPlanner(true);
+                  }}
                 >
-                  <Text style={styles.columnHeader}>{COLUMN_HEADERS[status]}</Text>
-                  <Text style={styles.columnCount}>{columnTasks.length}</Text>
+                  <Text style={styles.plannerNavTitle} numberOfLines={1}>
+                    {active?.name}
+                  </Text>
+                </Pressable>
+              )}
 
-                  {columnTasks.length === 0 ? (
-                    <Text style={styles.emptyText}>Sin tareas</Text>
-                  ) : (
-                    columnTasks.map((task) => {
-                      const badge = dueBadge(task.dueDate, task.status === "done");
-                      return (
-                        <Pressable key={task.id} style={styles.taskCard} onPress={() => openTask(task)}>
-                          <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
-                          <View style={styles.taskCardContent}>
-                            <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
-                            {badge && (
-                              <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-                                <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+              <Pressable disabled={plannerIndex >= planners.length - 1} onPress={() => setPlannerIndex((i) => i + 1)}>
+                <Text style={[styles.plannerNavArrow, plannerIndex >= planners.length - 1 && styles.plannerNavArrowDisabled]}>›</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.plannerToolbar}>
+              <Text style={styles.plannerToolbarHint}>
+                {plannerIndex + 1} de {planners.length}
+              </Text>
+              <View style={styles.plannerToolbarActions}>
+                <Pressable onPress={() => handleMovePlanner("up")} disabled={plannerIndex === 0}>
+                  <Text style={[styles.plannerToolbarAction, plannerIndex === 0 && styles.plannerNavArrowDisabled]}>↑</Text>
+                </Pressable>
+                <Pressable onPress={() => handleMovePlanner("down")} disabled={plannerIndex >= planners.length - 1}>
+                  <Text style={[styles.plannerToolbarAction, plannerIndex >= planners.length - 1 && styles.plannerNavArrowDisabled]}>↓</Text>
+                </Pressable>
+                <Pressable onPress={handleDeletePlanner}>
+                  <Text style={[styles.plannerToolbarAction, styles.plannerToolbarDelete]}>Eliminar tablero</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* VISTA Y NAVEGACIÓN DE COLUMNAS (dentro del tablero activo) */}
+            <View style={styles.controlBar}>
+              <View style={styles.viewToggle}>
+                {VIEW_MODES.map((mode) => (
+                  <Pressable
+                    key={mode}
+                    style={[styles.viewToggleButton, viewMode === mode && styles.viewToggleButtonActive]}
+                    onPress={() => setViewMode(mode)}
+                  >
+                    <Text style={[styles.viewToggleText, viewMode === mode && styles.viewToggleTextActive]}>
+                      {mode === "kanban" ? "Kanban" : "Lista"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <View style={styles.columnToggle}>
+                {COLUMN_VIEWS.map((mode) => (
+                  <Pressable
+                    key={mode}
+                    style={[styles.columnToggleButton, columnViewMode === mode && styles.columnToggleButtonActive]}
+                    onPress={() => setColumnViewMode(mode)}
+                  >
+                    <Text style={[styles.columnToggleText, columnViewMode === mode && styles.columnToggleTextActive]}>
+                      {mode === "flechas" ? "Flechas" : "Apilado"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {columnViewMode === "flechas" && (
+              <View style={styles.navigationBar}>
+                <Pressable
+                  style={[styles.navButton, activeStatusIndex === 0 && styles.navButtonDisabled]}
+                  onPress={() => setActiveStatusIndex(Math.max(0, activeStatusIndex - 1))}
+                  disabled={activeStatusIndex === 0}
+                >
+                  <Text style={styles.navButtonText}>‹</Text>
+                </Pressable>
+                <Text style={styles.navLabel}>
+                  {COLUMN_HEADERS[TASK_STATUSES[activeStatusIndex]]} ({activeStatusIndex + 1}/{TASK_STATUSES.length})
+                </Text>
+                <Pressable
+                  style={[styles.navButton, activeStatusIndex === TASK_STATUSES.length - 1 && styles.navButtonDisabled]}
+                  onPress={() => setActiveStatusIndex(Math.min(TASK_STATUSES.length - 1, activeStatusIndex + 1))}
+                  disabled={activeStatusIndex === TASK_STATUSES.length - 1}
+                >
+                  <Text style={styles.navButtonText}>›</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {viewMode === "kanban" ? (
+              <View style={styles.kanbanContainer}>
+                {visibleStatuses.map((status) => {
+                  const columnTasks = tasks.filter((t) => t.status === status);
+                  return (
+                    <View
+                      key={status}
+                      style={[
+                        styles.kanbanColumn,
+                        {
+                          backgroundColor: COLUMN_BG_COLORS[status],
+                          borderColor: COLUMN_BORDER_COLORS[status],
+                        },
+                      ]}
+                    >
+                      <Text style={styles.columnHeader}>{COLUMN_HEADERS[status]}</Text>
+                      <Text style={styles.columnCount}>{columnTasks.length}</Text>
+
+                      {columnTasks.length === 0 ? (
+                        <Text style={styles.emptyText}>Sin tareas</Text>
+                      ) : (
+                        columnTasks.map((task) => {
+                          const badge = dueBadge(task.dueDate, task.status === "done");
+                          return (
+                            <Pressable key={task.id} style={styles.taskCard} onPress={() => openTask(task)}>
+                              <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
+                              <View style={styles.taskCardContent}>
+                                <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
+                                {badge && (
+                                  <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+                                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                                  </View>
+                                )}
                               </View>
-                            )}
-                          </View>
-                          {(task.synced === 0 || task.pendingOp === "update") && (
-                            <Text style={styles.pendingTag}>pendiente</Text>
-                          )}
-                        </Pressable>
-                      );
-                    })
-                  )}
+                              {(task.synced === 0 || task.pendingOp === "update") && (
+                                <Text style={styles.pendingTag}>pendiente</Text>
+                              )}
+                            </Pressable>
+                          );
+                        })
+                      )}
 
-                  <View style={styles.quickAddRow}>
-                    <TextInput
-                      style={styles.quickAddInput}
-                      placeholder="Nueva tarea…"
-                      value={drafts[status]}
-                      onChangeText={(t) => setDrafts({ ...drafts, [status]: t })}
-                      onSubmitEditing={() => handleQuickAdd(status)}
-                      placeholderTextColor={colors.mutedForeground}
-                    />
-                    <Pressable style={styles.addButton} onPress={() => handleQuickAdd(status)}>
-                      <Text style={styles.addButtonText}>+</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+                      <View style={styles.quickAddRow}>
+                        <TextInput
+                          style={styles.quickAddInput}
+                          placeholder="Nueva tarea…"
+                          value={drafts[status]}
+                          onChangeText={(t) => setDrafts({ ...drafts, [status]: t })}
+                          onSubmitEditing={() => handleQuickAdd(status)}
+                          placeholderTextColor={colors.mutedForeground}
+                        />
+                        <Pressable style={styles.addButton} onPress={() => handleQuickAdd(status)}>
+                          <Text style={styles.addButtonText}>+</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              // VISTA LISTA
+              <View style={styles.listContainer}>
+                {TASK_STATUSES.map((status) => {
+                  const columnTasks = tasks.filter((t) => t.status === status);
+                  return (
+                    <View key={status} style={styles.listSection}>
+                      <Text style={styles.listSectionHeader}>{COLUMN_HEADERS[status]}</Text>
+
+                      {columnTasks.length === 0 ? (
+                        <Text style={styles.emptyText}>Sin tareas</Text>
+                      ) : (
+                        columnTasks.map((task) => {
+                          const badge = dueBadge(task.dueDate, task.status === "done");
+                          return (
+                            <Pressable key={task.id} style={styles.listTaskRow} onPress={() => openTask(task)}>
+                              <Pressable
+                                style={[styles.listPriorityDot, { backgroundColor: priorityStyle(task.priority).text }]}
+                                onPress={() => handleCyclePriority(task)}
+                              />
+                              <View style={styles.listTaskInfo}>
+                                <Text style={[styles.listTaskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
+                                {badge && (
+                                  <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+                                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                                  </View>
+                                )}
+                              </View>
+                              {(task.synced === 0 || task.pendingOp === "update") && (
+                                <Text style={styles.pendingTag}>pendiente</Text>
+                              )}
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </>
         ) : (
-          // VISTA LISTA
-          <View style={styles.listContainer}>
-            {TASK_STATUSES.map((status) => {
-              const columnTasks = tasks.filter((t) => t.status === status);
-              return (
-                <View key={status} style={styles.listSection}>
-                  <Text style={styles.listSectionHeader}>{COLUMN_HEADERS[status]}</Text>
-
-                  {columnTasks.length === 0 ? (
-                    <Text style={styles.emptyText}>Sin tareas</Text>
-                  ) : (
-                    columnTasks.map((task) => {
-                      const badge = dueBadge(task.dueDate, task.status === "done");
-                      return (
-                        <Pressable key={task.id} style={styles.listTaskRow} onPress={() => openTask(task)}>
-                          <Pressable
-                            style={[styles.listPriorityDot, { backgroundColor: priorityStyle(task.priority).text }]}
-                            onPress={() => handleCyclePriority(task)}
-                          />
-                          <View style={styles.listTaskInfo}>
-                            <Text style={[styles.listTaskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
-                            {badge && (
-                              <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-                                <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-                              </View>
-                            )}
-                          </View>
-                          {(task.synced === 0 || task.pendingOp === "update") && (
-                            <Text style={styles.pendingTag}>pendiente</Text>
-                          )}
-                        </Pressable>
-                      );
-                    })
-                  )}
-                </View>
-              );
-            })}
+          // APILADO DE TABLEROS: cada uno, un Kanban simple y completo
+          <View style={styles.stackedList}>
+            {planners.map((planner, index) => (
+              <PlannerBoardCard
+                key={planner.id}
+                planner={planner}
+                refreshToken={refreshToken}
+                canMoveUp={index > 0}
+                canMoveDown={index < planners.length - 1}
+                onOpenTask={openTask}
+                onSync={sync}
+                onRename={(name) => renamePlannerById(planner.id, name)}
+                onDelete={() => deletePlannerById(planner.id, planner.name)}
+                onMoveUp={() => movePlannerById(planner.id, "up")}
+                onMoveDown={() => movePlannerById(planner.id, "down")}
+              />
+            ))}
           </View>
         )}
       </ScrollView>
@@ -494,6 +805,28 @@ export function PlanificadorScreen() {
         </View>
       </Modal>
 
+      {/* MODAL NUEVO TABLERO */}
+      <Modal visible={showCreatePlanner} animationType="slide" transparent onRequestClose={() => setShowCreatePlanner(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Nuevo tablero</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej. Trabajo o Personal"
+              value={newPlannerName}
+              onChangeText={setNewPlannerName}
+              autoFocus
+            />
+            <Pressable style={styles.saveButton} onPress={handleCreatePlanner}>
+              <Text style={styles.saveButtonText}>Crear tablero</Text>
+            </Pressable>
+            <Pressable style={styles.cancelButton} onPress={() => setShowCreatePlanner(false)}>
+              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       {showDuePicker && (
         <DateTimePicker
           value={form?.dueDate ?? new Date()}
@@ -506,12 +839,227 @@ export function PlanificadorScreen() {
   );
 }
 
+/** Un tablero completo (título propio + su Kanban de 3 columnas) del modo Apilado — puerto de
+ * PlannerBoard en dashboard/src/pages/PlanificadorPage.tsx, simplificado como ScheduleTableCard en
+ * HorarioScreen.tsx: carga y guarda sus propias tareas (no las del `tasks` de la vista Flechas de
+ * arriba), porque en Apilado hay varios tableros visibles a la vez. Sin el Flechas/Apilado de
+ * columnas ni el modo Lista — siempre las 3 columnas, siempre Kanban, para no duplicar una segunda
+ * capa de paginación dentro de cada tablero ya apilado. Tocar una tarjeta abre el modal de edición
+ * compartido de PlanificadorScreen (`onOpenTask`), no uno propio. */
+function PlannerBoardCard({
+  planner,
+  refreshToken,
+  canMoveUp,
+  canMoveDown,
+  onOpenTask,
+  onSync,
+  onRename,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+}: {
+  planner: Planner;
+  refreshToken: number;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onOpenTask: (task: LocalTask) => void;
+  onSync: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const [tasks, setTasks] = useState<LocalTask[]>([]);
+  const [drafts, setDrafts] = useState<Record<TaskStatus, string>>({ todo: "", in_progress: "", done: "" });
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(planner.name);
+
+  const reload = useCallback(async () => {
+    setTasks(await listTasksByPlanner(planner.id));
+  }, [planner.id]);
+
+  useEffect(() => {
+    reload();
+  }, [reload, refreshToken]);
+
+  useEffect(() => {
+    setNameDraft(planner.name);
+  }, [planner.name]);
+
+  const handleQuickAdd = async (status: TaskStatus) => {
+    const title = drafts[status].trim();
+    if (!title) return;
+    setDrafts((prev) => ({ ...prev, [status]: "" }));
+    await createTaskLocal({ plannerId: planner.id, title, description: null, status, priority: "medium", dueDate: null, tags: [] });
+    await reload();
+    onSync();
+  };
+
+  const handleRename = () => {
+    const trimmed = nameDraft.trim();
+    setRenaming(false);
+    if (!trimmed || trimmed === planner.name) {
+      setNameDraft(planner.name);
+      return;
+    }
+    onRename(trimmed);
+  };
+
+  return (
+    <View>
+      <View style={styles.stackedHeader}>
+        {renaming ? (
+          <TextInput
+            style={styles.stackedNameInput}
+            value={nameDraft}
+            onChangeText={setNameDraft}
+            onBlur={handleRename}
+            onSubmitEditing={handleRename}
+            autoFocus
+          />
+        ) : (
+          <Pressable
+            style={styles.stackedTitleButton}
+            onPress={() => {
+              setNameDraft(planner.name);
+              setRenaming(true);
+            }}
+          >
+            <Text style={styles.stackedTitle} numberOfLines={1}>
+              {planner.name}
+            </Text>
+          </Pressable>
+        )}
+        <View style={styles.plannerToolbarActions}>
+          <Pressable onPress={onMoveUp} disabled={!canMoveUp}>
+            <Text style={[styles.plannerToolbarAction, !canMoveUp && styles.plannerNavArrowDisabled]}>↑</Text>
+          </Pressable>
+          <Pressable onPress={onMoveDown} disabled={!canMoveDown}>
+            <Text style={[styles.plannerToolbarAction, !canMoveDown && styles.plannerNavArrowDisabled]}>↓</Text>
+          </Pressable>
+          <Pressable onPress={onDelete}>
+            <Text style={[styles.plannerToolbarAction, styles.plannerToolbarDelete]}>Eliminar tablero</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.kanbanContainer}>
+        {TASK_STATUSES.map((status) => {
+          const columnTasks = tasks.filter((t) => t.status === status);
+          return (
+            <View
+              key={status}
+              style={[styles.kanbanColumn, { backgroundColor: COLUMN_BG_COLORS[status], borderColor: COLUMN_BORDER_COLORS[status] }]}
+            >
+              <Text style={styles.columnHeader}>{COLUMN_HEADERS[status]}</Text>
+              <Text style={styles.columnCount}>{columnTasks.length}</Text>
+
+              {columnTasks.length === 0 ? (
+                <Text style={styles.emptyText}>Sin tareas</Text>
+              ) : (
+                columnTasks.map((task) => {
+                  const badge = dueBadge(task.dueDate, task.status === "done");
+                  return (
+                    <Pressable key={task.id} style={styles.taskCard} onPress={() => onOpenTask(task)}>
+                      <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
+                      <View style={styles.taskCardContent}>
+                        <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
+                        {badge && (
+                          <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+                            <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                          </View>
+                        )}
+                      </View>
+                      {(task.synced === 0 || task.pendingOp === "update") && <Text style={styles.pendingTag}>pendiente</Text>}
+                    </Pressable>
+                  );
+                })
+              )}
+
+              <View style={styles.quickAddRow}>
+                <TextInput
+                  style={styles.quickAddInput}
+                  placeholder="Nueva tarea…"
+                  value={drafts[status]}
+                  onChangeText={(t) => setDrafts((prev) => ({ ...prev, [status]: t }))}
+                  onSubmitEditing={() => handleQuickAdd(status)}
+                  placeholderTextColor={colors.mutedForeground}
+                />
+                <Pressable style={styles.addButton} onPress={() => handleQuickAdd(status)}>
+                  <Text style={styles.addButtonText}>+</Text>
+                </Pressable>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },
+  newButton: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
+  newButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.background },
 
-  // CONTROL BAR
+  // Flechas/Apilado de TABLEROS — rounded-full border border-border p-1 de la web, mismo estilo
+  // que HorarioScreen.tsx.
+  viewModeRow: { paddingHorizontal: 20, paddingBottom: 8 },
+  viewModePill: {
+    flexDirection: "row",
+    alignSelf: "flex-start",
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 3,
+    gap: 2,
+  },
+  viewModeButton: { borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 6 },
+  viewModeButtonActive: { backgroundColor: colors.primary },
+  viewModeButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  viewModeButtonTextActive: { color: colors.primaryForeground },
+
+  // NAVEGACIÓN DE TABLEROS (modo Flechas) — mismas medidas que `nav`/`toolbar` de HorarioScreen.tsx.
+  plannerNav: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 20 },
+  plannerNavArrow: { fontFamily: fonts.sansBold, fontSize: 24, color: colors.mutedForeground },
+  plannerNavArrowDisabled: { opacity: 0.3 },
+  plannerNavTitle: { fontFamily: fonts.serif, fontSize: 24, color: colors.foreground, textAlign: "center" },
+  plannerNameButton: { flex: 1, alignItems: "center" },
+  plannerNameInput: {
+    flex: 1,
+    fontFamily: fonts.serif,
+    fontSize: 24,
+    color: colors.foreground,
+    textAlign: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary,
+    paddingVertical: 2,
+  },
+  plannerToolbar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10 },
+  plannerToolbarHint: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  plannerToolbarActions: { flexDirection: "row", alignItems: "center", gap: 16 },
+  plannerToolbarAction: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.mutedForeground },
+  plannerToolbarDelete: { color: colors.destructive },
+
+  // APILADO DE TABLEROS
+  stackedList: { gap: 28 },
+  stackedHeader: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10, paddingBottom: 8 },
+  stackedTitleButton: { flexShrink: 1, minWidth: 0 },
+  stackedTitle: { fontFamily: fonts.serif, fontSize: 22, color: colors.foreground },
+  stackedNameInput: {
+    flex: 1,
+    minWidth: 120,
+    fontFamily: fonts.serif,
+    fontSize: 22,
+    color: colors.foreground,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary,
+    paddingVertical: 2,
+  },
+
+  // CONTROL BAR (Kanban/Lista + columnas Flechas/Apilado, dentro de UN tablero)
   controlBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -547,32 +1095,34 @@ const styles = StyleSheet.create({
   viewToggleTextActive: {
     color: colors.background,
   },
-  boardToggle: {
+  // Antes `boardToggle*` — renombrado para no colisionar en significado con el nuevo selector de
+  // TABLEROS (`viewModePill`/`plannerViewMode` de arriba): esto solo alterna las COLUMNAS.
+  columnToggle: {
     flexDirection: "row",
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.full,
     overflow: "hidden",
   },
-  boardToggleButton: {
+  columnToggleButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     backgroundColor: colors.background,
   },
-  boardToggleButtonActive: {
+  columnToggleButtonActive: {
     backgroundColor: colors.primary,
   },
-  boardToggleText: {
+  columnToggleText: {
     fontFamily: fonts.sansMedium,
     fontSize: 11,
     color: colors.mutedForeground,
     fontWeight: "600",
   },
-  boardToggleTextActive: {
+  columnToggleTextActive: {
     color: colors.primaryForeground,
   },
 
-  // NAVIGATION BAR (flechas)
+  // NAVIGATION BAR (flechas de columnas)
   navigationBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -625,8 +1175,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.destructive,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: colors.destructive + "10",
+    paddingBottom: 8,
   },
 
   // CONTENT

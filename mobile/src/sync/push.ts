@@ -131,8 +131,13 @@ export async function pushToServer(): Promise<void> {
       }),
     },
     tasks: {
+      // plannerId solo en `create`: createTaskSchema ya lo acepta opcional en el backend (si
+      // falta, cae en getOrCreateDefaultPlanner — ver plannerService.ts) y updateTaskSchema no
+      // tiene ese campo en absoluto (mover una tarea de tablero no existe todavía, ni en el móvil
+      // ni en la web), así que `update` no lo lleva.
       create: newTasks.map((t) => ({
         localId: t.id,
+        ...(t.plannerId != null ? { plannerId: t.plannerId } : {}),
         title: t.title,
         description: t.description,
         status: t.status,

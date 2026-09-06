@@ -62,12 +62,14 @@ export async function listTasksDueToday(): Promise<LocalTask[]> {
   );
 }
 
-/** Todas las tareas del tablero por defecto, para `PlanificadorScreen` — se agrupan por
- * `status` en la propia pantalla (3 secciones fijas, ver mobile/README.md). */
-export async function listAllTasks(): Promise<LocalTask[]> {
+/** Todas las tareas de UN tablero de Planificador (el usuario puede tener varios — ver
+ * mobile/src/api/planner.ts), para `PlanificadorScreen` — se agrupan por `status` en la propia
+ * pantalla (3 secciones fijas, ver mobile/README.md). */
+export async function listTasksByPlanner(plannerId: number): Promise<LocalTask[]> {
   const db = await getDb();
   return db.getAllAsync<LocalTask>(
-    `SELECT * FROM tasks WHERE (pendingOp IS NULL OR pendingOp != 'delete') ORDER BY status ASC, "order" ASC`
+    `SELECT * FROM tasks WHERE plannerId = ? AND (pendingOp IS NULL OR pendingOp != 'delete') ORDER BY status ASC, "order" ASC`,
+    [plannerId]
   );
 }
 
@@ -76,6 +78,7 @@ export function parseTaskTags(task: LocalTask): string[] {
 }
 
 export async function createTaskLocal(input: {
+  plannerId: number;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -84,9 +87,11 @@ export async function createTaskLocal(input: {
   tags: string[];
 }): Promise<string> {
   const db = await getDb();
+  // El orden fraccionario se calcula dentro del propio tablero + columna (dos tableros pueden
+  // tener cada uno su propia tarea en "order" 1000 sin pisarse).
   const last = await db.getFirstAsync<{ maxOrder: number | null }>(
-    'SELECT MAX("order") as maxOrder FROM tasks WHERE status = ?',
-    [input.status]
+    'SELECT MAX("order") as maxOrder FROM tasks WHERE plannerId = ? AND status = ?',
+    [input.plannerId, input.status]
   );
   const order = (last?.maxOrder ?? 0) + 1000;
   const id = Crypto.randomUUID();
@@ -95,8 +100,8 @@ export async function createTaskLocal(input: {
     `INSERT INTO tasks
        (id, plannerId, projectId, title, description, status, priority, "order", dueDate, tags,
         estimatedMinutes, actualMinutes, updatedAt, synced, pendingOp)
-     VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, 0, NULL)`,
-    [id, input.title, input.description, input.status, input.priority, order, input.dueDate, toJsonArray(input.tags), now]
+     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, 0, NULL)`,
+    [id, input.plannerId, input.title, input.description, input.status, input.priority, order, input.dueDate, toJsonArray(input.tags), now]
   );
   return id;
 }
@@ -123,12 +128,18 @@ export async function updateTaskLocal(
  * resto de la columna destino — puerto directo de `moveTask` en
  * `dashboard/src/pages/PlanificadorPage.tsx:366-381`: punto medio entre los dos vecinos si se
  * suelta entre dos tareas, o +1000 sobre la última si se suelta al final. `beforeTaskId = null`
- * significa "al final de la columna" (mismo significado que en el propio `moveTask` web). */
+ * significa "al final de la columna" (mismo significado que en el propio `moveTask` web).
+ * Sin mover de tablero (eso no existe todavía, ni aquí ni en la web — ver plannerId inmutable en
+ * updateTaskSchema del backend): el candidato a "vecino" siempre se busca dentro del MISMO
+ * plannerId de `id`, para no calcular el punto medio contra tareas de otro tablero que compartan
+ * status. */
 export async function moveTask(id: string, targetStatus: TaskStatus, beforeTaskId: string | null): Promise<void> {
   const db = await getDb();
+  const task = await db.getFirstAsync<LocalTask>("SELECT * FROM tasks WHERE id = ?", [id]);
+  if (!task) return;
   const columnTasks = await db.getAllAsync<LocalTask>(
-    `SELECT * FROM tasks WHERE status = ? AND id != ? AND (pendingOp IS NULL OR pendingOp != 'delete') ORDER BY "order" ASC`,
-    [targetStatus, id]
+    `SELECT * FROM tasks WHERE plannerId = ? AND status = ? AND id != ? AND (pendingOp IS NULL OR pendingOp != 'delete') ORDER BY "order" ASC`,
+    [task.plannerId, targetStatus, id]
   );
 
   let order: number;

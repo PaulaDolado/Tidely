@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
+import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { ApiError } from "../api/client";
 import {
   createTransaction,
@@ -15,6 +16,7 @@ import {
   NewTransactionInput,
   Transaction,
   TransactionType,
+  updateTransaction,
 } from "../api/finance";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
@@ -41,7 +43,10 @@ export function FinanzasScreen() {
   const [investmentTotal, setInvestmentTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  // "new" = formulario de alta; una Transaction = editándola (mismo Modal/MovementForm para los
+  // dos casos, ver más abajo) — así se puede corregir la fecha de un movimiento que se olvidó
+  // registrar el mes pasado, en vez de tener que borrarlo y crearlo de nuevo.
+  const [formTx, setFormTx] = useState<Transaction | "new" | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -74,7 +79,13 @@ export function FinanzasScreen() {
 
   const handleCreate = async (input: NewTransactionInput) => {
     await createTransaction(input);
-    setShowCreate(false);
+    setFormTx(null);
+    await reload();
+  };
+
+  const handleUpdate = async (id: number, input: NewTransactionInput) => {
+    await updateTransaction(id, input);
+    setFormTx(null);
     await reload();
   };
 
@@ -89,7 +100,7 @@ export function FinanzasScreen() {
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, collapsed && { paddingLeft: SIDEBAR_CLIP_CLEARANCE }]}>
         <Text style={styles.title}>Finanzas</Text>
-        <Pressable style={styles.newButton} onPress={() => setShowCreate(true)}>
+        <Pressable style={styles.newButton} onPress={() => setFormTx("new")}>
           <Text style={styles.newButtonText}>+ Nuevo</Text>
         </Pressable>
       </View>
@@ -155,6 +166,10 @@ export function FinanzasScreen() {
                     <Text style={styles.summaryMonthLabel}>Gastos</Text>
                     <Text style={styles.summaryMonthValue}>−{formatMoney(balance.expense)}</Text>
                   </View>
+                  <View style={styles.summaryMonthRow}>
+                    <Text style={styles.summaryMonthLabel}>Ahorro</Text>
+                    <Text style={styles.summaryMonthValue}>{formatMoney(savingsTotal)}</Text>
+                  </View>
                   <View style={styles.summaryMonthDivider} />
                   <View style={styles.summaryMonthRow}>
                     <Text style={styles.summaryMonthNetLabel}>Saldo neto</Text>
@@ -164,22 +179,26 @@ export function FinanzasScreen() {
               </View>
             )}
 
-            {analytics && analytics.topCategories.length > 0 && (
+            {analytics && (
               // rounded-3xl bg-secondary p-6 text-secondary-foreground de la web — fondo sólido
               // arena, sin borde (a diferencia de card-soft, que sí lo lleva).
               <View style={styles.cardSecondary}>
-                <Text style={[styles.cardTitle, styles.cardTitleSecondary]}>Top categorías de gasto (este mes)</Text>
-                <View>
-                  {analytics.topCategories.map((c, i) => (
-                    <View
-                      key={c.category}
-                      style={[styles.categoryRow, i < analytics.topCategories.length - 1 && styles.categoryRowDivider]}
-                    >
-                      <Text style={styles.categoryName}>{c.category}</Text>
-                      <Text style={styles.categoryAmount}>{formatMoney(c.total)}</Text>
-                    </View>
-                  ))}
-                </View>
+                <Text style={[styles.cardTitle, styles.cardTitleSecondary]}>Top 5 categorías de gasto (este mes)</Text>
+                {analytics.topCategories.length === 0 ? (
+                  <Text style={styles.categoryEmptyText}>Sin gastos registrados este mes.</Text>
+                ) : (
+                  <View>
+                    {analytics.topCategories.map((c, i) => (
+                      <View
+                        key={c.category}
+                        style={[styles.categoryRow, i < analytics.topCategories.length - 1 && styles.categoryRowDivider]}
+                      >
+                        <Text style={styles.categoryName}>{c.category}</Text>
+                        <Text style={styles.categoryAmount}>{formatMoney(c.total)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
@@ -215,8 +234,10 @@ export function FinanzasScreen() {
                         {t.type === "income" ? "+" : "-"}
                         {formatMoney(t.amount)}
                       </Text>
-                      <Pressable onPress={() => handleDelete(t.id)} hitSlop={6}>
-                        <Text style={styles.deleteText}>Borrar</Text>
+                      {/* Un único botón (lápiz) en vez de "Editar"/"Borrar" separados — borrar
+                          vive dentro del propio formulario de edición (ver onDelete más abajo). */}
+                      <Pressable onPress={() => setFormTx(t)} hitSlop={6} accessibilityLabel="Editar movimiento">
+                        <Text style={styles.editIcon}>✎</Text>
                       </Pressable>
                     </View>
                   ))
@@ -227,10 +248,27 @@ export function FinanzasScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
+      <Modal visible={formTx !== null} animationType="slide" transparent onRequestClose={() => setFormTx(null)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
-            <NewMovementForm onCancel={() => setShowCreate(false)} onSubmit={handleCreate} />
+            {formTx !== null && (
+              <MovementForm
+                initial={formTx === "new" ? undefined : formTx}
+                onCancel={() => setFormTx(null)}
+                onSubmit={async (input) => {
+                  if (formTx === "new") await handleCreate(input);
+                  else await handleUpdate((formTx as Transaction).id, input);
+                }}
+                onDelete={
+                  formTx === "new"
+                    ? undefined
+                    : async () => {
+                        await handleDelete((formTx as Transaction).id);
+                        setFormTx(null);
+                      }
+                }
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -249,24 +287,50 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
   );
 }
 
-function NewMovementForm({ onSubmit, onCancel }: { onSubmit: (input: NewTransactionInput) => Promise<void>; onCancel: () => void }) {
-  const [concept, setConcept] = useState("");
-  const [amount, setAmount] = useState("");
-  const [kind, setKind] = useState<TransactionType>("expense");
-  const [category, setCategory] = useState("");
+// Un único formulario para crear (initial=undefined, fecha por defecto hoy) y para editar
+// (initial=la Transaction, precarga todos los campos incluida la fecha) — así se puede corregir
+// la fecha de un movimiento que se olvidó registrar el mes pasado sin borrarlo y crearlo de nuevo.
+function MovementForm({
+  initial,
+  onSubmit,
+  onCancel,
+  onDelete,
+}: {
+  initial?: Transaction;
+  onSubmit: (input: NewTransactionInput) => Promise<void>;
+  onCancel: () => void;
+  onDelete?: () => Promise<void>;
+}) {
+  const [concept, setConcept] = useState(initial?.description ?? "");
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  const [kind, setKind] = useState<TransactionType>(initial?.type ?? "expense");
+  const [category, setCategory] = useState(initial?.category ?? "");
+  const [date, setDate] = useState(initial ? new Date(initial.date) : new Date());
+  const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const submit = async () => {
     const n = Number(amount);
     if (!concept.trim() || !n || !category.trim()) return;
     setSaving(true);
-    await onSubmit({ type: kind, amount: Math.abs(n), category: category.trim(), description: concept.trim() });
+    await onSubmit({ type: kind, amount: Math.abs(n), category: category.trim(), description: concept.trim(), date: date.toISOString() });
     setSaving(false);
+  };
+
+  const remove = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled">
-      <Text style={styles.modalTitle}>Nuevo movimiento</Text>
+      <Text style={styles.modalTitle}>{initial ? "Editar movimiento" : "Nuevo movimiento"}</Text>
 
       <View style={styles.chipRow}>
         {(["expense", "income"] as TransactionType[]).map((k) => (
@@ -280,12 +344,36 @@ function NewMovementForm({ onSubmit, onCancel }: { onSubmit: (input: NewTransact
       <TextInput style={styles.input} placeholder="Importe" value={amount} onChangeText={setAmount} keyboardType="numeric" />
       <TextInput style={styles.input} placeholder="Categoría" value={category} onChangeText={setCategory} />
 
+      <Text style={styles.fieldLabel}>Fecha</Text>
+      <Pressable style={styles.dateButton} onPress={() => setShowPicker(true)}>
+        <Text style={styles.dateButtonText}>{date.toLocaleDateString("es-ES")}</Text>
+      </Pressable>
+      {showPicker && (
+        <DateTimePicker
+          value={date}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          onValueChange={(_event: DateTimePickerChangeEvent, selected?: Date) => {
+            setShowPicker(false);
+            if (selected) setDate(selected);
+          }}
+          onDismiss={() => setShowPicker(false)}
+        />
+      )}
+
       <Pressable style={styles.saveButton} onPress={submit} disabled={saving}>
-        <Text style={styles.saveButtonText}>{saving ? "Guardando…" : "Guardar movimiento"}</Text>
+        <Text style={styles.saveButtonText}>{saving ? "Guardando…" : initial ? "Guardar cambios" : "Guardar movimiento"}</Text>
       </Pressable>
       <Pressable style={styles.cancelButton} onPress={onCancel}>
         <Text style={styles.cancelButtonText}>Cancelar</Text>
       </Pressable>
+      {/* Borrar vive dentro del propio formulario de edición, no como botón aparte en la lista —
+          ver el pedido de "solo el lápiz" en Movimientos recientes (onDelete solo llega al editar). */}
+      {onDelete && (
+        <Pressable style={styles.deleteButton} onPress={remove} disabled={deleting}>
+          <Text style={styles.deleteButtonText}>{deleting ? "Eliminando…" : "Eliminar movimiento"}</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }
@@ -366,6 +454,8 @@ const styles = StyleSheet.create({
   trendBar: { width: 18, borderRadius: 4 },
   trendLabel: { fontFamily: fonts.sans, fontSize: 10, color: colors.mutedForeground },
 
+  // text-sm opacity-70 de la web (mismo color secondary-foreground que el resto del panel).
+  categoryEmptyText: { fontFamily: fonts.sans, fontSize: 13, color: colors.secondaryForeground, opacity: 0.7 },
   categoryRow: { flexDirection: "row", justifyContent: "space-between", paddingBottom: 8 },
   // border-b border-secondary-foreground/15 pb-2 de la web (las filas van dentro de la tarjeta
   // arena de arriba, así que la raya es del mismo tono que el texto, no del gris neutro de
@@ -417,7 +507,8 @@ const styles = StyleSheet.create({
   transactionTitle: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.foreground },
   transactionMeta: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, textTransform: "capitalize" },
   transactionAmount: { fontFamily: fonts.sansBold, fontSize: 14 },
-  deleteText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  // Único botón por movimiento (lápiz) — Borrar ya no vive en la fila, ver deleteButton más abajo.
+  editIcon: { fontSize: 16, color: colors.mutedForeground },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(45,41,38,0.4)", justifyContent: "flex-end" },
   modalSheet: {
@@ -451,8 +542,30 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: colors.primaryTint, borderColor: colors.primary },
   chipText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
   chipTextSelected: { fontFamily: fonts.sansMedium, color: colors.primary },
+  // Mismo patrón que AgendaScreen.tsx: fieldLabel + un botón que abre el DateTimePicker nativo en
+  // vez de un TextInput libre — la fecha es la única entrada que no tiene sentido teclear a mano.
+  fieldLabel: {
+    fontFamily: fonts.sansBold,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: colors.mutedForeground,
+    marginBottom: 6,
+  },
+  dateButton: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.input,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: colors.card,
+    alignItems: "center",
+  },
+  dateButtonText: { fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },
   saveButton: { backgroundColor: colors.primary, borderRadius: radius.full, padding: 15, alignItems: "center", marginTop: 8 },
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
+  deleteButton: { alignItems: "center", padding: 10 },
+  deleteButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
 });

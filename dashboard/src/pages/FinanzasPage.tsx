@@ -15,6 +15,7 @@ function eur(n: number): string {
 
 export function FinanzasPage() {
   const now = new Date();
+  const [editingId, setEditingId] = useState<number | null>(null);
   const {
     data: balance,
     loading: loadingBalance,
@@ -45,13 +46,18 @@ export function FinanzasPage() {
   const savingsGoals = savingsData?.savingsGoals ?? [];
   const totalAhorro = savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0);
   const totalInversion = savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0);
+  const editingTx = txData?.transactions.find((t) => t.id === editingId) ?? null;
 
   return (
     <>
       <PageHeader title="Finanzas" subtitle="Ingresos, gastos, balance, ahorro e inversión" action={<FinanceExportMenu />} />
 
       <div className="grid gap-8 lg:grid-cols-12">
-        <div className="space-y-8 lg:col-span-8">
+        {/* @container: el formulario de alta necesita saber SU propio ancho renderizado, no el
+            del viewport — esta columna es solo 8/12 del grid de la página (y el <aside> de la
+            web le resta más aún), así que un breakpoint normal (sm:/xl:) sigue basándose en el
+            ancho de la ventana y desborda igual aunque la ventana sea grande. */}
+        <div className="@container space-y-8 lg:col-span-8">
           {balanceError && <ErrorMessage message={balanceError} />}
           {loadingBalance ? (
             <Loading label="Cargando balance..." />
@@ -65,7 +71,8 @@ export function FinanzasPage() {
             </div>
           )}
 
-          <NewMovementForm
+          <MovementForm
+            submitLabel="Registrar"
             onSubmit={async (input) => {
               await api.post("/finance/transactions", input);
               reloadAll();
@@ -94,14 +101,14 @@ export function FinanzasPage() {
                         {tx.type === "expense" ? "−" : "+"}
                         {eur(tx.amount)}
                       </span>
+                      {/* Un único botón (lápiz) en vez de "Editar"/"Eliminar" separados — abre el
+                          diálogo de abajo (editingTx), no edita la fila en su propia posición. */}
                       <button
-                        onClick={async () => {
-                          await api.delete(`/finance/transactions/${tx.id}`);
-                          reloadAll();
-                        }}
-                        className="cursor-pointer text-xs text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                        onClick={() => setEditingId(tx.id)}
+                        aria-label="Editar movimiento"
+                        className="cursor-pointer rounded p-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                       >
-                        Eliminar
+                        ✎
                       </button>
                     </div>
                   </div>
@@ -129,6 +136,7 @@ export function FinanzasPage() {
             <div className="space-y-4">
               <Row label="Ingresos" value={`+${eur(balance?.income ?? 0)}`} />
               <Row label="Gastos" value={`−${eur(balance?.expense ?? 0)}`} />
+              <Row label="Ahorro" value={eur(totalAhorro)} />
               <div className="my-2 h-px bg-primary-foreground/20" />
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Saldo neto</span>
@@ -167,6 +175,55 @@ export function FinanzasPage() {
           )}
         </div>
       </div>
+
+      {/* Mismo patrón que ProfileDialog.tsx: overlay fixed + tarjeta centrada, en vez de editar
+          la fila en su propia posición dentro de la lista. */}
+      {editingTx && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-foreground/50 p-4"
+          onClick={() => setEditingId(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="@container w-full max-w-lg rounded-3xl bg-card p-6 shadow-[var(--shadow-soft)] sm:p-8"
+          >
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="font-serif text-xl">Editar movimiento</h2>
+              <button
+                type="button"
+                onClick={() => setEditingId(null)}
+                className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <MovementForm
+              dialog
+              initial={{
+                type: editingTx.type,
+                amount: editingTx.amount,
+                category: editingTx.category,
+                description: editingTx.description ?? "",
+                date: editingTx.date.slice(0, 10),
+              }}
+              submitLabel="Guardar"
+              onCancel={() => setEditingId(null)}
+              onSubmit={async (input) => {
+                await api.put(`/finance/transactions/${editingTx.id}`, input);
+                setEditingId(null);
+                reloadAll();
+              }}
+              onDelete={async () => {
+                await api.delete(`/finance/transactions/${editingTx.id}`);
+                setEditingId(null);
+                reloadAll();
+              }}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -277,50 +334,131 @@ function SummaryCard({ label, value, tone }: { label: string; value: string; ton
   );
 }
 
-interface NewMovementInput {
+interface MovementFormValues {
   type: "income" | "expense";
   amount: number;
   category: string;
   description: string;
+  date: string; // "YYYY-MM-DD" — createTransactionSchema/updateTransactionSchema aceptan Joi.date().iso().
 }
 
-function NewMovementForm({ onSubmit }: { onSubmit: (input: NewMovementInput) => Promise<void> }) {
-  const [concept, setConcept] = useState("");
-  const [amount, setAmount] = useState("");
-  const [kind, setKind] = useState<"ingreso" | "gasto">("gasto");
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// Fecha local (no toISOString(), que desplaza a UTC y puede devolver el día de ayer/mañana según
+// la zona horaria) — el usuario elige el día en que ocurrió el movimiento, así que debe coincidir
+// con "hoy" en su propia zona.
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// Un único formulario para crear (arriba de la lista, con card-soft propia, una sola fila) y
+// para editar (`dialog`, dentro del diálogo modal que abre el lápiz de cada movimiento — ver
+// `editingTx` de FinanzasPage) — misma validación y mismos campos en los dos casos, para que
+// "olvidé poner un movimiento del mes pasado" se corrija sin salir de esta página.
+function MovementForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  onDelete,
+  dialog,
+}: {
+  initial?: Partial<MovementFormValues>;
+  submitLabel: string;
+  onSubmit: (input: MovementFormValues) => Promise<void>;
+  onCancel?: () => void;
+  onDelete?: () => Promise<void>;
+  dialog?: boolean;
+}) {
+  const [concept, setConcept] = useState(initial?.description ?? "");
+  const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
+  const [kind, setKind] = useState<"ingreso" | "gasto">(initial?.type === "income" ? "ingreso" : "gasto");
   // Vacío por defecto — sin categoría "general" implícita: el usuario tiene que escribir la
   // suya, igual que ya es obligatorio en el backend (createTransactionSchema.category.required()).
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(initial?.category ?? "");
+  const [date, setDate] = useState(initial?.date ?? todayStr());
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         const value = Number(amount);
-        if (!concept.trim() || !value || !category.trim()) return;
-
-        await onSubmit({
-          type: kind === "gasto" ? "expense" : "income",
-          amount: value,
-          category: category.trim(),
-          description: concept.trim(),
-        });
-        setConcept("");
-        setAmount("");
-        setCategory("");
+        if (!concept.trim() || !value || !category.trim() || !date) return;
+        setSaving(true);
+        try {
+          await onSubmit({
+            type: kind === "gasto" ? "expense" : "income",
+            amount: value,
+            category: category.trim(),
+            description: concept.trim(),
+            date,
+          });
+          if (!initial) {
+            setConcept("");
+            setAmount("");
+            setCategory("");
+            setDate(todayStr());
+          }
+        } finally {
+          setSaving(false);
+        }
       }}
-      className="grid gap-4 card-soft md:grid-cols-[2fr_1fr_1fr_1fr_auto]"
+      className={dialog ? "grid gap-4 @sm:grid-cols-2" : "grid gap-4 card-soft @sm:grid-cols-2 @xl:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]"}
     >
-      <input value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Concepto" className="field-input" />
+      <input
+        value={concept}
+        onChange={(e) => setConcept(e.target.value)}
+        placeholder="Concepto"
+        className={dialog ? "field-input @sm:col-span-2" : "field-input @sm:col-span-2 @xl:col-span-1"}
+      />
       <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" min="0" step="0.01" placeholder="Importe" className="field-input" />
       <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className="field-input">
         <option value="gasto">Gasto</option>
         <option value="ingreso">Ingreso</option>
       </select>
       <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Categoría" className="field-input" />
-      <button type="submit" className="btn-dark">
-        Registrar
-      </button>
+      <input value={date} onChange={(e) => setDate(e.target.value)} type="date" className="field-input" />
+      {/* En el diálogo, los botones van en su propia fila (span completo); al crear (una sola
+          fila junto a los campos en pantallas anchas) el botón de guardar sigue siendo la última
+          columna del grid, sin envolver nada — `contents` deja que actúe como si el div no
+          existiera, así que su propio ancho de columna se controla desde el <button>. */}
+      <div className={dialog ? "flex items-center gap-3 @sm:col-span-2" : "contents"}>
+        <button
+          type="submit"
+          disabled={saving}
+          className={dialog ? "btn-dark disabled:opacity-50" : "btn-dark disabled:opacity-50 @sm:col-span-2 @xl:col-span-1"}
+        >
+          {saving ? "…" : submitLabel}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">
+            Cancelar
+          </button>
+        )}
+        {/* Borrar vive dentro del propio diálogo de edición, no como botón aparte en la lista. */}
+        {onDelete && (
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              try {
+                await onDelete();
+              } finally {
+                setDeleting(false);
+              }
+            }}
+            className="ml-auto text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
+          >
+            {deleting ? "…" : "Eliminar"}
+          </button>
+        )}
+      </div>
     </form>
   );
 }

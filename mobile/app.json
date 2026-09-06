@@ -10,7 +10,11 @@
       "supportsTablet": true
     },
     "android": {
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -24,6 +28,8 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/icon.png",
+          "resizeMode": "contain",
           "backgroundColor": "#F7F4F1"
         }
       ]

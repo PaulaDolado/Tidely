@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, View, Text, Pressable, Image, ScrollView, Modal, StyleSheet, useWindowDimensions } from "react-native";
+import { Alert, Animated, Easing, View, Text, Pressable, Image, ScrollView, Modal, StyleSheet, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useAuth } from "../auth/AuthContext";
 import { useSidebar } from "./SidebarContext";
+import { ApiError } from "../api/client";
 import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
 import { NewPageForm } from "../components/NewPageForm";
 import { colors, fonts, radius } from "../theme";
@@ -204,13 +205,22 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   // plantilla "galeria", pero nunca hay más de una — busca la del usuario (consulta fresca, no
   // el `customPages` ya en estado, para no crear una segunda por una lista todavía sin cargar la
   // primera vez) o la crea, y navega a su detalle igual que openPage/handleCreatePage.
+  //
+  // Con try/catch a propósito, a diferencia de antes: si listCustomPages/createCustomPage fallaba
+  // (sesión caducada, sin red…), el error se quedaba sin capturar y no pasaba nada visible al
+  // tocar "Galería" — ni se navegaba ni se cerraba el menú, así que parecía que el botón no hacía
+  // nada. Mismo mensaje que el resto de pantallas (ApiError.message si lo hay).
   const openGallery = async () => {
-    const pages = await listCustomPages();
-    let galleryPage = pages.find((p) => p.template === "galeria") ?? null;
-    if (!galleryPage) galleryPage = await createCustomPage("Galería", "galeria");
-    await reloadCustomPages();
-    navigation.navigate("Páginas", { screen: "Detalle", params: { id: galleryPage.id, title: galleryPage.title } });
-    setCollapsed(true);
+    try {
+      const pages = await listCustomPages();
+      let galleryPage = pages.find((p) => p.template === "galeria") ?? null;
+      if (!galleryPage) galleryPage = await createCustomPage("Galería", "galeria");
+      await reloadCustomPages();
+      navigation.navigate("Páginas", { screen: "Detalle", params: { id: galleryPage.id, title: galleryPage.title } });
+      setCollapsed(true);
+    } catch (err) {
+      Alert.alert("No se pudo abrir la galería", err instanceof ApiError ? err.message : "Inténtalo de nuevo.");
+    }
   };
 
   const topOffset = insets.top + 16;
