@@ -2,6 +2,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# `node:20-alpine` no trae OpenSSL — sin él, el motor de Prisma ni siquiera sabe qué versión usar
+# ("Prisma failed to detect the libssl/openssl version") y termina intentando cargar un binario
+# que no encaja con la imagen. El síntoma es engañoso: "Could not parse schema engine response"
+# en `prisma migrate deploy` es en realidad un error de carga de librería compartida camuflado de
+# JSON inválido, no un problema con el esquema en sí.
+RUN apk add --no-cache openssl
+
 COPY package*.json ./
 # `npm install` dispara el hook `postinstall` (`prisma generate`, ver package.json), que necesita
 # `prisma/schema.prisma` — sin copiarlo antes, esa capa solo tiene package*.json y el postinstall
