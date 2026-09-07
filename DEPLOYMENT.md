@@ -146,31 +146,34 @@ pasar por Play Store — y `production`), y `app.json` ya lleva un bundle id pro
 
 ## App de escritorio con Tauri
 
-No existe todavía — se añade envolviendo el MISMO build de `dashboard/` (Vite + React) en un
-shell nativo con [Tauri](https://tauri.app), en vez de mantener un tercer frontend aparte: el
-`src-tauri/` resultante solo empaqueta `dashboard/dist` en una ventana con el WebView del propio
-sistema operativo (a diferencia de Electron, no incluye su propio Chromium — de ahí el binario
-mucho más pequeño).
+Envuelve el MISMO build de `dashboard/` (Vite + React) en un shell nativo con
+[Tauri](https://tauri.app), en vez de mantener un tercer frontend aparte — `dashboard/src-tauri/`
+solo empaqueta `dashboard/dist` en una ventana con el WebView del propio sistema operativo (a
+diferencia de Electron, no incluye su propio Chromium, de ahí el binario mucho más pequeño). Ya
+está scaffoldeado (`dashboard/src-tauri/`, identifier `com.tidely.desktop`) — requiere tener
+**Rust** ([rustup](https://rustup.rs)) y, en Windows, **Microsoft C++ Build Tools** (workload
+"Desktop development with C++") instalados en la máquina donde compiles.
 
-Requisitos previos en esta máquina (ninguno está instalado todavía):
-- **Rust** (vía [rustup](https://rustup.rs)) — el propio Tauri es un binario Rust, aunque este
-  proyecto no necesita escribir código Rust, solo compilarlo.
-- **Microsoft C++ Build Tools** (Windows) — workload "Desktop development with C++" desde el
-  [instalador de Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
-- **WebView2 Runtime** — ya viene instalado de fábrica en Windows 10/11 actualizados, así que
-  normalmente no hace falta nada aparte.
+```bash
+cd dashboard
+npm run tauri:dev      # ventana nativa contra el Vite dev server (localhost:5173), con hot-reload
+npm run tauri:build    # instalador nativo (.msi/.exe en Windows, .dmg en macOS, .deb/.AppImage en Linux)
+```
 
-Con eso instalado, dentro de `dashboard/`:
-```bash
-npm install --save-dev @tauri-apps/cli
-npx tauri init
-```
-`tauri init` pregunta la carpeta del build web (`../dashboard/dist` si se corre desde la raíz del
-repo, o `dist` si se corre dentro de `dashboard/`) y el comando de dev (`npm run dev`, puerto
-5173) — con eso genera `src-tauri/` (config + un `main.rs` mínimo que no hay que tocar). Luego:
-```bash
-npm run tauri dev     # ventana nativa contra el Vite dev server, con hot-reload
-npm run tauri build    # instalador nativo (.msi/.exe en Windows) en src-tauri/target/release/bundle
-```
-Aviso: la instalación de Rust + Build Tools pesa varios GB y tarda — dímelo cuando quieras que la
-haga (o hazlo tú y avísame para generar `src-tauri/` en cuanto esté listo).
+El resultado de `tauri:build` queda en `dashboard/src-tauri/target/release/bundle/` — cada
+plataforma solo puede compilar su PROPIO instalador (Windows genera `.msi`, no puedes generar el
+`.dmg` de macOS desde Windows): para distribuir en las 3 plataformas de escritorio hace falta
+compilar desde una máquina de cada una, o usar un runner de CI por plataforma (GitHub Actions con
+matriz `windows-latest`/`macos-latest`/`ubuntu-latest`, no configurado todavía).
+
+`bundle.targets` en `tauri.conf.json` está fijado a `["msi"]` (no `"all"`): en Windows, Tauri
+también intenta generar un segundo instalador vía NSIS (`.exe`), que descarga su propio binario
+(`nsis-3.11.zip`) la primera vez — en esta máquina esa descarga/extracción falló con "Acceso
+denegado" (probablemente el antivirus bloqueando la extracción), sin afectar al `.msi`, que se
+generó bien. El `.msi` por sí solo ya es un instalador de Windows completo y válido; si más
+adelante quieres también el `.exe` de NSIS, vuelve a poner `"targets": "all"` y reintenta.
+
+Como esta app apunta a un backend remoto (`VITE_API_URL` ya embebido en el build de `dist/` en
+tiempo de compilación, igual que en la versión web — no hay forma de cambiarlo después sin
+recompilar), asegúrate de que `dashboard/.env` apunte a tu API ya desplegada antes de correr
+`tauri:build` para producción, no a `localhost`.
