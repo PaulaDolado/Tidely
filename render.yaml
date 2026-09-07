@@ -7,7 +7,7 @@
 # Blueprint y los guarda como secretos del servicio, nunca en este fichero versionado).
 services:
   - type: web
-    name: life-organizer-api
+    name: tidely-api
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile

@@ -3,6 +3,12 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
+# `npm install` dispara el hook `postinstall` (`prisma generate`, ver package.json), que necesita
+# `prisma/schema.prisma` — sin copiarlo antes, esa capa solo tiene package*.json y el postinstall
+# falla con "Could not find Prisma Schema". Copiar solo `prisma/` aquí (no todo el repo todavía)
+# mantiene el cacheo de capas de Docker: node_modules solo se reinstala si cambian package*.json
+# o el propio esquema, no en cada cambio de código de src/.
+COPY prisma ./prisma
 RUN npm install
 
 COPY . .

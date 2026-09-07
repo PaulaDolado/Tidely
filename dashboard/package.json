@@ -1,5 +1,5 @@
 {
-  "name": "life-organizer-dashboard",
+  "name": "tidely-dashboard",
   "version": "1.0.0",
   "description": "Dashboard demo (React + TypeScript) para Tidely API",
   "private": true,

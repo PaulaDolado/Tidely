@@ -1,5 +1,5 @@
 {
-  "name": "life-organizer-api",
+  "name": "tidely-api",
   "version": "1.0.0",
   "description": "API de organización personal integral: agenda, metas, finanzas, proyectos y hobbies",
   "main": "dist/index.js",
