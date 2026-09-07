@@ -1,11 +1,10 @@
 # Render Blueprint — despliegue declarativo (Render > New > Blueprint, apunta a este repo)
 # Docs: https://render.com/docs/blueprint-spec
-databases:
-  - name: life-organizer-db
-    databaseName: life_organizer
-    plan: free
-    postgresMajorVersion: "15"
-
+#
+# Sin bloque `databases:` a propósito: la base de datos es Supabase (ver
+# DEPLOYMENT.md#usar-supabase-como-postgres), no el Postgres propio de Render — así que
+# DATABASE_URL/DIRECT_URL van como `sync: false` (sin valor aquí, Render los pide al crear el
+# Blueprint y los guarda como secretos del servicio, nunca en este fichero versionado).
 services:
   - type: web
     name: life-organizer-api
@@ -17,20 +16,14 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Pooled (puerto 6543, con ?pgbouncer=true) — la usa Prisma Client en tiempo de ejecución.
       - key: DATABASE_URL
-        fromDatabase:
-          name: life-organizer-db
-          property: connectionString
-      # El Postgres de Render (arriba) no tiene pooler delante, así que apunta a la misma BD que
-      # DATABASE_URL. Hace falta porque el Dockerfile corre `prisma migrate deploy` en cada
-      # arranque, y la CLI de Prisma usa DIRECT_URL para migrar (ver prisma/schema.prisma). Si en
-      # vez del Postgres de Render usas uno externo con pooler (p.ej. Supabase), pon aquí a mano
-      # la conexión DIRECTA (puerto 5432) y en DATABASE_URL la POOLED (puerto 6543) — ver
-      # DEPLOYMENT.md#usar-supabase-como-postgres.
+        sync: false
+      # Directa/session pooler (puerto 5432) — la usa `prisma migrate deploy` en cada arranque del
+      # contenedor (ver Dockerfile); el modo transacción de arriba rompe los advisory locks que
+      # necesita migrar.
       - key: DIRECT_URL
-        fromDatabase:
-          name: life-organizer-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -40,7 +33,7 @@ services:
       - key: JWT_REFRESH_EXPIRES_IN
         value: 7d
       - key: CORS_ORIGIN
-        value: "*" # cámbialo por el dominio real del dashboard en producción
+        value: "https://pauladolado.github.io" # dashboard en GitHub Pages — ver deploy-pages.yml
       - key: RATE_LIMIT_WINDOW_MS
         value: "900000"
       - key: RATE_LIMIT_MAX

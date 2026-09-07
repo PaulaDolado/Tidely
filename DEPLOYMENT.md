@@ -34,13 +34,25 @@ Dos rutas soportadas: **Railway** (recomendada, más simple) y **Render** (usa e
 
 ## Opción B: Render (con `render.yaml`)
 
-1. Sube el repo a GitHub (igual que en el paso 1 de Railway).
-2. En [render.com](https://render.com), **New → Blueprint**, apunta al repo — Render detecta [`render.yaml`](render.yaml) y crea automáticamente el servicio web + la base de datos Postgres, con `DATABASE_URL`/`DIRECT_URL` conectadas (a la misma BD — el Postgres de Render no tiene pooler delante) y `JWT_SECRET`/`JWT_REFRESH_SECRET` generados.
-3. Antes del primer deploy exitoso necesitas aplicar las migraciones. Opciones:
-   - Si tu plan soporta **Pre-Deploy Command** (Settings del servicio web): `npx prisma migrate deploy`.
-   - Si no, entra a **Shell** del servicio ya desplegado y corre `npx prisma migrate deploy` manualmente.
-4. Revisa `CORS_ORIGIN` en las variables de entorno del servicio y cámbialo al dominio real del dashboard cuando lo despliegues.
-5. Render asigna una URL tipo `https://life-organizer-api.onrender.com`. Prueba `/health` y `/api-docs`.
+Este `render.yaml` YA está pensado para Supabase como base de datos (no provisiona Postgres
+propio de Render — ver [Usar Supabase como Postgres](#usar-supabase-como-postgres) más abajo, ya
+aplicado si sigues estos pasos en orden):
+
+1. Sube el repo a GitHub (igual que en el paso 1 de Railway) — si ya lo tienes en GitHub, con el
+   `git push` de los cambios de este chat basta.
+2. En [render.com](https://render.com), **New → Blueprint**, apunta al repo. Render detecta
+   [`render.yaml`](render.yaml) y, como `DATABASE_URL`/`DIRECT_URL` son `sync: false` (sin valor
+   en el fichero), te los pedirá EN EL MOMENTO de crear el Blueprint — pega ahí las dos cadenas de
+   tu proyecto de Supabase (pooler `:6543` para `DATABASE_URL`, `:5432` para `DIRECT_URL`; están
+   en Supabase → botón **Connect** → pestaña **ORMs → Prisma**). `JWT_SECRET`/`JWT_REFRESH_SECRET`
+   se generan solos, y `CORS_ORIGIN` ya viene puesto al dominio del dashboard en GitHub Pages.
+3. Las migraciones se aplican solas: el `Dockerfile` corre `npx prisma migrate deploy` en cada
+   arranque del contenedor (no hace falta Pre-Deploy Command aparte) — ya lo probamos a mano
+   contra tu Supabase y las 26 migraciones se aplicaron sin problema, así que el primer deploy
+   debería arrancar limpio.
+4. Render asigna una URL tipo `https://life-organizer-api.onrender.com`. Prueba `/health` y
+   `/api-docs`, y esa es la URL que va en `VITE_API_URL` (dashboard/GitHub Pages) y
+   `EXPO_PUBLIC_API_URL` (móvil, ver `mobile/eas.json`).
 
 ## Usar Supabase como Postgres
 

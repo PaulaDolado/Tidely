@@ -42,30 +42,24 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: life-organizer-api/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: life-organizer-api
         run: npm ci
 
       - name: Generate Prisma Client
-        working-directory: life-organizer-api
         run: npx prisma generate
 
       - name: Lint
-        working-directory: life-organizer-api
         run: npm run lint
 
       - name: Typecheck
-        working-directory: life-organizer-api
         run: npx tsc --noEmit
 
       - name: Run database migrations
-        working-directory: life-organizer-api
         run: npx prisma migrate deploy
 
       - name: Run tests with coverage
-        working-directory: life-organizer-api
         run: npm run test:coverage
 
       - name: Upload coverage report
@@ -73,7 +67,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: life-organizer-api/coverage/
+          path: coverage/
           retention-days: 14
 
   build:
@@ -86,18 +80,15 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: life-organizer-api/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: life-organizer-api
         run: npm ci
 
       - name: Generate Prisma Client
-        working-directory: life-organizer-api
         run: npx prisma generate
 
       - name: Build API
-        working-directory: life-organizer-api
         run: npm run build
 
   build-dashboard:
@@ -109,14 +100,14 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: life-organizer-api/dashboard/package-lock.json
+          cache-dependency-path: dashboard/package-lock.json
 
       - name: Install dependencies
-        working-directory: life-organizer-api/dashboard
+        working-directory: dashboard
         run: npm ci
 
       - name: Build dashboard
-        working-directory: life-organizer-api/dashboard
+        working-directory: dashboard
         env:
           VITE_API_URL: https://placeholder.example.com
         run: npm run build

@@ -1,0 +1,72 @@
+# Publica dashboard/ (el frontend web, Vite + React) en GitHub Pages en cada push a main/master.
+# Solo el DASHBOARD — GitHub Pages sirve archivos estáticos, no puede ejecutar la API (src/), que
+# necesita un host con Node de verdad (Render/Railway, ver DEPLOYMENT.md).
+#
+# Requiere, una vez, en el repo de GitHub:
+#   1. Settings → Pages → Build and deployment → Source: "GitHub Actions" (si no, el primer
+#      deploy falla con "Pages site not found" aunque el workflow termine bien).
+#   2. Settings → Secrets and variables → Actions → pestaña "Variables" → New repository variable
+#      VITE_API_URL = https://<tu-backend>.onrender.com (la URL del backend ya desplegado, ver
+#      DEPLOYMENT.md). No es un secreto (queda visible en el JS del build igualmente, como
+#      cualquier VITE_* — ver dashboard/src/api/client.ts), así que va como variable, no secret.
+name: Deploy dashboard a GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Evita que dos publicaciones se pisen si hay pushes seguidos — la última gana, no se cancela a
+# medias (cancel-in-progress: false) para no dejar el site a medio publicar.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: dashboard
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          # "Project site" (no un <user>.github.io propio): sirve bajo /<repo>/, no en la raíz —
+          # ver el comentario junto a `base` en vite.config.ts.
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
