@@ -50,9 +50,10 @@ aplicado si sigues estos pasos en orden):
    arranque del contenedor (no hace falta Pre-Deploy Command aparte) — ya lo probamos a mano
    contra tu Supabase y las 26 migraciones se aplicaron sin problema, así que el primer deploy
    debería arrancar limpio.
-4. Render asigna una URL tipo `https://tidely-api.onrender.com`. Prueba `/health` y `/api-docs`,
-   y esa es la URL que va en `VITE_API_URL` (dashboard/GitHub Pages) y `EXPO_PUBLIC_API_URL`
-   (móvil, ver `mobile/eas.json`).
+4. Render asigna una URL (con un sufijo si el nombre ya estaba cogido — la nuestra quedó en
+   `https://tidely-api-pa09.onrender.com`). Prueba `/health` y `/api-docs`, y esa es la URL que
+   va en `VITE_API_URL` (dashboard/GitHub Pages) y `EXPO_PUBLIC_API_URL` (móvil, ya puesta en
+   `mobile/eas.json`).
 
 ## Usar Supabase como Postgres
 

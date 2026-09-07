@@ -15,13 +15,13 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REEMPLAZA-CON-TU-BACKEND.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://tidely-api-pa09.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REEMPLAZA-CON-TU-BACKEND.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://tidely-api-pa09.onrender.com"
       }
     }
   },
