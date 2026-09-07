@@ -1,4 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+// `||`, no `??`: si VITE_API_URL llega como string VACÍO en tiempo de build (p.ej. una variable
+// de repo de GitHub Actions que todavía no existía cuando corrió el workflow, ver
+// .github/workflows/deploy-pages.yml) queda "" congelado en el bundle — `??` solo cae al default
+// con `null`/`undefined`, así que "" se habría quedado tal cual, convirtiendo cada petición en
+// relativa contra el propio origen del sitio estático (`fetch("/auth/login")` en vez de contra la
+// API real) y fallando con 405 en vez de con un error de red claro.
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 export class ApiError extends Error {
   constructor(
