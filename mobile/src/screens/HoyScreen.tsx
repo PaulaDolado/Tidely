@@ -47,7 +47,7 @@ function getSectionStyle(type: SectionType) {
         borderWidth: 1.5,
         titleColor: colors.habit,
       };
-    case "notes":
+    case "notes": 
       // En web: border-warning/30 bg-warning/10 text-warning
       return {
         backgroundColor: "rgba(200, 123, 0, 0.1)", // warning 10%

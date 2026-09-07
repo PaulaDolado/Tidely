@@ -50,11 +50,13 @@ export interface NotaContent {
 }
 
 // Propiedades personalizadas de un tablero kanban (CustomFieldDef/CustomFieldValues en
-// dashboard/src/types.ts) — el móvil no tiene UI para crearlas/editarlas todavía (ver
-// PaginaDetailScreen.tsx), pero se preservan tal cual al guardar para no perder las que ya se
-// hubieran creado desde la web: el PUT sustituye el `content` entero (ver
-// src/services/customPagesService.ts), así que cualquier campo que el móvil no toque hay que
-// mantenerlo en el objeto que se manda de vuelta.
+// dashboard/src/types.ts) — mismo concepto que PlannerField en api/planner.ts, pero aquí `id` es
+// un uuid generado en el cliente (expo-crypto), no un id entero de servidor: no tienen tabla ni
+// API propia, viven tal cual dentro del JSON de `content` (ver PaginaDetailScreen.tsx, sección
+// "Propiedades personalizadas" del kanban, para la UI de crearlas/editarlas). El PUT sustituye el
+// `content` entero (ver src/services/customPagesService.ts), así que hay que mandar siempre
+// `fieldDefs` y `card.fields` de vuelta junto con `columns` para no perder lo que ya hubiera
+// (creado desde la web o desde el propio móvil).
 export type CustomFieldType = "text" | "number" | "date" | "select";
 export interface CustomFieldDef {
   id: string;

@@ -431,31 +431,54 @@ export function AppShell({
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl px-1 text-sm">
-                  <button
-                    onClick={() => setProfileOpen(true)}
-                    title="Editar perfil"
-                    className="min-w-0 flex-1 cursor-pointer text-left text-muted-foreground hover:text-foreground"
-                  >
-                    <span className="block truncate">{user?.name}</span>
-                    {/* Refleja al instante cualquier cambio guardado en el diálogo de perfil,
-                        porque ambos leen el mismo `user` del contexto (ver ProfileDialog). */}
-                    {user?.username && (
-                      <span className="block truncate text-xs opacity-70">
-                        @{user.username}
-                        {user.emailVerified === false && (
-                          <span title="Email sin verificar — revisa tu perfil" className="ml-1">
-                            ⚠️
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={logout}
-                    className="shrink-0 cursor-pointer text-xs font-medium text-muted-foreground hover:text-destructive"
-                  >
-                    Salir
-                  </button>
+                  {/* El nombre sigue abriendo el editor de perfil al clicar — "Cerrar sesión" ya
+                      no vive al lado como botón fijo, sino en un popover que aparece ARRIBA al
+                      pasar el ratón por encima del nombre (mismo `group`/`group-hover` que el
+                      popover de descarga de al lado). Vive dentro del mismo contenedor `group`
+                      que el propio disparador (no como hermano suelto) para que mover el ratón
+                      del nombre al popover no rompa el hover: un descendiente absolutamente
+                      posicionado sigue contando como "dentro" del `group` a efectos de :hover
+                      aunque se dibuje fuera de su caja en el layout normal. */}
+                  <div className="group relative min-w-0 flex-1">
+                    <button
+                      onClick={() => setProfileOpen(true)}
+                      title="Editar perfil"
+                      className="min-w-0 w-full cursor-pointer text-left text-muted-foreground hover:text-foreground"
+                    >
+                      <span className="block truncate">{user?.name}</span>
+                      {/* Refleja al instante cualquier cambio guardado en el diálogo de perfil,
+                          porque ambos leen el mismo `user` del contexto (ver ProfileDialog). */}
+                      {user?.username && (
+                        <span className="block truncate text-xs opacity-70">
+                          @{user.username}
+                          {user.emailVerified === false && (
+                            <span title="Email sin verificar — revisa tu perfil" className="ml-1">
+                              ⚠️
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </button>
+                    {/* `pb-1` (padding), no `mb-1` (margin): un margen deja un hueco muerto entre
+                        el botón y el popover que no pertenece a la caja de NINGÚN elemento — el
+                        ratón "sale" de todo lo hoverable al cruzarlo y el popover se cierra antes
+                        de llegar a él. El padding, en cambio, sigue formando parte de la caja de
+                        este div (que ya está dentro del `group`), así que el hover no se corta. */}
+                    <div className="invisible absolute bottom-full left-0 z-10 pb-1 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100">
+                      <button
+                        onClick={logout}
+                        className="cursor-pointer whitespace-nowrap rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-[var(--shadow-soft)] hover:text-destructive"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* El antiguo botón "Salir" de aquí al lado pasa a ser este icono de descarga
+                      — la app todavía no existe como descargable, así que de momento solo es un
+                      menú informativo (móvil/escritorio) sin ningún enlace real; ver
+                      DownloadAppMenu más abajo. */}
+                  <DownloadAppMenu />
                 </div>
               </div>
             </aside>
@@ -577,6 +600,52 @@ export function AppShell({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Icono de descarga junto al nombre de usuario (donde antes vivía el botón "Salir"): al pasar el
+ * ratón por encima despliega un popover con las dos variantes futuras de la app (móvil/
+ * escritorio). Ninguna tiene todavía enlace real — la app nativa no existe aún — así que ambas
+ * opciones están deshabilitadas y solo informan de que están "Próximamente"; cuando exista un
+ * build descargable basta con quitar `disabled` y añadir el `href`/`onClick` real de cada una.
+ */
+function DownloadAppMenu() {
+  return (
+    <div className="group relative shrink-0">
+      <button
+        title="Descargar la aplicación"
+        className="cursor-pointer rounded-full p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {/* Icono clásico de descarga (bandeja + flecha), mismo trazo que el resto de iconos
+            outline del proyecto — no hay librería de iconos instalada, así que va inline. */}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="size-4">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+        </svg>
+      </button>
+      {/* A la derecha del icono (no arriba): el icono vive en la esquina de la barra lateral, con
+          poco margen por encima, así que un popover hacia arriba quedaría muy pegado al borde. */}
+      {/* `pl-1` (padding), no `ml-1` (margin) — mismo motivo que el popover de "Cerrar sesión":
+          un margen deja un hueco muerto que rompe el hover al cruzarlo hacia el popover. */}
+      <div className="invisible absolute bottom-0 left-full z-10 w-48 space-y-1 rounded-2xl border border-border bg-card py-2 pl-3 pr-2 opacity-0 shadow-[var(--shadow-soft)] transition-opacity group-hover:visible group-hover:opacity-100">
+        <p className="px-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Descargar app</p>
+        <button
+          disabled
+          title="Próximamente"
+          className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
+        >
+          📱 Aplicación móvil
+        </button>
+        <button
+          disabled
+          title="Próximamente"
+          className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
+        >
+          🖥️ Aplicación de escritorio
+        </button>
+        <p className="px-2 pb-1 text-[10px] text-muted-foreground">Próximamente — aún sin build descargable</p>
+      </div>
     </div>
   );
 }

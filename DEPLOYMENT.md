@@ -74,11 +74,25 @@ Railway/Render crean por defecto.
 
 - **Swagger**: `https://<tu-url>/api-docs`
 - **Health check**: `https://<tu-url>/health`
-- **Seed de datos demo** (opcional, para tener una cuenta de prueba): corre una vez apuntando `DATABASE_URL` a producción:
+- **Seed de datos demo** (opcional, para tener una cuenta de prueba): corre apuntando `DATABASE_URL` a producción (o a cualquier otra máquina donde quieras la misma cuenta demo):
   ```bash
-  DATABASE_URL="<url-de-produccion>" npm run prisma:seed
+  DATABASE_URL="<url-de-destino>" npm run prisma:seed
   ```
-  Crea `demo@lifeorganizer.dev` / `Password123` con un par de eventos de ejemplo.
+  Crea o **reinicia por completo** `demo@lifeorganizer.dev` / `Password123` con TODO lo que hubiera
+  en `prisma/fixtures/demoUser.json` — agenda, planificador (con sus propiedades personalizadas),
+  páginas personalizadas, proyectos, objetivos, finanzas, horario, hábitos, notas y leyenda del
+  calendario anual. Es idempotente (borra y recrea), así que correrlo varias veces no acumula
+  datos duplicados.
+
+  Ese fichero es un snapshot que se genera aparte, normalmente desde tu Postgres local, con:
+  ```bash
+  npm run prisma:export-demo
+  ```
+  Commitéalo (`git add prisma/fixtures/demoUser.json`) y en cualquier otra máquina que haga
+  `git pull` + `npm run prisma:seed` la cuenta demo quedará igual que en la tuya — así es como
+  "otro ordenador" o el móvil (que habla con el backend de esa otra máquina) terminan viendo los
+  mismos datos. Ver el comentario de cabecera de `prisma/exportDemoUser.ts` para el detalle de qué
+  se exporta y qué no (las credenciales de Google Calendar, entre otras cosas, nunca se copian).
 - **CI**: cada push a `main`/`master` corre lint + typecheck + tests (con Postgres real en un contenedor) vía [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Ese workflow no despliega nada — solo verifica que el código esté sano antes de mergear. Si quieres deploy automático en cada push, tanto Railway como Render lo hacen solos en cuanto conectas el repo (no necesitas un paso extra en GitHub Actions para eso).
 
 ## Variables de entorno de producción (checklist)

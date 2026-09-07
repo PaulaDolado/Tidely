@@ -1,0 +1,2309 @@
+{
+  "exportedAt": "2026-09-07T07:17:25.735Z",
+  "user": {
+    "email": "demo@lifeorganizer.dev",
+    "username": "demo",
+    "name": "Usuario Demo",
+    "lastName": null,
+    "timezone": "Europe/Madrid"
+  },
+  "events": [
+    {
+      "id": 30,
+      "title": "Espalda+Biceps",
+      "description": null,
+      "type": "gym",
+      "startTime": "2026-08-25T15:30:00.000Z",
+      "endTime": "2026-08-25T16:30:00.000Z",
+      "location": null,
+      "isRecurring": true,
+      "recurringPattern": "weekly",
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        30
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 31,
+      "title": "Pierna",
+      "description": null,
+      "type": "gym",
+      "startTime": "2026-08-26T15:30:00.000Z",
+      "endTime": "2026-08-26T16:35:00.000Z",
+      "location": null,
+      "isRecurring": true,
+      "recurringPattern": "weekly",
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        30,
+        60
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 32,
+      "title": "Glúteo",
+      "description": null,
+      "type": "gym",
+      "startTime": "2026-08-24T15:30:00.000Z",
+      "endTime": "2026-08-24T16:30:00.000Z",
+      "location": null,
+      "isRecurring": true,
+      "recurringPattern": "weekly",
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        30
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 33,
+      "title": "Tricpes+Pecho+Hombro",
+      "description": null,
+      "type": "gym",
+      "startTime": "2026-09-03T15:30:00.000Z",
+      "endTime": "2026-09-03T16:30:00.000Z",
+      "location": null,
+      "isRecurring": true,
+      "recurringPattern": "weekly",
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        30
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 34,
+      "title": "Dia extra Pierna",
+      "description": null,
+      "type": "gym",
+      "startTime": "2026-08-30T15:30:00.000Z",
+      "endTime": "2026-08-30T16:30:00.000Z",
+      "location": null,
+      "isRecurring": false,
+      "recurringPattern": null,
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        30
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 35,
+      "title": "Tarta Alexandra",
+      "description": null,
+      "type": "free",
+      "startTime": "2026-08-28T22:00:00.000Z",
+      "endTime": "2026-08-28T23:00:00.000Z",
+      "location": null,
+      "isRecurring": false,
+      "recurringPattern": null,
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        15,
+        30
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 36,
+      "title": "Vestido Ainhoa",
+      "description": null,
+      "type": "free",
+      "startTime": "2026-08-28T19:30:00.000Z",
+      "endTime": "2026-08-28T19:50:00.000Z",
+      "location": null,
+      "isRecurring": false,
+      "recurringPattern": null,
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [
+        30
+      ],
+      "guests": [],
+      "source": "tidely"
+    },
+    {
+      "id": 37,
+      "title": "Trabajo",
+      "description": null,
+      "type": "work",
+      "startTime": "2026-08-31T06:15:00.000Z",
+      "endTime": "2026-08-31T14:45:00.000Z",
+      "location": null,
+      "isRecurring": true,
+      "recurringPattern": "daily",
+      "recurringWeekdayStart": null,
+      "recurringWeekdayEnd": null,
+      "reminderMinutesBefore": [],
+      "guests": [],
+      "source": "tidely"
+    }
+  ],
+  "eventExceptions": [
+    {
+      "eventId": 37,
+      "originalStartTime": "2026-09-04T06:15:00.000Z",
+      "status": "moved",
+      "newStartTime": "2026-09-04T06:15:00.000Z",
+      "newEndTime": "2026-09-04T14:45:00.000Z"
+    }
+  ],
+  "goals": [
+    {
+      "id": 21,
+      "title": "leer",
+      "description": null,
+      "period": "weekly",
+      "targetValue": 5,
+      "currentValue": 0,
+      "completed": false,
+      "bonusPoints": 10,
+      "periodStart": "2026-09-03T13:17:47.916Z",
+      "periodEnd": "2026-09-06T21:59:59.999Z",
+      "expired": true,
+      "autoRenew": true
+    },
+    {
+      "id": 22,
+      "title": "leer",
+      "description": null,
+      "period": "weekly",
+      "targetValue": 5,
+      "currentValue": 0,
+      "completed": false,
+      "bonusPoints": 10,
+      "periodStart": "2026-09-06T21:59:59.999Z",
+      "periodEnd": "2026-09-13T21:59:59.999Z",
+      "expired": false,
+      "autoRenew": true
+    }
+  ],
+  "goalProgress": [],
+  "transactions": [
+    {
+      "type": "income",
+      "amount": "100",
+      "category": "ahorro-coche",
+      "description": "Aporte a meta de ahorro: coche",
+      "date": "2026-09-03T07:20:15.316Z"
+    },
+    {
+      "type": "expense",
+      "amount": "100",
+      "category": "ahorro-coche",
+      "description": "Aporte a meta de ahorro: coche",
+      "date": "2026-09-03T07:20:57.643Z"
+    }
+  ],
+  "savingsGoals": [
+    {
+      "name": "coche",
+      "type": "ahorro",
+      "targetAmount": "8000",
+      "currentAmount": "0",
+      "category": "ahorro-coche",
+      "stepAmount": "100",
+      "deadline": null
+    },
+    {
+      "name": "casa",
+      "type": "ahorro",
+      "targetAmount": "30000",
+      "currentAmount": "0",
+      "category": "ahorro-casa",
+      "stepAmount": "100",
+      "deadline": null
+    },
+    {
+      "name": "carnet coche",
+      "type": "ahorro",
+      "targetAmount": "1000",
+      "currentAmount": "0",
+      "category": "ahorro-carnet-coche",
+      "stepAmount": "100",
+      "deadline": null
+    }
+  ],
+  "projects": [
+    {
+      "id": 30,
+      "title": "test",
+      "description": "test1",
+      "status": "idea",
+      "priority": "medium",
+      "deadline": null
+    },
+    {
+      "id": 31,
+      "title": "test2",
+      "description": "test22",
+      "status": "idea",
+      "priority": "medium",
+      "deadline": null
+    },
+    {
+      "id": 32,
+      "title": "test3",
+      "description": "test33",
+      "status": "en_curso",
+      "priority": "medium",
+      "deadline": null
+    }
+  ],
+  "projectPages": [
+    {
+      "projectId": 30,
+      "title": "Página 1",
+      "content": "",
+      "order": 0
+    },
+    {
+      "projectId": 32,
+      "title": "Página 1",
+      "content": "<br>",
+      "order": 0
+    },
+    {
+      "projectId": 32,
+      "title": "Página 2",
+      "content": "",
+      "order": 1
+    }
+  ],
+  "projectTasks": [
+    {
+      "projectId": 30,
+      "title": "test1",
+      "completed": false,
+      "completedAt": null
+    },
+    {
+      "projectId": 31,
+      "title": "test22",
+      "completed": false,
+      "completedAt": null
+    }
+  ],
+  "planners": [
+    {
+      "id": 11,
+      "name": "Planificador",
+      "order": 0
+    }
+  ],
+  "plannerFields": [],
+  "tasks": [
+    {
+      "id": 22,
+      "plannerId": 11,
+      "projectId": null,
+      "title": "Electronic Sample Report",
+      "description": "Modificación campos PDF generado",
+      "image": null,
+      "notes": null,
+      "status": "todo",
+      "priority": "low",
+      "order": 1000,
+      "dueDate": null,
+      "tags": [],
+      "estimatedMinutes": 60,
+      "actualMinutes": 0,
+      "customFields": {}
+    }
+  ],
+  "subtasks": [],
+  "notes": [
+    {
+      "content": "08sWpTX7h2Q3otRj",
+      "checked": false
+    }
+  ],
+  "habits": [
+    {
+      "id": 14,
+      "title": "Beber agua",
+      "active": true
+    },
+    {
+      "id": 15,
+      "title": "Creatina",
+      "active": true
+    },
+    {
+      "id": 16,
+      "title": "Dormir 8h",
+      "active": true
+    },
+    {
+      "id": 17,
+      "title": "Leer",
+      "active": true
+    }
+  ],
+  "habitLogs": [
+    {
+      "habitId": 14,
+      "date": "2026-08-23T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-08-24T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-08-25T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-08-23T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-08-24T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-08-25T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-08-23T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-08-24T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-08-25T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-08-23T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-08-24T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-08-25T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-09-04T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-09-04T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-09-04T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-09-04T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-09-03T00:00:00.000Z"
+    },
+    {
+      "habitId": 14,
+      "date": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "habitId": 15,
+      "date": "2026-09-03T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "habitId": 16,
+      "date": "2026-09-03T00:00:00.000Z"
+    },
+    {
+      "habitId": 17,
+      "date": "2026-09-03T00:00:00.000Z"
+    }
+  ],
+  "customPages": [
+    {
+      "title": "Galería",
+      "subtitle": null,
+      "template": "galeria",
+      "order": 2,
+      "content": {
+        "items": [
+          {
+            "id": "340bc6eb-2a12-413e-a2f2-6c0018d6849c"
+          },
+          {
+            "id": "b7783166-e120-4180-be1d-54d6c1efbfb8"
+          },
+          {
+            "id": "b4940cf3-9f38-41bd-8c47-9a73ed100fff"
+          },
+          {
+            "id": "5b6383db-075b-49c6-823b-57a12acbd845"
+          },
+          {
+            "id": "db607c13-b4ac-420a-9543-693529d90af8"
+          }
+        ]
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "id": 8,
+      "name": "1 Trimestre",
+      "order": 0
+    },
+    {
+      "id": 9,
+      "name": "2 Trimestre",
+      "order": 1
+    },
+    {
+      "id": 10,
+      "name": "3 Trimestre",
+      "order": 2
+    }
+  ],
+  "scheduleRows": [
+    {
+      "scheduleId": 8,
+      "order": 0,
+      "timeLabel": "08:15-10:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "LABORATORI DE SOFTWARE II",
+      "thursday": "COMUNICACIÓ CORPORATIVA I MÀ INTERNET",
+      "friday": "GESTIÓ DE PROJECTES INFORMÀTICS"
+    },
+    {
+      "scheduleId": 8,
+      "order": 1,
+      "timeLabel": "10:15-12:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "LABORATORI DE SOFTWARE II",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 8,
+      "order": 2,
+      "timeLabel": "12:15-13:00",
+      "monday": "LABORATORI D'APLICACIONS INT",
+      "tuesday": "",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 8,
+      "order": 3,
+      "timeLabel": "13:00-14:00",
+      "monday": "LABORATORI D'APLICACIONS INT",
+      "tuesday": "",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 9,
+      "order": 0,
+      "timeLabel": "08:00-10:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "DISSENY DE SISTEMES D'INFORMACIÓ",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 9,
+      "order": 1,
+      "timeLabel": "10:15-12:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 9,
+      "order": 2,
+      "timeLabel": "12:15-13:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 9,
+      "order": 3,
+      "timeLabel": "13:15-14:00",
+      "monday": "",
+      "tuesday": "\n",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 10,
+      "order": 0,
+      "timeLabel": "08:00-10:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 10,
+      "order": 1,
+      "timeLabel": "10:15-12:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 10,
+      "order": 2,
+      "timeLabel": "12:15-13:00",
+      "monday": "",
+      "tuesday": "",
+      "wednesday": "GESTIÓ DE SISTEMES D'INFORMACIÓ",
+      "thursday": "",
+      "friday": ""
+    },
+    {
+      "scheduleId": 10,
+      "order": 3,
+      "timeLabel": "13:15-14:00",
+      "monday": "",
+      "tuesday": "ENGINYERIA DE SOFTWARE III",
+      "wednesday": "",
+      "thursday": "",
+      "friday": ""
+    }
+  ],
+  "calendarLegendCategories": [
+    {
+      "id": 10,
+      "label": "Festivos i Fin de semama",
+      "color": "muted",
+      "order": 0
+    },
+    {
+      "id": 11,
+      "label": "Curso",
+      "color": "habit",
+      "order": 1
+    },
+    {
+      "id": 12,
+      "label": "Graduación",
+      "color": "hobby",
+      "order": 2
+    },
+    {
+      "id": 13,
+      "label": "Vacaciones",
+      "color": "warning",
+      "order": 3
+    },
+    {
+      "id": 14,
+      "label": "Avaluación",
+      "color": "negative",
+      "order": 4
+    },
+    {
+      "id": 15,
+      "label": "Recuperación",
+      "color": "primary",
+      "order": 5
+    }
+  ],
+  "calendarDayMarks": [
+    {
+      "categoryId": 10,
+      "date": "2025-09-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-09-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-10-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-11-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2025-12-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-01-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-02-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-03-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-04-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-07-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-08-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-06-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-05-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-03-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-02-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-11-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-09-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-09-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-09-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-10-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-10-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-11-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-12-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-12-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-12-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2026-12-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-12-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-04-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-01-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-05-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-06-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 12,
+      "date": "2027-07-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 12,
+      "date": "2027-07-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 12,
+      "date": "2027-07-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 12,
+      "date": "2027-07-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2026-12-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-04-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-04-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-03-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 14,
+      "date": "2027-06-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2027-07-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-05-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-01-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-01-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-01-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-31T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2026-12-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-03-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-03-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-03-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-03-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-03-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 13,
+      "date": "2027-03-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 15,
+      "date": "2027-04-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 15,
+      "date": "2027-04-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 15,
+      "date": "2027-01-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 15,
+      "date": "2027-01-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 15,
+      "date": "2027-07-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 15,
+      "date": "2027-07-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-06-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-23T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-17T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-24T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-02-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-27T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-26T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-18T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-01-25T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-04T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-03T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-02T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-01T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-10T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-03-11T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-05T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-12T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-19T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-20T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-13T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-06T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-07T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-14T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-21T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-28T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-29T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-30T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-22T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-15T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-08T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-09T00:00:00.000Z"
+    },
+    {
+      "categoryId": 11,
+      "date": "2027-04-16T00:00:00.000Z"
+    },
+    {
+      "categoryId": 10,
+      "date": "2026-09-11T00:00:00.000Z"
+    }
+  ]
+}

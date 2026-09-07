@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:export-demo": "ts-node prisma/exportDemoUser.ts",
     "prisma:studio": "prisma studio",
     "postinstall": "prisma generate"
   },

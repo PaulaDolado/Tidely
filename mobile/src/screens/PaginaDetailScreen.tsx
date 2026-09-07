@@ -11,6 +11,9 @@ import {
   AgendaNote,
   ChecklistContent,
   ChecklistItem,
+  CustomFieldDef,
+  CustomFieldType,
+  CustomFieldValue,
   CustomPage,
   deleteCustomPage,
   FinanceContent,
@@ -41,10 +44,12 @@ import { PaginasStackParamList } from "./PaginasScreen";
 // kanban, galería, finanzas, checklist, objetivos), que guardan de inmediato como ya hacía kanban/
 // galería, no al perder el foco de un campo de texto libre. "Nota" se edita como texto plano, no
 // con el editor enriquecido de la web (ver utils/htmlText.ts): no hay ninguna librería de rich
-// text en package.json. "Kanban" no tiene ni imagen por tarjeta ni gestión de propiedades
-// personalizadas (`fieldDefs`/`fields`) — se preservan tal cual si ya existían (creadas desde la
-// web) pero no se pueden crear/editar desde aquí; mover una tarjeta es tocarla y elegir columna en
-// el diálogo, no arrastrar (no hay gesture-handler/reanimated instalado). "Finanzas"/"Objetivos"
+// text en package.json. "Kanban" no tiene imagen por tarjeta (se preserva tal cual si ya existía,
+// creada desde la web, pero no se puede añadir/cambiar desde aquí); mover una tarjeta es tocarla y
+// elegir columna en el diálogo, no arrastrar (no hay gesture-handler/reanimated instalado). Sí
+// tiene gestión de propiedades personalizadas (`fieldDefs`/`card.fields`, ver KanbanBoard más
+// abajo) — mismo concepto que en Planificador (PlannerField), pero aquí vive como JSON de cliente
+// dentro de `content` en vez de en su propia tabla (ver api/customPages.ts). "Finanzas"/"Objetivos"
 // (plantilla) son independientes de las secciones Finanzas/Objetivos de la app: solo tocan el
 // `content` JSON de esta página, no Transaction/Goal reales.
 
@@ -508,15 +513,24 @@ const KANBAN_COLUMN_STYLES: { box: { borderColor: string; backgroundColor: strin
   { box: { borderColor: "rgba(95, 113, 97, 0.3)", backgroundColor: "rgba(95, 113, 97, 0.1)" }, header: colors.positive },
 ];
 
+// Mismas etiquetas que FIELD_TYPE_LABELS en dashboard/src/pages/CustomPagePage.tsx (y en
+// PlanificadorScreen.tsx, que porta el mismo concepto para el Planificador).
+const FIELD_TYPE_LABELS: Record<CustomFieldType, string> = { text: "Texto", number: "Número", date: "Fecha", select: "Selección" };
+const FIELD_TYPES: CustomFieldType[] = ["text", "number", "date", "select"];
+
 // Tablero kanban — puerto simplificado de la sección Kanban en dashboard/src/pages/
 // CustomPagePage.tsx: columnas dinámicas con tarjetas, pero sin arrastrar (mover una tarjeta es
-// abrirla y elegir columna en el diálogo, ver KanbanCardForm) y sin gestión de propiedades
-// personalizadas (`fieldDefs`) — esas se preservan si ya existían, pero no se pueden crear/editar
-// desde aquí.
+// abrirla y elegir columna en el diálogo, ver KanbanCardForm) ni imagen por tarjeta. Sí tiene
+// gestión de propiedades personalizadas (`content.fieldDefs`, texto/número/fecha/selección) — el
+// mismo concepto que CustomFieldDef en la web, guardado como JSON de cliente dentro de `content`
+// (ver api/customPages.ts): `onChange` sustituye el `content` entero en cada cambio (columnas,
+// fieldDefs o los `fields` de una tarjeta), igual que ya hacía antes de esta sección.
 function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: (next: KanbanContent) => Promise<void> }) {
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState("");
   const [editingCard, setEditingCard] = useState<{ columnId: string; card: KanbanCard } | null>(null);
+  const [managingFields, setManagingFields] = useState(false);
+  const fieldDefs = content.fieldDefs ?? [];
 
   const addColumn = async () => {
     const title = newColumnTitle.trim();
@@ -525,6 +539,42 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
     await onChange({ ...content, columns: [...content.columns, column] });
     setNewColumnTitle("");
     setAddingColumn(false);
+  };
+
+  const addFieldDef = async (name: string, type: CustomFieldType, options?: string[]) => {
+    const field: CustomFieldDef = { id: Crypto.randomUUID(), name, type, options };
+    await onChange({ ...content, fieldDefs: [...fieldDefs, field] });
+  };
+
+  const renameFieldDef = async (fieldId: string, name: string) => {
+    await onChange({ ...content, fieldDefs: fieldDefs.map((f) => (f.id === fieldId ? { ...f, name } : f)) });
+  };
+
+  const removeFieldDef = async (fieldId: string) => {
+    await onChange({ ...content, fieldDefs: fieldDefs.filter((f) => f.id !== fieldId) });
+  };
+
+  const moveFieldDef = async (fieldId: string, direction: "up" | "down") => {
+    const index = fieldDefs.findIndex((f) => f.id === fieldId);
+    const swapWith = direction === "up" ? index - 1 : index + 1;
+    if (index === -1 || swapWith < 0 || swapWith >= fieldDefs.length) return;
+    const next = [...fieldDefs];
+    [next[index], next[swapWith]] = [next[swapWith], next[index]];
+    await onChange({ ...content, fieldDefs: next });
+  };
+
+  // Un solo valor de propiedad personalizada de UNA tarjeta — a diferencia de updateCard (que
+  // sustituye texto/descripción/notas al Guardar), este se llama al momento desde
+  // CustomFieldValueEditor, sin esperar a ningún botón.
+  const updateCardField = async (columnId: string, cardId: string, fieldId: string, value: CustomFieldValue) => {
+    await onChange({
+      ...content,
+      columns: content.columns.map((c) =>
+        c.id !== columnId
+          ? c
+          : { ...c, cards: c.cards.map((card) => (card.id === cardId ? { ...card, fields: { ...(card.fields ?? {}), [fieldId]: value } } : card)) }
+      ),
+    });
   };
 
   // Sin confirmación de por medio, aunque tenga tarjetas — mismo criterio ya establecido en el
@@ -579,6 +629,13 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
 
   return (
     <View style={{ gap: 16 }}>
+      {/* Propiedades personalizadas del TABLERO — mismo lugar que "+ Propiedad" en la cabecera de
+          la página en dashboard/src/pages/CustomPagePage.tsx, aquí como botón suelto encima de las
+          columnas (esta pantalla no tiene una barra de acciones de cabecera propia del kanban). */}
+      <Pressable style={styles.manageFieldsButton} onPress={() => setManagingFields(true)}>
+        <Text style={styles.manageFieldsButtonText}>Propiedades personalizadas</Text>
+      </Pressable>
+
       {content.columns.length === 0 && <Text style={styles.emptyText}>Sin columnas todavía.</Text>}
 
       {content.columns.map((column, index) => (
@@ -631,6 +688,7 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
                 card={editingCard.card}
                 columns={content.columns}
                 currentColumnId={editingCard.columnId}
+                fieldDefs={fieldDefs}
                 onSave={async (patch) => {
                   await updateCard(editingCard.columnId, editingCard.card.id, patch);
                   setEditingCard(null);
@@ -643,12 +701,288 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
                   await removeCard(editingCard.columnId, editingCard.card.id);
                   setEditingCard(null);
                 }}
+                onFieldUpdate={(fieldId, value) => updateCardField(editingCard.columnId, editingCard.card.id, fieldId, value)}
+                onAddFieldDef={addFieldDef}
                 onClose={() => setEditingCard(null)}
               />
             )}
           </View>
         </View>
       </Modal>
+
+      <Modal visible={managingFields} animationType="slide" transparent onRequestClose={() => setManagingFields(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <KanbanFieldsManager
+              fieldDefs={fieldDefs}
+              onAdd={addFieldDef}
+              onRename={renameFieldDef}
+              onRemove={removeFieldDef}
+              onMove={moveFieldDef}
+              onClose={() => setManagingFields(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+/**
+ * Gestión de las propiedades personalizadas de ESTE tablero kanban (ver CustomFieldDef en
+ * api/customPages.ts): crear (nombre + tipo, y opciones si es "selección"), renombrar, reordenar y
+ * borrar — mismo concepto que PlannerFieldsDialog en la web/PlanificadorScreen.tsx, pero todo vive
+ * en `content.fieldDefs` (sin API propia) en vez de en su propia tabla, así que `onChange` de
+ * KanbanBoard sustituye la lista entera en cada cambio. Cambiar el TIPO de una propiedad ya creada
+ * no está soportado (igual que en Planificador) — hay que borrarla y crear otra.
+ */
+function KanbanFieldsManager({
+  fieldDefs,
+  onAdd,
+  onRename,
+  onRemove,
+  onMove,
+  onClose,
+}: {
+  fieldDefs: CustomFieldDef[];
+  onAdd: (name: string, type: CustomFieldType, options?: string[]) => Promise<void>;
+  onRename: (fieldId: string, name: string) => Promise<void>;
+  onRemove: (fieldId: string) => Promise<void>;
+  onMove: (fieldId: string, direction: "up" | "down") => Promise<void>;
+  onClose: () => void;
+}) {
+  return (
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <Text style={styles.modalTitle}>Propiedades personalizadas</Text>
+      <Text style={styles.emptyText}>Añade tus propias propiedades a las tarjetas de este tablero: texto, número, fecha o selección.</Text>
+
+      {fieldDefs.length > 0 && (
+        <View style={{ marginTop: 12, marginBottom: 4 }}>
+          {fieldDefs.map((field, index) => (
+            <FieldDefRow
+              key={field.id}
+              field={field}
+              canMoveUp={index > 0}
+              canMoveDown={index < fieldDefs.length - 1}
+              onRename={(name) => onRename(field.id, name)}
+              onRemove={() => onRemove(field.id)}
+              onMoveUp={() => onMove(field.id, "up")}
+              onMoveDown={() => onMove(field.id, "down")}
+            />
+          ))}
+        </View>
+      )}
+
+      <View style={{ marginTop: 8 }}>
+        <AddFieldDefForm onAdd={onAdd} />
+      </View>
+
+      <Pressable style={styles.cancelButton} onPress={onClose}>
+        <Text style={styles.cancelButtonText}>Cerrar</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function FieldDefRow({
+  field,
+  canMoveUp,
+  canMoveDown,
+  onRename,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+}: {
+  field: CustomFieldDef;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onRename: (name: string) => void;
+  onRemove: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const [name, setName] = useState(field.name);
+
+  useEffect(() => {
+    setName(field.name);
+  }, [field.name]);
+
+  return (
+    <View style={styles.fieldRow}>
+      <TextInput
+        style={styles.fieldRowInput}
+        value={name}
+        onChangeText={setName}
+        onBlur={() => {
+          const trimmed = name.trim();
+          if (trimmed && trimmed !== field.name) onRename(trimmed);
+          else setName(field.name);
+        }}
+      />
+      <Text style={styles.fieldRowType}>{FIELD_TYPE_LABELS[field.type]}</Text>
+      <Pressable onPress={onMoveUp} disabled={!canMoveUp} hitSlop={6}>
+        <Text style={[styles.fieldRowAction, !canMoveUp && styles.fieldRowActionDisabled]}>↑</Text>
+      </Pressable>
+      <Pressable onPress={onMoveDown} disabled={!canMoveDown} hitSlop={6}>
+        <Text style={[styles.fieldRowAction, !canMoveDown && styles.fieldRowActionDisabled]}>↓</Text>
+      </Pressable>
+      <Pressable onPress={onRemove} hitSlop={6}>
+        <Text style={[styles.fieldRowAction, styles.fieldRowActionDelete]}>✕</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// Formulario compacto para crear una propiedad personalizada nueva — se usa tanto en
+// KanbanFieldsManager (la gestión completa) como plegado dentro de cada tarjeta (ver
+// InlineAddFieldDef/KanbanCardForm), mismo criterio que AddFieldForm/InlineAddField en
+// dashboard/src/pages/CustomPagePage.tsx.
+function AddFieldDefForm({ onAdd }: { onAdd: (name: string, type: CustomFieldType, options?: string[]) => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<CustomFieldType>("text");
+  const [optionsText, setOptionsText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const options = type === "select" ? optionsText.split(",").map((o) => o.trim()).filter(Boolean) : undefined;
+    setSaving(true);
+    await onAdd(trimmed, type, options);
+    setName("");
+    setOptionsText("");
+    setType("text");
+    setSaving(false);
+  };
+
+  return (
+    <View style={{ gap: 8 }}>
+      <TextInput style={styles.input} placeholder="Nombre de la propiedad" value={name} onChangeText={setName} />
+      <View style={styles.chipRow}>
+        {FIELD_TYPES.map((t) => (
+          <Pressable key={t} style={[styles.chip, type === t && styles.chipSelected]} onPress={() => setType(t)}>
+            <Text style={[styles.chipText, type === t && styles.chipTextSelected]}>{FIELD_TYPE_LABELS[t]}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {type === "select" && (
+        <TextInput style={styles.input} placeholder="Opciones separadas por coma" value={optionsText} onChangeText={setOptionsText} />
+      )}
+      <Pressable style={styles.saveButtonSmall} onPress={submit} disabled={saving}>
+        <Text style={styles.saveButtonSmallText}>+ Añadir propiedad</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// Disparador plegado de AddFieldDefForm — vive dentro de cada tarjeta (ver KanbanCardForm) para
+// poder crear una propiedad nueva sin salir de ahí, igual que InlineAddField en la web.
+function InlineAddFieldDef({ onAdd }: { onAdd: (name: string, type: CustomFieldType, options?: string[]) => Promise<void> }) {
+  const [adding, setAdding] = useState(false);
+
+  if (!adding) {
+    return (
+      <Pressable onPress={() => setAdding(true)}>
+        <Text style={styles.addCustomFieldText}>+ Añadir propiedad</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={styles.addColumnForm}>
+      <AddFieldDefForm
+        onAdd={async (name, type, options) => {
+          await onAdd(name, type, options);
+          setAdding(false);
+        }}
+      />
+      <Pressable onPress={() => setAdding(false)} style={{ marginTop: 8 }}>
+        <Text style={styles.cancelButtonText}>Cancelar</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// Editor del VALOR de una propiedad personalizada de una tarjeta concreta — mismo criterio de
+// commit que CustomFieldInput en dashboard/src/components/CustomFieldInput.tsx, pero adaptado a
+// controles nativos: texto/número esperan a perder el foco (borrador local, para no llamar a
+// onChange en cada tecla), fecha reutiliza el DateTimePicker nativo (mismo patrón que el resto de
+// fechas del móvil) y selección es una fila de chips con "Sin elegir" para quitar el valor.
+function CustomFieldValueEditor({
+  field,
+  value,
+  onChange,
+}: {
+  field: CustomFieldDef;
+  value: CustomFieldValue;
+  onChange: (value: CustomFieldValue) => void;
+}) {
+  const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
+  const [showPicker, setShowPicker] = useState(false);
+
+  useEffect(() => {
+    setDraft(value === null || value === undefined ? "" : String(value));
+  }, [value]);
+
+  const commitDraft = () => {
+    const trimmed = draft.trim();
+    if (field.type === "number") {
+      const n = Number(trimmed);
+      onChange(trimmed === "" || Number.isNaN(n) ? null : n);
+    } else {
+      onChange(trimmed === "" ? null : trimmed);
+    }
+  };
+
+  if (field.type === "text") {
+    return <TextInput style={styles.input} value={draft} onChangeText={setDraft} onBlur={commitDraft} />;
+  }
+
+  if (field.type === "number") {
+    return <TextInput style={styles.input} keyboardType="numeric" value={draft} onChangeText={setDraft} onBlur={commitDraft} />;
+  }
+
+  if (field.type === "date") {
+    return (
+      <View style={styles.dateRow}>
+        <Pressable style={styles.dateButton} onPress={() => setShowPicker(true)}>
+          <Text style={styles.dateButtonText}>{value ? new Date(String(value)).toLocaleDateString("es-ES") : "Sin fecha"}</Text>
+        </Pressable>
+        {value != null && (
+          <Pressable style={styles.clearDateButton} onPress={() => onChange(null)}>
+            <Text style={styles.clearDateButtonText}>Quitar</Text>
+          </Pressable>
+        )}
+        {showPicker && (
+          <DateTimePicker
+            value={value ? new Date(String(value)) : new Date()}
+            mode="date"
+            display={Platform.OS === "ios" ? "inline" : "default"}
+            onValueChange={(_event: DateTimePickerChangeEvent, selected: Date) => {
+              setShowPicker(false);
+              if (selected) onChange(selected.toISOString());
+            }}
+            onDismiss={() => setShowPicker(false)}
+          />
+        )}
+      </View>
+    );
+  }
+
+  // select
+  return (
+    <View style={styles.chipRow}>
+      <Pressable style={[styles.chip, value == null && styles.chipSelected]} onPress={() => onChange(null)}>
+        <Text style={[styles.chipText, value == null && styles.chipTextSelected]}>Sin elegir</Text>
+      </Pressable>
+      {(field.options ?? []).map((opt) => {
+        const selected = value === opt;
+        return (
+          <Pressable key={opt} style={[styles.chip, selected && styles.chipSelected]} onPress={() => onChange(opt)}>
+            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{opt}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -763,17 +1097,23 @@ function KanbanCardForm({
   card,
   columns,
   currentColumnId,
+  fieldDefs,
   onSave,
   onMove,
   onDelete,
+  onFieldUpdate,
+  onAddFieldDef,
   onClose,
 }: {
   card: KanbanCard;
   columns: KanbanColumn[];
   currentColumnId: string;
+  fieldDefs: CustomFieldDef[];
   onSave: (patch: Partial<KanbanCard>) => Promise<void>;
   onMove: (toColumnId: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  onFieldUpdate: (fieldId: string, value: CustomFieldValue) => Promise<void>;
+  onAddFieldDef: (name: string, type: CustomFieldType, options?: string[]) => Promise<void>;
   onClose: () => void;
 }) {
   const [text, setText] = useState(card.text);
@@ -824,6 +1164,25 @@ function KanbanCardForm({
           </View>
         </>
       )}
+
+      {/* Propiedades personalizadas de la tarjeta — una por cada CustomFieldDef del tablero, más
+          "+ Añadir propiedad" para crear una nueva sin salir de aquí (igual que "Propiedades
+          personalizadas" en la cabecera, ver KanbanFieldsManager). A diferencia de texto/
+          descripción/notas (que esperan a "Guardar"), cada cambio aquí se manda al momento. */}
+      <View style={styles.customFieldsSection}>
+        <Text style={styles.fieldLabel}>Propiedades personalizadas</Text>
+        {fieldDefs.map((field) => (
+          <View key={field.id} style={styles.customFieldBlock}>
+            <Text style={styles.customFieldLabel}>{field.name}</Text>
+            <CustomFieldValueEditor
+              field={field}
+              value={card.fields?.[field.id] ?? null}
+              onChange={(value) => onFieldUpdate(field.id, value)}
+            />
+          </View>
+        ))}
+        <InlineAddFieldDef onAdd={onAddFieldDef} />
+      </View>
 
       <Pressable style={styles.saveButton} onPress={submit} disabled={saving}>
         <Text style={styles.saveButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
@@ -1458,4 +1817,62 @@ const styles = StyleSheet.create({
   // rounded-full bg-secondary px-3 py-1 text-xs de la web.
   agendaDatePill: { backgroundColor: colors.secondary, borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
   agendaDatePillText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.secondaryForeground },
+
+  // ========== PROPIEDADES PERSONALIZADAS (Kanban) ==========
+  // "Propiedades personalizadas" en la cabecera del tablero — border border-border de la web para
+  // "+ Propiedad" en PlanificadorPage.tsx/CustomPagePage.tsx, aquí como botón de ancho propio.
+  manageFieldsButton: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.card,
+  },
+  manageFieldsButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+
+  // Fila de una propiedad en KanbanFieldsManager — mismo patrón que FieldRow en
+  // dashboard/src/pages/PlanificadorPage.tsx/CustomPagePage.tsx (nombre editable + badge de tipo +
+  // subir/bajar/eliminar).
+  fieldRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
+  fieldRowInput: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.foreground,
+    borderBottomWidth: 1,
+    borderBottomColor: "transparent",
+    paddingVertical: 2,
+  },
+  fieldRowType: {
+    fontFamily: fonts.sans,
+    fontSize: 10,
+    color: colors.mutedForeground,
+    backgroundColor: colors.muted,
+    borderRadius: radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  fieldRowAction: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.mutedForeground, padding: 4 },
+  fieldRowActionDisabled: { opacity: 0.3 },
+  fieldRowActionDelete: { color: colors.destructive },
+
+  // Sección de propiedades DENTRO de una tarjeta (ver KanbanCardForm) y su editor de valor por
+  // tipo — mismos nombres/criterio que la sección equivalente en PlanificadorScreen.tsx.
+  customFieldsSection: { marginBottom: 12, gap: 4 },
+  customFieldBlock: { marginBottom: 8 },
+  customFieldLabel: {
+    fontFamily: fonts.sansBold,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: colors.mutedForeground,
+    marginBottom: 4,
+  },
+  addCustomFieldText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground, marginTop: 4 },
+  dateRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  clearDateButton: { padding: 8 },
+  clearDateButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.destructive },
 });

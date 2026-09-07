@@ -38,7 +38,7 @@ npm install
 cp .env.example .env              # ajusta los valores, sobre todo si no usas Docker
 docker compose up -d db           # o tu propio Postgres, ajustando DATABASE_URL
 npm run prisma:migrate -- --name init
-npm run prisma:seed               # opcional: crea demo@lifeorganizer.dev / Password123
+npm run prisma:seed               # opcional: crea/recrea demo@lifeorganizer.dev / Password123 con los datos de prisma/fixtures/demoUser.json
 npm run dev
 ```
 

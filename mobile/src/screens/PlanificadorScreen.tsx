@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { ApiError } from "../api/client";
-import { createPlanner, deletePlanner, listPlanners, movePlanner, Planner, renamePlanner } from "../api/planner";
+import {createPlanner,createPlannerField,deletePlanner,deletePlannerField,listPlannerFields,listPlanners,listPlannerTasksLive,movePlanner,movePlannerField,Planner,PlannerField,renamePlanner,renamePlannerField,updateTaskCustomFields,} from "../api/planner";
+import { CustomFieldType, CustomFieldValue } from "../api/customPages";
 import { runSync } from "../sync";
 import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, deleteTaskLocal, parseTaskTags } from "../db/tasksRepo";
 import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal } from "../db/subtasksRepo";
@@ -65,6 +66,10 @@ const COLUMN_HEADERS: Record<TaskStatus, string> = {
   in_progress: "En progreso",
   done: "Hecho",
 };
+
+// Mismas etiquetas que FIELD_TYPE_LABELS en dashboard/src/pages/PlanificadorPage.tsx.
+const FIELD_TYPE_LABELS: Record<CustomFieldType, string> = { text: "Texto", number: "Número", date: "Fecha", select: "Selección" };
+const FIELD_TYPES: CustomFieldType[] = ["text", "number", "date", "select"];
 
 function nextPriority(p: TaskPriority): TaskPriority {
   const idx = TASK_PRIORITIES.indexOf(p);
@@ -135,6 +140,32 @@ export function PlanificadorScreen() {
   const [subtasks, setSubtasks] = useState<LocalSubtask[]>([]);
   const [subtaskDraft, setSubtaskDraft] = useState("");
   const [showDuePicker, setShowDuePicker] = useState(false);
+
+  // PROPIEDADES PERSONALIZADAS de la tarea abierta — a diferencia de `form`/`subtasks` (que
+  // siguen viviendo en SQLite), esto SOLO existe en el servidor (ver comentario sobre
+  // ServerTask/LocalTask en ../types.ts): se piden en paralelo al abrir la tarea, sin bloquear el
+  // resto del modal, y si falla (sin conexión) simplemente no se muestran editables — ver
+  // loadCustomFields más abajo. `plannerOfOpenTask` es el tablero al que pertenece la tarea
+  // abierta (necesario para crear una propiedad nueva o listar las del tablero), independiente de
+  // `active`/`plannerIndex` porque en modo Apilado la tarea abierta puede ser de cualquier tablero.
+  const [plannerOfOpenTask, setPlannerOfOpenTask] = useState<number | null>(null);
+  const [customFields, setCustomFields] = useState<PlannerField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, CustomFieldValue>>({});
+  const [customFieldsUnavailable, setCustomFieldsUnavailable] = useState(false);
+  // Borrador de texto/número mientras se escribe — solo se manda al servidor al perder el foco
+  // (ver commitCustomFieldDraft), igual criterio que título/descripción de la propia tarea: no
+  // machacar la API en cada pulsación.
+  const [customFieldDrafts, setCustomFieldDrafts] = useState<Record<string, string>>({});
+  const [editingCustomDateFieldId, setEditingCustomDateFieldId] = useState<number | null>(null);
+  // Renombrado inline del NOMBRE de una propiedad (no de su valor) — mismo patrón un-solo-a-la-vez
+  // que renaming/nameDraft en PlannerBoardCard, pero como estado plano aquí porque las propiedades
+  // se renderizan directo en este componente, no en uno propio por fila.
+  const [renamingFieldId, setRenamingFieldId] = useState<number | null>(null);
+  const [fieldNameDraft, setFieldNameDraft] = useState("");
+  const [addingCustomField, setAddingCustomField] = useState(false);
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldType, setNewFieldType] = useState<CustomFieldType>("text");
+  const [newFieldOptionsText, setNewFieldOptionsText] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [columnViewMode, setColumnViewMode] = useState<ColumnViewMode>("apilado");
   const [activeStatusIndex, setActiveStatusIndex] = useState(0);
@@ -324,16 +355,67 @@ export function PlanificadorScreen() {
     setSubtasks(await listForTask(taskId));
   }, []);
 
+  // Fields+valores en vivo del tablero de la tarea — se piden en paralelo, SIN esperar a que
+  // termine (openTask no la awaitea) para no retrasar la apertura del modal por una llamada que
+  // puede tardar o fallar (sin conexión). Si falla, `customFieldsUnavailable` hace que la sección
+  // muestre solo un aviso discreto en vez de campos editables. `openTaskIdRef` guarda qué tarea
+  // sigue abierta cuando la petición termina — si el usuario cerró el modal o abrió OTRA tarea
+  // mientras esta seguía en vuelo, el resultado llega tarde y se descarta en vez de pisar el
+  // estado de la tarea que esté abierta ahora.
+  const openTaskIdRef = useRef<string | null>(null);
+
+  const loadCustomFields = useCallback(async (task: LocalTask) => {
+    setCustomFields([]);
+    setCustomFieldValues({});
+    setCustomFieldDrafts({});
+    setCustomFieldsUnavailable(false);
+    setPlannerOfOpenTask(task.plannerId);
+    if (task.plannerId == null) return;
+    const taskServerId = Number(task.id);
+    try {
+      const [fields, liveTasks] = await Promise.all([listPlannerFields(task.plannerId), listPlannerTasksLive(task.plannerId)]);
+      if (openTaskIdRef.current !== task.id) return;
+      setCustomFields(fields);
+      const live = Number.isFinite(taskServerId) ? liveTasks.find((t) => t.id === taskServerId) : undefined;
+      const values = live?.customFields ?? {};
+      setCustomFieldValues(values);
+      // Los borradores de texto/número parten del valor ya guardado — el resto de tipos
+      // (fecha/selección) no pasan por un borrador, se leen/escriben directo en customFieldValues.
+      const drafts: Record<string, string> = {};
+      for (const field of fields) {
+        if (field.type !== "text" && field.type !== "number") continue;
+        const v = values[String(field.id)];
+        drafts[String(field.id)] = v === null || v === undefined ? "" : String(v);
+      }
+      setCustomFieldDrafts(drafts);
+    } catch {
+      if (openTaskIdRef.current === task.id) setCustomFieldsUnavailable(true);
+    }
+  }, []);
+
   const openTask = async (task: LocalTask) => {
+    openTaskIdRef.current = task.id;
     setForm(toForm(task));
     await reloadSubtasks(task.id);
+    loadCustomFields(task);
   };
 
   const closeTask = () => {
+    openTaskIdRef.current = null;
     setForm(null);
     setSubtasks([]);
     setSubtaskDraft("");
     setShowDuePicker(false);
+    setPlannerOfOpenTask(null);
+    setCustomFields([]);
+    setCustomFieldValues({});
+    setCustomFieldsUnavailable(false);
+    setCustomFieldDrafts({});
+    setEditingCustomDateFieldId(null);
+    setAddingCustomField(false);
+    setNewFieldName("");
+    setNewFieldType("text");
+    setNewFieldOptionsText("");
   };
 
   const handleQuickAdd = async (status: TaskStatus) => {
@@ -379,9 +461,122 @@ export function PlanificadorScreen() {
       dueDate: form.dueDate ? form.dueDate.toISOString() : null,
       tags,
     });
+    // Los campos de texto/número de propiedades personalizadas esperan a "Guardar" (o a perder el
+    // foco) para no machacar la API en cada pulsación — si queda algún borrador sin confirmar
+    // (el usuario tocó Guardar sin salir del campo), se manda aquí.
+    customFields.filter((f) => f.type === "text" || f.type === "number").forEach(commitCustomFieldDraft);
     closeTask();
     await reload();
     sync();
+  };
+
+  // Solo persiste si la tarea ya tiene id de servidor (Number(form.id) es finito) — una tarea
+  // creada offline y aún no sincronizada no tiene a qué taskId de /planner/tasks/:id mandar el
+  // PATCH todavía; se pierde silenciosamente en ese caso (mismo criterio que "no bloquear" del
+  // resto de esta sección: sin banner de error por cada intento).
+  const persistCustomField = (fieldId: number, value: CustomFieldValue) => {
+    if (!form) return;
+    const taskId = Number(form.id);
+    if (!Number.isFinite(taskId)) return;
+    updateTaskCustomFields(taskId, { [String(fieldId)]: value }).catch(() => {
+      // Sin conexión: se queda el valor optimista ya puesto en customFieldValues, sin reintento
+      // automático (igual que el resto de acciones fire-and-forget de esta pantalla).
+    });
+  };
+
+  // Fecha y selección se confirman al momento (un toque = una elección), no al perder el foco.
+  const handleCustomFieldChange = (fieldId: number, value: CustomFieldValue) => {
+    setCustomFieldValues((prev) => ({ ...prev, [String(fieldId)]: value }));
+    persistCustomField(fieldId, value);
+  };
+
+  // Texto y número solo se mandan al perder el foco (o al guardar la tarea, ver handleSaveForm) —
+  // mientras tanto solo cambia el borrador local, sin llamar a la API en cada tecla.
+  const commitCustomFieldDraft = (field: PlannerField) => {
+    const raw = customFieldDrafts[String(field.id)] ?? "";
+    const trimmed = raw.trim();
+    let value: CustomFieldValue;
+    if (field.type === "number") {
+      const n = Number(trimmed);
+      value = trimmed === "" || Number.isNaN(n) ? null : n;
+    } else {
+      value = trimmed === "" ? null : trimmed;
+    }
+    const previous = customFieldValues[String(field.id)] ?? null;
+    if (value === previous) return;
+    setCustomFieldValues((prev) => ({ ...prev, [String(field.id)]: value }));
+    persistCustomField(field.id, value);
+  };
+
+  const handleAddCustomField = async () => {
+    if (plannerOfOpenTask == null) return;
+    const name = newFieldName.trim();
+    if (!name) return;
+    const options = newFieldType === "select" ? newFieldOptionsText.split(",").map((o) => o.trim()).filter(Boolean) : undefined;
+    try {
+      await createPlannerField(plannerOfOpenTask, name, newFieldType, options);
+      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+      setNewFieldName("");
+      setNewFieldOptionsText("");
+      setNewFieldType("text");
+      setAddingCustomField(false);
+    } catch {
+      // Sin conexión: se deja el formulario abierto (con lo ya escrito) para que el usuario
+      // reintente, en vez de perder lo que llevaba tecleado.
+    }
+  };
+
+  // Renombrar/mover/borrar una propiedad ya creada — gestión del TABLERO (afecta a todas las
+  // tareas que usan esa propiedad), no de esta tarea en concreto, pero se hace desde aquí porque
+  // no hay otra pantalla de "administrar propiedades" (igual criterio que el resto de esta
+  // sección: no bloquear ni mostrar banner de error si falla por falta de conexión).
+  const startRenameField = (field: PlannerField) => {
+    setRenamingFieldId(field.id);
+    setFieldNameDraft(field.name);
+  };
+
+  const commitRenameField = async (field: PlannerField) => {
+    const trimmed = fieldNameDraft.trim();
+    setRenamingFieldId(null);
+    if (!trimmed || trimmed === field.name || plannerOfOpenTask == null) return;
+    try {
+      await renamePlannerField(plannerOfOpenTask, field.id, trimmed);
+      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+    } catch {
+      // Sin conexión: se descarta el renombrado.
+    }
+  };
+
+  const handleMoveField = async (field: PlannerField, direction: "up" | "down") => {
+    if (plannerOfOpenTask == null) return;
+    try {
+      await movePlannerField(plannerOfOpenTask, field.id, direction);
+      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+    } catch {
+      // Sin conexión: se queda el orden actual.
+    }
+  };
+
+  // Borrado de un solo toque, sin confirmar — igual criterio que el resto de borrados "pequeños"
+  // de esta pantalla (columnas de kanban, horarios…, ver comentario en confirmDeletePlanner):
+  // borrar una propiedad no arrastra tareas enteras, solo dejan de referenciarse sus valores.
+  const handleDeleteField = async (field: PlannerField) => {
+    if (plannerOfOpenTask == null) return;
+    try {
+      await deletePlannerField(plannerOfOpenTask, field.id);
+      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+      const key = String(field.id);
+      setCustomFieldValues((prev) => {
+        const { [key]: _omit, ...rest } = prev;
+        return rest;
+      });
+      setCustomFieldDrafts((prev) => {
+        const { [key]: _omit, ...rest } = prev;
+        return rest;
+      });
+    } catch {
+      // Sin conexión: la propiedad se queda.
+    }
   };
 
   const handleDeleteTask = async () => {
@@ -791,6 +986,179 @@ export function PlanificadorScreen() {
                 </Pressable>
               </View>
 
+              {/* PROPIEDADES PERSONALIZADAS — solo si la tarea pertenece a un tablero (siempre
+                  debería, ver LocalTask.plannerId) y se pudo llegar al servidor (ver
+                  loadCustomFields); sin conexión se cambia por un aviso discreto, no un banner de
+                  error sobre todo el modal. */}
+              {plannerOfOpenTask !== null && (
+                <>
+                  <Text style={styles.fieldLabel}>Propiedades personalizadas</Text>
+                  {customFieldsUnavailable ? (
+                    <Text style={styles.customFieldsHint}>Propiedades personalizadas: requiere conexión</Text>
+                  ) : (
+                    <>
+                      {customFields.map((field, index) => (
+                        <View key={field.id} style={styles.customFieldBlock}>
+                          <View style={styles.customFieldHeader}>
+                            {renamingFieldId === field.id ? (
+                              <TextInput
+                                style={styles.customFieldNameInput}
+                                value={fieldNameDraft}
+                                onChangeText={setFieldNameDraft}
+                                onBlur={() => commitRenameField(field)}
+                                onSubmitEditing={() => commitRenameField(field)}
+                                autoFocus
+                                placeholderTextColor={colors.mutedForeground}
+                              />
+                            ) : (
+                              <Pressable style={styles.customFieldLabelButton} onPress={() => startRenameField(field)}>
+                                <Text style={styles.customFieldLabel}>{field.name}</Text>
+                              </Pressable>
+                            )}
+                            <View style={styles.customFieldActions}>
+                              <Pressable onPress={() => handleMoveField(field, "up")} disabled={index === 0}>
+                                <Text style={[styles.customFieldAction, index === 0 && styles.plannerNavArrowDisabled]}>↑</Text>
+                              </Pressable>
+                              <Pressable onPress={() => handleMoveField(field, "down")} disabled={index === customFields.length - 1}>
+                                <Text
+                                  style={[
+                                    styles.customFieldAction,
+                                    index === customFields.length - 1 && styles.plannerNavArrowDisabled,
+                                  ]}
+                                >
+                                  ↓
+                                </Text>
+                              </Pressable>
+                              <Pressable onPress={() => handleDeleteField(field)}>
+                                <Text style={[styles.customFieldAction, styles.plannerToolbarDelete]}>✕</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                          {field.type === "text" && (
+                            <TextInput
+                              style={styles.input}
+                              value={customFieldDrafts[String(field.id)] ?? ""}
+                              onChangeText={(t) => setCustomFieldDrafts((prev) => ({ ...prev, [String(field.id)]: t }))}
+                              onBlur={() => commitCustomFieldDraft(field)}
+                              placeholderTextColor={colors.mutedForeground}
+                            />
+                          )}
+                          {field.type === "number" && (
+                            <TextInput
+                              style={styles.input}
+                              keyboardType="numeric"
+                              value={customFieldDrafts[String(field.id)] ?? ""}
+                              onChangeText={(t) => setCustomFieldDrafts((prev) => ({ ...prev, [String(field.id)]: t }))}
+                              onBlur={() => commitCustomFieldDraft(field)}
+                              placeholderTextColor={colors.mutedForeground}
+                            />
+                          )}
+                          {field.type === "date" && (
+                            <View style={styles.dateRow}>
+                              <Pressable style={styles.dateButton} onPress={() => setEditingCustomDateFieldId(field.id)}>
+                                <Text style={styles.dateButtonText}>
+                                  {customFieldValues[String(field.id)]
+                                    ? new Date(String(customFieldValues[String(field.id)])).toLocaleDateString("es-ES")
+                                    : "Sin fecha"}
+                                </Text>
+                              </Pressable>
+                              {customFieldValues[String(field.id)] != null && (
+                                <Pressable style={styles.clearDateButton} onPress={() => handleCustomFieldChange(field.id, null)}>
+                                  <Text style={styles.clearDateButtonText}>Quitar</Text>
+                                </Pressable>
+                              )}
+                            </View>
+                          )}
+                          {field.type === "select" && (
+                            <View style={styles.chipRow}>
+                              <Pressable
+                                style={[styles.chip, (customFieldValues[String(field.id)] ?? null) === null && styles.chipSelected]}
+                                onPress={() => handleCustomFieldChange(field.id, null)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.chipText,
+                                    (customFieldValues[String(field.id)] ?? null) === null && styles.chipTextSelected,
+                                  ]}
+                                >
+                                  Sin elegir
+                                </Text>
+                              </Pressable>
+                              {field.options.map((opt) => {
+                                const selected = customFieldValues[String(field.id)] === opt;
+                                return (
+                                  <Pressable
+                                    key={opt}
+                                    style={[styles.chip, selected && styles.chipSelected]}
+                                    onPress={() => handleCustomFieldChange(field.id, opt)}
+                                  >
+                                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{opt}</Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </View>
+                      ))}
+
+                      {addingCustomField ? (
+                        <View style={styles.addFieldForm}>
+                          <TextInput
+                            autoFocus
+                            style={styles.input}
+                            placeholder="Nombre de la propiedad"
+                            value={newFieldName}
+                            onChangeText={setNewFieldName}
+                            placeholderTextColor={colors.mutedForeground}
+                          />
+                          <View style={styles.chipRow}>
+                            {FIELD_TYPES.map((t) => (
+                              <Pressable
+                                key={t}
+                                style={[styles.chip, newFieldType === t && styles.chipSelected]}
+                                onPress={() => setNewFieldType(t)}
+                              >
+                                <Text style={[styles.chipText, newFieldType === t && styles.chipTextSelected]}>
+                                  {FIELD_TYPE_LABELS[t]}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                          {newFieldType === "select" && (
+                            <TextInput
+                              style={styles.input}
+                              placeholder="Opciones separadas por coma"
+                              value={newFieldOptionsText}
+                              onChangeText={setNewFieldOptionsText}
+                              placeholderTextColor={colors.mutedForeground}
+                            />
+                          )}
+                          <View style={styles.addFieldActions}>
+                            <Pressable style={styles.saveButtonSmall} onPress={handleAddCustomField}>
+                              <Text style={styles.saveButtonSmallText}>+ Añadir propiedad</Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => {
+                                setAddingCustomField(false);
+                                setNewFieldName("");
+                                setNewFieldOptionsText("");
+                                setNewFieldType("text");
+                              }}
+                            >
+                              <Text style={styles.cancelButtonText}>Cancelar</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <Pressable onPress={() => setAddingCustomField(true)}>
+                          <Text style={styles.addCustomFieldText}>+ Añadir propiedad</Text>
+                        </Pressable>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
               <Pressable style={styles.saveButton} onPress={handleSaveForm}>
                 <Text style={styles.saveButtonText}>Guardar</Text>
               </Pressable>
@@ -832,7 +1200,26 @@ export function PlanificadorScreen() {
           value={form?.dueDate ?? new Date()}
           mode="date"
           display={Platform.OS === "ios" ? "inline" : "default"}
+          onValueChange={onDuePickerChange}
           onDismiss={() => setShowDuePicker(false)}
+        />
+      )}
+
+      {editingCustomDateFieldId !== null && (
+        <DateTimePicker
+          value={
+            customFieldValues[String(editingCustomDateFieldId)]
+              ? new Date(String(customFieldValues[String(editingCustomDateFieldId)]))
+              : new Date()
+          }
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          onValueChange={(_event: DateTimePickerChangeEvent, selected: Date) => {
+            const fieldId = editingCustomDateFieldId;
+            setEditingCustomDateFieldId(null);
+            if (fieldId !== null && selected) handleCustomFieldChange(fieldId, selected.toISOString());
+          }}
+          onDismiss={() => setEditingCustomDateFieldId(null)}
         />
       )}
     </SafeAreaView>
@@ -1346,4 +1733,48 @@ const styles = StyleSheet.create({
   deleteButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 13, fontWeight: "600" },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 13 },
+
+  // PROPIEDADES PERSONALIZADAS (Planificador) — mismo criterio en tono/color que syncError/
+  // errorBanner del resto de la pantalla, pero sin fondo de banner (es una nota dentro del modal,
+  // no un aviso sobre toda la pantalla).
+  customFieldsHint: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, fontStyle: "italic", marginBottom: 12 },
+  customFieldBlock: { marginBottom: 12 },
+  // Cabecera de cada propiedad: nombre (tocable para renombrar, igual patrón que
+  // stackedTitleButton/stackedNameInput de PlannerBoardCard) + mover arriba/abajo/borrar, mismos
+  // estilos plannerToolbarAction/plannerToolbarDelete/plannerNavArrowDisabled que ese toolbar.
+  customFieldHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 },
+  customFieldLabelButton: { flexShrink: 1, minWidth: 0 },
+  customFieldLabel: {
+    fontFamily: fonts.sansBold,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: colors.mutedForeground,
+  },
+  customFieldNameInput: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontFamily: fonts.sansBold,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: colors.foreground,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 2,
+  },
+  customFieldActions: { flexDirection: "row", alignItems: "center", gap: 12 },
+  customFieldAction: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.mutedForeground },
+  addFieldForm: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    padding: 10,
+    marginBottom: 12,
+  },
+  addFieldActions: { flexDirection: "row", alignItems: "center", gap: 16 },
+  addCustomFieldText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground, marginBottom: 12 },
+  saveButtonSmall: { backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8, alignSelf: "flex-start" },
+  saveButtonSmallText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.primaryForeground },
 });
