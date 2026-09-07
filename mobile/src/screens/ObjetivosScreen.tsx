@@ -19,6 +19,14 @@ const STATUS_TABS: { value: GoalStatus; label: string }[] = [
   { value: "all", label: "Todos" },
 ];
 
+// Mismas 3 opciones que el backend acepta (ver goalsValidators.PERIODS en la API) — igual mapa
+// que GOAL_PERIOD_LABELS en dashboard/src/pages/MetasPage.tsx.
+const GOAL_PERIOD_LABELS: Record<GoalPeriod, string> = {
+  weekly: "Semanal",
+  monthly: "Mensual",
+  annual: "Anual",
+};
+
 function percentOf(goal: Goal): number {
   return goal.targetValue > 0 ? Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100)) : 0;
 }
@@ -209,7 +217,7 @@ function GoalCard({ goal, onDelete, onRegisterProgress }: { goal: Goal; onDelete
       {goal.description ? <Text style={styles.goalDescription}>{goal.description}</Text> : null}
 
       <Text style={styles.goalMeta}>
-        {goal.period === "weekly" ? "Semanal" : "Mensual"} · {goal.currentValue}/{goal.targetValue} · 🏆 {goal.bonusPoints} pts
+        {GOAL_PERIOD_LABELS[goal.period]} · {goal.currentValue}/{goal.targetValue} · 🏆 {goal.bonusPoints} pts
         {goal.autoRenew ? " · se renueva sola" : ""}
       </Text>
 
@@ -256,9 +264,9 @@ function NewGoalForm({ onSubmit, onCancel }: { onSubmit: (input: NewGoalInput) =
 
       <Text style={styles.fieldLabel}>Periodo</Text>
       <View style={styles.chipRow}>
-        {(["weekly", "monthly"] as GoalPeriod[]).map((p) => (
+        {(Object.keys(GOAL_PERIOD_LABELS) as GoalPeriod[]).map((p) => (
           <Pressable key={p} style={[styles.chip, period === p && styles.chipSelected]} onPress={() => setPeriod(p)}>
-            <Text style={[styles.chipText, period === p && styles.chipTextSelected]}>{p === "weekly" ? "Semanal" : "Mensual"}</Text>
+            <Text style={[styles.chipText, period === p && styles.chipTextSelected]}>{GOAL_PERIOD_LABELS[p]}</Text>
           </Pressable>
         ))}
       </View>

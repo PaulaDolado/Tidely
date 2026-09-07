@@ -105,3 +105,72 @@ Railway/Render crean por defecto.
 | `NODE_ENV=production` | Sí | Activa `trust proxy`, logs en JSON, oculta detalles de error 500 |
 | `CORS_ORIGIN` | Recomendada | Dominio exacto del dashboard en vez de `*` una vez lo tengas desplegado |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `RATE_LIMIT_*` | No | Tienen defaults razonables en `src/config/environment.ts` |
+
+## Desplegar el dashboard (web)
+
+El backend de arriba (Railway/Render + Supabase) es solo la API — el dashboard (`dashboard/`) es
+un sitio estático aparte (Vite + React) que hay que desplegar por separado y apuntar a esa API.
+
+1. En [vercel.com](https://vercel.com) (o Netlify/Cloudflare Pages, el flujo es equivalente),
+   **Add New → Project**, importa el mismo repo de GitHub y selecciona `dashboard/` como
+   "Root Directory" (el resto del monorepo no hace falta).
+2. Framework preset: Vite (se detecta solo). Build command `npm run build`, output `dist`.
+3. Variables de entorno del proyecto: `VITE_API_URL=https://<tu-backend>.onrender.com` (la URL de
+   la API ya desplegada, sin barra final).
+4. Una vez desplegado, vuelve a la API y actualiza `CORS_ORIGIN` con el dominio real que te haya
+   dado Vercel (`https://tidely.vercel.app`, o tu dominio propio si conectas uno) — con `CORS_ORIGIN=*`
+   funciona igual pero es menos seguro para producción.
+
+## App móvil con EAS Build
+
+`mobile/` ya está listo para compilarse con [EAS Build](https://docs.expo.dev/eas/) (servicio de
+build en la nube de Expo — no hace falta Xcode/Android Studio local para generar el instalable):
+`eas.json` define 3 perfiles (`development`, `preview` — genera un `.apk` instalable directo, sin
+pasar por Play Store — y `production`), y `app.json` ya lleva un bundle id propio
+(`com.tidely.app`) en vez del `com.anonymous.mobile` por defecto.
+
+1. `npm install -g eas-cli` (o usa `npx eas-cli` sin instalarlo global) y `eas login` — pide tu
+   cuenta de Expo (gratis, créala en [expo.dev](https://expo.dev) si no tienes).
+2. Dentro de `mobile/`, `eas build:configure` — vincula el proyecto a tu cuenta y rellena
+   `extra.eas.projectId` en `app.json` (no lo puedo generar yo: hace falta tu sesión).
+3. Antes de compilar, edita `mobile/eas.json` y sustituye los `EXPO_PUBLIC_API_URL` de los
+   perfiles `preview`/`production` por la URL real de tu backend ya desplegado (ver secciones de
+   arriba) — de lo contrario el build apuntaría a `localhost`, que no existe en el teléfono.
+4. `eas build --platform android --profile preview` genera un `.apk` que puedes instalar
+   directamente (compártelo por link, sin Play Store). Para iOS hace falta cuenta de Apple
+   Developer (99$/año) incluso en `preview` — Apple no permite instalar fuera de TestFlight/App
+   Store sin ella.
+5. Para publicar de verdad: `eas build --profile production` (Android genera `.aab` para Play
+   Store) y `eas submit --platform android|ios` sube el build a la consola correspondiente
+   (Google Play Console / App Store Connect) — ambas requieren cuenta de desarrollador ya creada.
+
+## App de escritorio con Tauri
+
+No existe todavía — se añade envolviendo el MISMO build de `dashboard/` (Vite + React) en un
+shell nativo con [Tauri](https://tauri.app), en vez de mantener un tercer frontend aparte: el
+`src-tauri/` resultante solo empaqueta `dashboard/dist` en una ventana con el WebView del propio
+sistema operativo (a diferencia de Electron, no incluye su propio Chromium — de ahí el binario
+mucho más pequeño).
+
+Requisitos previos en esta máquina (ninguno está instalado todavía):
+- **Rust** (vía [rustup](https://rustup.rs)) — el propio Tauri es un binario Rust, aunque este
+  proyecto no necesita escribir código Rust, solo compilarlo.
+- **Microsoft C++ Build Tools** (Windows) — workload "Desktop development with C++" desde el
+  [instalador de Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
+- **WebView2 Runtime** — ya viene instalado de fábrica en Windows 10/11 actualizados, así que
+  normalmente no hace falta nada aparte.
+
+Con eso instalado, dentro de `dashboard/`:
+```bash
+npm install --save-dev @tauri-apps/cli
+npx tauri init
+```
+`tauri init` pregunta la carpeta del build web (`../dashboard/dist` si se corre desde la raíz del
+repo, o `dist` si se corre dentro de `dashboard/`) y el comando de dev (`npm run dev`, puerto
+5173) — con eso genera `src-tauri/` (config + un `main.rs` mínimo que no hay que tocar). Luego:
+```bash
+npm run tauri dev     # ventana nativa contra el Vite dev server, con hot-reload
+npm run tauri build    # instalador nativo (.msi/.exe en Windows) en src-tauri/target/release/bundle
+```
+Aviso: la instalación de Rust + Build Tools pesa varios GB y tarda — dímelo cuando quieras que la
+haga (o hazlo tú y avísame para generar `src-tauri/` en cuanto esté listo).

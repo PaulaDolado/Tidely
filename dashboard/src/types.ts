@@ -198,7 +198,7 @@ export interface Goal {
   id: number;
   title: string;
   description: string | null;
-  period: "weekly" | "monthly";
+  period: "weekly" | "monthly" | "annual";
   targetValue: number;
   currentValue: number;
   completed: boolean;

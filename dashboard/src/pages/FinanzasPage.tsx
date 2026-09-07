@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "../components/AppShell";
 import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
@@ -354,6 +354,53 @@ function todayStr(): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+// Disparador de ancho fijo (solo el icono 📅, sin el texto "dd/mm/aaaa" del `<input type="date">`
+// nativo) que abre un panel flotante con el date input de verdad — se usa en la fila compacta de
+// MovementForm (ver comentario ahí) para que la fecha no fuerce esa columna a ensancharse. Mismo
+// patrón que EditableCell en PlanificadorPage.tsx (disparador + panel que se cierra al clicar
+// fuera), pero sin portal a document.body: aquí el campo vive en un grid normal, no en una
+// `<table>` cuyo auto-table-layout se viera afectado por el ancho del panel.
+function CompactDateField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={value ? new Date(`${value}T00:00:00`).toLocaleDateString("es-ES") : "Elegir fecha"}
+        className="field-input flex w-full cursor-pointer items-center justify-center px-0"
+      >
+        📅
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-10 mt-1 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
+          <input
+            autoFocus
+            type="date"
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              setOpen(false);
+            }}
+            className="field-input text-sm"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Un único formulario para crear (arriba de la lista, con card-soft propia, una sola fila) y
 // para editar (`dialog`, dentro del diálogo modal que abre el lápiz de cada movimiento — ver
 // `editingTx` de FinanzasPage) — misma validación y mismos campos en los dos casos, para que
@@ -422,7 +469,18 @@ function MovementForm({
         <option value="ingreso">Ingreso</option>
       </select>
       <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Categoría" className="field-input" />
-      <input value={date} onChange={(e) => setDate(e.target.value)} type="date" className="field-input" />
+      {/* En el diálogo (2 columnas, de sobra de sitio) el campo de fecha se queda como un
+          `<input type="date">` normal — el problema solo aparece en la fila compacta de crear
+          (6 columnas en pantallas @xl, ver el grid de más arriba): un date input nativo no puede
+          encogerse por debajo del ancho que necesita para pintar su propio texto ("dd/mm/aaaa"),
+          así que con una columna `1fr` estrecha termina empujando la última columna (el botón
+          "Registrar") fuera de la fila. Reducirlo a un simple icono con ancho fijo (ver
+          CompactDateField) evita ese empujón sin tocar el resto del grid. */}
+      {dialog ? (
+        <input value={date} onChange={(e) => setDate(e.target.value)} type="date" className="field-input" />
+      ) : (
+        <CompactDateField value={date} onChange={setDate} />
+      )}
       {/* En el diálogo, los botones van en su propia fila (span completo); al crear (una sola
           fila junto a los campos en pantallas anchas) el botón de guardar sigue siendo la última
           columna del grid, sin envolver nada — `contents` deja que actúe como si el div no

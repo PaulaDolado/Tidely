@@ -12,6 +12,15 @@ const STATUS_TABS: { value: GoalStatus; label: string }[] = [
   { value: "all", label: "Todos" },
 ];
 
+// Mismas 3 opciones que el backend acepta (ver goalsValidators.PERIODS) — "annual" se apoya en
+// `defaultPeriodEnd` calculando fin de año (goalsService.ts), igual que "weekly"/"monthly" ya
+// calculaban fin de semana/mes.
+const GOAL_PERIOD_LABELS: Record<Goal["period"], string> = {
+  weekly: "Semanal",
+  monthly: "Mensual",
+  annual: "Anual",
+};
+
 function percentOf(goal: Goal): number {
   return goal.targetValue > 0 ? Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100)) : 0;
 }
@@ -185,7 +194,7 @@ function GoalCard({ goal, onChanged }: { goal: Goal; onChanged: () => void }) {
       </div>
       {goal.description && <p className="text-sm text-muted-foreground">{goal.description}</p>}
       <p className="text-sm text-muted-foreground">
-        {goal.period === "weekly" ? "Semanal" : "Mensual"} · {goal.currentValue}/{goal.targetValue} · 🏆 {goal.bonusPoints} pts
+        {GOAL_PERIOD_LABELS[goal.period]} · {goal.currentValue}/{goal.targetValue} · 🏆 {goal.bonusPoints} pts
         {goal.autoRenew && " · se renueva sola"}
       </p>
 
@@ -216,14 +225,14 @@ function GoalCard({ goal, onChanged }: { goal: Goal; onChanged: () => void }) {
 
 interface NewGoalInput {
   title: string;
-  period: "weekly" | "monthly";
+  period: Goal["period"];
   targetValue: number;
   autoRenew: boolean;
 }
 
 function NewGoalForm({ onSubmit }: { onSubmit: (input: NewGoalInput) => Promise<void> }) {
   const [title, setTitle] = useState("");
-  const [period, setPeriod] = useState<"weekly" | "monthly">("weekly");
+  const [period, setPeriod] = useState<Goal["period"]>("weekly");
   const [targetValue, setTargetValue] = useState("5");
   const [autoRenew, setAutoRenew] = useState(true);
 
@@ -238,9 +247,12 @@ function NewGoalForm({ onSubmit }: { onSubmit: (input: NewGoalInput) => Promise<
       className="mb-10 grid gap-4 card-soft md:grid-cols-[2fr_1fr_1fr_auto]"
     >
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ej. Ejercicio 5 días" className="field-input" />
-      <select value={period} onChange={(e) => setPeriod(e.target.value as "weekly" | "monthly")} className="field-input">
-        <option value="weekly">Semanal</option>
-        <option value="monthly">Mensual</option>
+      <select value={period} onChange={(e) => setPeriod(e.target.value as Goal["period"])} className="field-input">
+        {(Object.keys(GOAL_PERIOD_LABELS) as Goal["period"][]).map((p) => (
+          <option key={p} value={p}>
+            {GOAL_PERIOD_LABELS[p]}
+          </option>
+        ))}
       </select>
       <input type="number" min="1" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} className="field-input" />
       <label className="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">

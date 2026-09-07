@@ -1,5 +1,5 @@
 import { prisma } from "../config/database";
-import { defaultPeriodEnd } from "./goalsService";
+import { defaultPeriodEnd, GoalPeriod } from "./goalsService";
 import { logger } from "../utils/logger";
 
 /**
@@ -33,7 +33,7 @@ export async function processExpiredGoals(
       // ya habría expirado en el momento de crearlo — rompiendo la idempotencia (la próxima
       // pasada volvería a archivar/renovar la meta recién creada). Usando `now` el periodo nuevo
       // siempre cubre el momento actual.
-      const nextPeriodEnd = defaultPeriodEnd(goal.period as "weekly" | "monthly", now);
+      const nextPeriodEnd = defaultPeriodEnd(goal.period as GoalPeriod, now);
 
       await prisma.goal.create({
         data: {

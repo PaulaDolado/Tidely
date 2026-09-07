@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { useAuth } from "../auth/AuthContext";
 import { runSync } from "../sync";
+import { getCombinedStreak } from "../api/today";
 import { listTodayEvents, ParsedEvent } from "../db/eventsRepo";
 import { listTasksDueToday, toggleTaskDone } from "../db/tasksRepo";
 import { listHabits, isHabitDoneToday, toggleHabitToday } from "../db/habitsRepo";
@@ -91,6 +92,11 @@ export function HoyScreen() {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // null = todavía no se ha podido pedir (recién abierto, o sin conexión) — a diferencia de
+  // `habits`/`tasks`/etc. esto NO sale de SQLite: es un cálculo histórico real (ver
+  // api/today.ts), así que sin red simplemente no se muestra el banner en vez de enseñar un
+  // número inventado o desactualizado.
+  const [combinedStreak, setCombinedStreak] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     const [nextEvents, nextTasks, nextHabits, nextNotes] = await Promise.all([
@@ -121,6 +127,16 @@ export function HoyScreen() {
       await reload();
     } else {
       setSyncError(result.error ?? "No se pudo sincronizar");
+    }
+    // Aparte del resultado del sync de arriba (que es el de eventos/tareas/hábitos/notas, ver
+    // src/sync/): la racha combinada solo existe en el backend, así que se pide en el mismo
+    // momento (misma cadencia que el resto: al abrir, al recuperar conexión, cada 60s) pero de
+    // forma independiente — que falle esta llamada (sin red, o red intermitente) no debe bloquear
+    // ni marcar como fallido el sync de lo demás.
+    try {
+      setCombinedStreak(await getCombinedStreak());
+    } catch {
+      // Se deja el valor anterior (o null) tal cual — ver comentario en el useState.
     }
   }, [reload]);
 
@@ -177,8 +193,11 @@ export function HoyScreen() {
   };
 
   const todayDate = new Date();
-  const habitsCompletedToday = habits.filter((h) => h.done).length;
-  const showStreak = habitsCompletedToday > 0;
+  // Igual criterio que dashboard/src/pages/HoyPage.tsx: la racha combinada solo cuenta si TODO lo
+  // de hoy está cumplido (todos los hábitos activos, no basta con marcar uno), y el número que se
+  // enseña son días consecutivos de racha, no "cuántos hábitos llevo hoy" — antes esta pantalla
+  // calculaba (mal) ambas cosas a mano en vez de pedir el valor real (ver api/today.ts).
+  const showStreak = (combinedStreak ?? 0) > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -235,8 +254,8 @@ export function HoyScreen() {
       {showStreak && (
         <View style={styles.streakBanner}>
           <Text style={styles.streakText}>
-            🔥 Racha combinada: {habitsCompletedToday} día
-            {habitsCompletedToday === 1 ? "" : "s"}
+            🔥 Racha combinada: {combinedStreak} día
+            {combinedStreak === 1 ? "" : "s"}
           </Text>
         </View>
       )}

@@ -96,6 +96,10 @@ interface AppShellProps {
 
 const SIDEBAR_COLLAPSED_KEY = "life-organizer:sidebar-collapsed";
 const SIDEBAR_WIDTH_KEY = "life-organizer:sidebar-width";
+// Igual criterio que NAV_COLLAPSED_SECTIONS_KEY más abajo, pero para la única cajita "Próximo
+// evento" — no vive en `collapsedSections` (eso es un Set de `Tab`, y esto no es una pestaña del
+// menú) sino en su propio booleano persistido aparte.
+const NEXT_EVENT_COLLAPSED_KEY = "life-organizer:sidebar-next-event-collapsed";
 // Qué apartados con subapartados (Agenda, Finanzas) tiene el usuario plegados — independiente de
 // SIDEBAR_COLLAPSED_KEY, que esconde el menú entero: esto solo oculta los hijos de un apartado
 // concreto, para poder ver la lista sin que "Planificador"/"Horario"/"Metas de ahorro" ocupen
@@ -130,6 +134,7 @@ export function AppShell({
   const [renamingPageId, setRenamingPageId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmingDeletePageId, setConfirmingDeletePageId] = useState<number | null>(null);
+  const [nextEventCollapsed, setNextEventCollapsed] = useState(() => localStorage.getItem(NEXT_EVENT_COLLAPSED_KEY) === "true");
   const { data: week } = useFetch(() => api.get<AgendaResponse>(`/agenda/week/${todayIso()}`), []);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true");
   const [collapsedSections, setCollapsedSections] = useState<Set<Tab>>(() => {
@@ -155,6 +160,14 @@ export function AppShell({
     setCollapsed((v) => {
       const next = !v;
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      return next;
+    });
+  };
+
+  const toggleNextEventCollapsed = () => {
+    setNextEventCollapsed((v) => {
+      const next = !v;
+      localStorage.setItem(NEXT_EVENT_COLLAPSED_KEY, String(next));
       return next;
     });
   };
@@ -253,13 +266,26 @@ export function AppShell({
       <div className="hidden shrink-0 lg:flex">
         {!collapsed && (
           <div className="relative shrink-0" style={{ width: sidebarWidth }}>
-            <aside className="sticky top-0 flex h-screen w-full flex-col gap-10 border-r border-border p-8">
-              <div className="flex items-center gap-3">
-                <span className="truncate text-xl font-semibold tracking-tight">Tidely</span>
+            {/* Antes esto era un único flex-col con gap-10 y p-8 uniforme, todo dentro del mismo
+                `h-screen` sin scroll propio — con pocas páginas personalizadas nunca se notaba,
+                pero según se van creando más, la lista de "Tus páginas" puede llegar a empujar
+                "Próximo evento" y el usuario/logout por debajo del alto de pantalla (el `<aside>`
+                no tiene scroll, así que quedarían cortados, no solo desplazados). Ahora son 3
+                franjas apiladas: cabecera fija (Tidely + buscador), una franja central que es la
+                ÚNICA con scroll propio (el menú + Tus páginas, lo que crece sin límite) y un pie
+                fijo (Próximo evento + usuario/descargar) que ya no se mueve pase lo que pase en
+                medio — mismo patrón que un header/footer fijos con contenido scrollable entre
+                medias. */}
+            <aside className="sticky top-0 flex h-screen w-full flex-col border-r border-border">
+              <div className="shrink-0 space-y-10 p-8 pb-6">
+                <div className="flex items-center gap-3">
+                  <span className="truncate text-xl font-semibold tracking-tight">Tidely</span>
+                </div>
+
+                <GlobalSearch onNavigate={onSearchNavigate} />
               </div>
 
-              <GlobalSearch onNavigate={onSearchNavigate} />
-
+              <div className="min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6">
               <nav className="flex flex-col gap-1">
                 {NAV.map((item) => {
                   const sectionCollapsed = collapsedSections.has(item.key);
@@ -413,21 +439,37 @@ export function AppShell({
                   + Nueva página
                 </button>
               </div>
+              </div>
 
-              <div className="mt-auto space-y-4">
+              <div className="shrink-0 space-y-4 border-t border-border p-8 pt-6">
                 <div className="rounded-2xl border border-secondary bg-secondary/30 p-4">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Próximo evento</p>
-                  {next ? (
-                    <>
-                      <p className="truncate font-medium">{next.title}</p>
-                      <p className="truncate text-sm text-muted-foreground">
-                        {new Date(next.startTime).toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })} —{" "}
-                        {new Date(next.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Nada pendiente. Respira.</p>
-                  )}
+                  <button
+                    type="button"
+                    onClick={toggleNextEventCollapsed}
+                    className="flex w-full cursor-pointer items-center justify-between gap-2 text-left"
+                  >
+                    <p className={`text-xs font-bold uppercase tracking-widest text-muted-foreground ${nextEventCollapsed ? "" : "mb-2"}`}>
+                      Próximo evento
+                    </p>
+                    <span
+                      className={`inline-block shrink-0 text-xs text-muted-foreground transition-transform ${nextEventCollapsed ? "-rotate-90" : ""}`}
+                      aria-hidden="true"
+                    >
+                      ▾
+                    </span>
+                  </button>
+                  {!nextEventCollapsed &&
+                    (next ? (
+                      <>
+                        <p className="truncate font-medium">{next.title}</p>
+                        <p className="truncate text-sm text-muted-foreground">
+                          {new Date(next.startTime).toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })} —{" "}
+                          {new Date(next.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nada pendiente. Respira.</p>
+                    ))}
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl px-1 text-sm">

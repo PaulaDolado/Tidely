@@ -136,7 +136,7 @@ model Goal {
   userId       Int
   title        String
   description  String?
-  period       String // "weekly" | "monthly"
+  period       String // "weekly" | "monthly" | "annual"
   targetValue  Int // meta numérica (ej: 7 días, 20 horas)
   currentValue Int      @default(0)
   completed    Boolean  @default(false)

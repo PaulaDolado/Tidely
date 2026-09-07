@@ -6,7 +6,7 @@
 // (dashboard/src/pages/MetasAhorroPage.tsx), no lo que el usuario pidió como "Objetivos".
 import { api } from "./client";
 
-export type GoalPeriod = "weekly" | "monthly";
+export type GoalPeriod = "weekly" | "monthly" | "annual";
 export type GoalStatus = "active" | "completed" | "expired" | "all";
 
 export interface Goal {

@@ -1,12 +1,14 @@
 import { prisma } from "../config/database";
-import { endOfWeek, endOfMonth, differenceInCalendarDays } from "date-fns";
+import { endOfWeek, endOfMonth, endOfYear, differenceInCalendarDays } from "date-fns";
 import { buildPagination } from "../utils/pagination";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
+
+export type GoalPeriod = "weekly" | "monthly" | "annual";
 
 interface CreateGoalInput {
   title: string;
   description?: string | null;
-  period: "weekly" | "monthly";
+  period: GoalPeriod;
   targetValue: number;
   bonusPoints?: number;
   periodStart?: string | Date;
@@ -15,8 +17,10 @@ interface CreateGoalInput {
 }
 
 /** Exportado: lo reutiliza `goalExpiryService` para calcular el periodo siguiente al renovar. */
-export function defaultPeriodEnd(period: "weekly" | "monthly", start: Date): Date {
-  return period === "weekly" ? endOfWeek(start, { weekStartsOn: 1 }) : endOfMonth(start);
+export function defaultPeriodEnd(period: GoalPeriod, start: Date): Date {
+  if (period === "weekly") return endOfWeek(start, { weekStartsOn: 1 });
+  if (period === "monthly") return endOfMonth(start);
+  return endOfYear(start);
 }
 
 export async function createGoal(userId: number, input: CreateGoalInput) {

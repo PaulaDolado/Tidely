@@ -54,7 +54,6 @@ const SLIDE_DURATION_MS = 240;
 interface NavItem {
   route: string; // debe coincidir con un name de <Tab.Screen> en App.tsx
   label: string;
-  icon: string;
   children?: NavItem[];
 }
 
@@ -70,24 +69,22 @@ interface NavItem {
 // (PaginasListScreen.tsx) sigue existiendo y sigue siendo alcanzable volviendo atrás desde el
 // detalle de una página — solo se quitó como entrada directa del menú.
 const NAV: NavItem[] = [
-  { route: "Hoy", label: "Hoy", icon: "☀" },
+  { route: "Hoy", label: "Hoy" },
   {
     route: "Agenda",
     label: "Agenda",
-    icon: "🗓",
     children: [
-      { route: "Planificador", label: "Planificador", icon: "📋" },
-      { route: "Horario", label: "Horario", icon: "⏰" },
+      { route: "Planificador", label: "Planificador" },
+      { route: "Horario", label: "Horario" },
     ],
   },
-  { route: "Objetivos", label: "Objetivos", icon: "🎯" },
+  { route: "Objetivos", label: "Objetivos" },
   {
     route: "Finanzas",
     label: "Finanzas",
-    icon: "💰",
-    children: [{ route: "Ahorro", label: "Metas de ahorro", icon: "🐷" }],
+    children: [{ route: "Ahorro", label: "Metas de ahorro" }],
   },
-  { route: "Proyectos", label: "Proyectos", icon: "📁" },
+  { route: "Proyectos", label: "Proyectos" },
 ];
 
 // Clave de medición para el botón "+ Nueva página" (ver measureContainer) — no es una `route` de
@@ -272,7 +269,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           {NAV.map((item) => (
             <View key={item.route}>
               <Text style={styles.measureLabel} onLayout={(e) => onMeasureLabel(item.route, e.nativeEvent.layout.width)}>
-                {item.icon}  {item.label}
+                {item.label}
               </Text>
               {item.children?.map((child) => (
                 <Text
@@ -280,7 +277,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
                   style={styles.measureLabelChild}
                   onLayout={(e) => onMeasureLabel(child.route, e.nativeEvent.layout.width + CHILD_INDENT)}
                 >
-                  {child.icon}  {child.label}
+                  {child.label}
                 </Text>
               ))}
             </View>
@@ -302,7 +299,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
                   <View style={styles.navRow}>
                     <Pressable onPress={() => goTo(item.route)} style={[styles.navButton, isActive && styles.navButtonActive]}>
                       <Text numberOfLines={1} style={[styles.navLabel, isActive && styles.navLabelActive]}>
-                        {item.icon}  {item.label}
+                        {item.label}
                       </Text>
                     </Pressable>
                     {/* Aparte a propósito del botón de arriba, igual que en AppShell.tsx: uno
@@ -330,7 +327,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
                             style={[styles.childButton, childActive && styles.navButtonActive]}
                           >
                             <Text numberOfLines={1} style={[styles.childLabel, childActive && styles.navLabelActive]}>
-                              {child.icon}  {child.label}
+                              {child.label}
                             </Text>
                           </Pressable>
                         );
@@ -347,7 +344,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
                 la existente o crea la primera, así que el usuario no ve ese paso intermedio. */}
             <Pressable onPress={openGallery} style={styles.navButton}>
               <Text numberOfLines={1} style={styles.navLabel}>
-                🖼  Galería
+                Galería
               </Text>
             </Pressable>
 

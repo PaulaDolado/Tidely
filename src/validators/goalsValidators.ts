@@ -1,7 +1,7 @@
 import Joi from "joi";
 import { paginationQuerySchema } from "./pagination";
 
-const PERIODS = ["weekly", "monthly"];
+const PERIODS = ["weekly", "monthly", "annual"];
 
 export const idParamSchema = Joi.object({
   id: Joi.number().integer().positive().required(),

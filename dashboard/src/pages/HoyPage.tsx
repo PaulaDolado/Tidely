@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { PageHeader, SearchFocus, Tab } from "../components/AppShell";
 import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
@@ -33,6 +34,32 @@ const TYPE_STYLES: Record<string, string> = {
  */
 export function HoyPage({ onNavigate }: { onNavigate: (tab: Tab, focus?: SearchFocus) => void }) {
   const { data, loading, error, reload } = useFetch(() => api.get<TodayResponse>("/today"), []);
+
+  // "Hoy" es la pantalla de aterrizaje — se queda abierta más tiempo que el resto (no hay razón
+  // para cambiar de pestaña si no hace falta), así que es la que más se nota vieja si algo cambia
+  // por otro lado: completar una tarea desde el Planificador, marcar un hábito desde el móvil,
+  // etc. La API es REST normal (sin WebSockets ni Server-Sent Events, ver src/app.ts), así que
+  // nada de eso llega solo hasta aquí — hay que ir a buscarlo. En vez de recargar toda la página,
+  // se refresca solo en los momentos en los que tiene sentido:
+  //  - Al recuperar el foco la pestaña/ventana (volver de otra app o pestaña del navegador).
+  //  - Al volver a quedar visible (mismo caso, cubierto también por si el navegador no dispara
+  //    "focus" — varía según navegador/SO, ver el mismo criterio en utils/quickAccessApps.ts).
+  //  - Cada 60s mientras la pestaña sigue visible, como red de seguridad para el caso que NINGUNO
+  //    de los eventos anteriores cubre: la pestaña de "Hoy" sigue enfocada en el ordenador y el
+  //    cambio se hizo desde el móvil sin tocar esta ventana para nada.
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    const intervalId = window.setInterval(refreshIfVisible, 60_000);
+    return () => {
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.clearInterval(intervalId);
+    };
+  }, [reload]);
 
   const dateLabel = data ? new Date(`${data.date}T00:00:00.000Z`).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) : "";
 

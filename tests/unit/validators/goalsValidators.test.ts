@@ -25,6 +25,15 @@ describe("goalsValidators", () => {
       expect(value.bonusPoints).toBe(10);
     });
 
+    it("acepta period=annual", () => {
+      const { error } = createGoalSchema.validate({
+        title: "Leer 12 libros",
+        period: "annual",
+        targetValue: 12,
+      });
+      expect(error).toBeUndefined();
+    });
+
     it("rechaza un period no soportado", () => {
       const { error } = createGoalSchema.validate({
         title: "Ejercicio",

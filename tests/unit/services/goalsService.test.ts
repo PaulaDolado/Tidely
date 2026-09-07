@@ -32,6 +32,17 @@ describe("goalsService", () => {
       expect(dataArg.periodEnd.getTime()).toBeGreaterThan(dataArg.periodStart.getTime());
     });
 
+    it("calcula periodEnd como fin de año cuando period=annual y no se indica", async () => {
+      prismaMock.goal.create.mockImplementation(({ data }) => Promise.resolve({ id: 1, ...data }));
+
+      await goalsService.createGoal(1, { title: "Leer 12 libros", period: "annual", targetValue: 12 });
+
+      const dataArg = prismaMock.goal.create.mock.calls[0][0].data;
+      expect(dataArg.periodEnd.getUTCMonth()).toBe(11); // diciembre
+      expect(dataArg.periodEnd.getUTCFullYear()).toBe(dataArg.periodStart.getUTCFullYear());
+      expect(dataArg.periodEnd.getTime()).toBeGreaterThan(dataArg.periodStart.getTime());
+    });
+
     it("respeta periodEnd explícito si se indica", async () => {
       prismaMock.goal.create.mockImplementation(({ data }) => Promise.resolve({ id: 1, ...data }));
       const explicitEnd = "2026-12-31T00:00:00.000Z";

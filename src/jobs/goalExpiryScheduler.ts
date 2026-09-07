@@ -2,7 +2,7 @@ import cron, { ScheduledTask } from "node-cron";
 import { processExpiredGoals } from "../services/goalExpiryService";
 import { logger } from "../utils/logger";
 
-const CRON_EXPRESSION = "0 * * * *"; // cada hora en punto — los periodos son semanales/mensuales, no hace falta más frecuencia
+const CRON_EXPRESSION = "0 * * * *"; // cada hora en punto — los periodos son semanales/mensuales/anuales, no hace falta más frecuencia
 
 /**
  * Arranca el cron de expiración/renovación de metas. Igual que `notificationScheduler`,
