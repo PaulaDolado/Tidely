@@ -2,11 +2,11 @@
   "name": "tidely-api",
   "version": "1.0.0",
   "description": "API de organización personal integral: agenda, metas, finanzas, proyectos y hobbies",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/src/index.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch --runInBand",
     "test:coverage": "jest --coverage --runInBand",
