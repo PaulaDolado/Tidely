@@ -49,7 +49,12 @@ jobs:
       - name: Build dashboard
         working-directory: dashboard
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          # `vars.VITE_API_URL` (repo variable) manda si está puesta; si por lo que sea llega
+          # vacía (nos pasó: la variable existía pero el contexto `vars` no la resolvía en el
+          # build, sin poder ver por qué en los logs), cae a esta URL fija — no es un secreto
+          # (acaba en el JS del navegador igual, ver dashboard/src/api/client.ts), así que no pasa
+          # nada por tenerla aquí en texto plano como red de seguridad.
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://tidely-api-pa09.onrender.com' }}
           # "Project site" (no un <user>.github.io propio): sirve bajo /<repo>/, no en la raíz —
           # ver el comentario junto a `base` en vite.config.ts.
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
