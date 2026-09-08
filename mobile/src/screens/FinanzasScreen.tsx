@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -309,6 +309,16 @@ function MovementForm({
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Mismo patrón que "Eliminar página" en PaginaDetailScreen.tsx:184-194 (`confirmingDelete`) —
+  // el propio botón pide confirmar cambiando su texto/color en vez de un diálogo aparte; sin blur
+  // en táctil para cancelarlo solo, así que se cancela solo a los 3s si no se toca una segunda vez.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmingDelete]);
 
   const submit = async () => {
     const n = Number(amount);
@@ -320,6 +330,11 @@ function MovementForm({
 
   const remove = async () => {
     if (!onDelete) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setConfirmingDelete(false);
     setDeleting(true);
     try {
       await onDelete();
@@ -370,8 +385,14 @@ function MovementForm({
       {/* Borrar vive dentro del propio formulario de edición, no como botón aparte en la lista —
           ver el pedido de "solo el lápiz" en Movimientos recientes (onDelete solo llega al editar). */}
       {onDelete && (
-        <Pressable style={styles.deleteButton} onPress={remove} disabled={deleting}>
-          <Text style={styles.deleteButtonText}>{deleting ? "Eliminando…" : "Eliminar movimiento"}</Text>
+        <Pressable
+          style={[styles.deleteButton, confirmingDelete && styles.deleteButtonConfirming]}
+          onPress={remove}
+          disabled={deleting}
+        >
+          <Text style={[styles.deleteButtonText, confirmingDelete && styles.deleteButtonTextConfirming]}>
+            {deleting ? "Eliminando…" : confirmingDelete ? "¿Confirmar eliminar?" : "Eliminar movimiento"}
+          </Text>
         </Pressable>
       )}
     </ScrollView>
@@ -566,6 +587,8 @@ const styles = StyleSheet.create({
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
-  deleteButton: { alignItems: "center", padding: 10 },
+  deleteButton: { alignItems: "center", padding: 10, borderRadius: radius.full },
+  deleteButtonConfirming: { backgroundColor: colors.destructive },
   deleteButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
+  deleteButtonTextConfirming: { color: colors.destructiveForeground, fontWeight: "700" },
 });

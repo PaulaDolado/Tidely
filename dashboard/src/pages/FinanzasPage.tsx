@@ -429,6 +429,9 @@ function MovementForm({
   const [date, setDate] = useState(initial?.date ?? todayStr());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Mismo patrón que "Eliminar página" en CustomPagePage.tsx:183-198 — el propio botón pide
+  // confirmar cambiando su texto/color en vez de un diálogo aparte; onBlur lo cancela solo.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   return (
     <form
@@ -504,6 +507,11 @@ function MovementForm({
             type="button"
             disabled={deleting}
             onClick={async () => {
+              if (!confirmingDelete) {
+                setConfirmingDelete(true);
+                return;
+              }
+              setConfirmingDelete(false);
               setDeleting(true);
               try {
                 await onDelete();
@@ -511,9 +519,12 @@ function MovementForm({
                 setDeleting(false);
               }
             }}
-            className="ml-auto text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
+            onBlur={() => setConfirmingDelete(false)}
+            className={`ml-auto rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
+              confirmingDelete ? "bg-destructive text-destructive-foreground" : "text-muted-foreground hover:text-destructive"
+            }`}
           >
-            {deleting ? "…" : "Eliminar"}
+            {deleting ? "…" : confirmingDelete ? "¿Confirmar eliminar?" : "Eliminar"}
           </button>
         )}
       </div>

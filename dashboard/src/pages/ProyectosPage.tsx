@@ -94,33 +94,48 @@ function NotebookCover({ project, dark, onOpen }: { project: Project; dark: bool
   return (
     <button
       onClick={onOpen}
-      className={`relative flex cursor-pointer flex-col rounded-3xl pt-10 p-6 text-left transition-transform hover:-translate-y-1 ${
+      className={`relative flex cursor-pointer flex-col rounded-3xl rounded-tl-none pt-9 p-6 text-left shadow-[var(--shadow-soft)] transition-transform hover:-translate-y-1 ${
         dark ? "bg-cover text-background" : "border border-secondary bg-secondary"
       }`}
     >
-      {/* Pestaña de carpesano de archivador: mismo color que la tapa (parte de una misma
-          silueta recortada, no una pieza aparte) — sobresale por encima del borde superior y
-          se solapa hacia dentro, como la lengüeta de una carpeta colgante. Sin sombra propia
-          (shadow-sm dibujaba una raya justo en el solape, delatando que son dos piezas) y con
-          el solape más largo que el resto del padding superior de la tapa, para que ningún
-          borde de la pestaña quede nunca a la vista dentro de la tarjeta. Pegada al margen
-          izquierdo (left-0) con solo la esquina interior redondeada — la exterior queda recta,
-          a ras del propio borde de la tarjeta, como una lengüeta real. */}
+      {/* Pestaña de carpeta colgante: silueta trapezoidal (borde derecho en diagonal vía
+          clip-path, en vez de un simple rectángulo) para que lea como la lengüeta real de una
+          carpeta — mismo color que la tapa (parte de la misma silueta recortada, no una pieza
+          aparte). Sin sombra propia (dibujaba una raya justo en el solape, delatando que son dos
+          piezas) y con el solape (-top) más largo que el padding superior de la tapa, para que
+          ningún borde de la pestaña quede nunca a la vista dentro de la tarjeta. Esquina exterior
+          (arriba-izda) redondeada como el resto del recorte; la esquina de la propia tapa
+          (arriba-izda del `button`, `rounded-tl-none`) se deja recta para que la lengüeta parezca
+          salir de ahí, no flotar sobre una esquina ya curva. */}
       <div
         aria-hidden
-        className={`absolute left-0 -top-4 h-10 w-24 rounded-tr-xl ${dark ? "bg-cover" : "bg-secondary"}`}
+        className={`absolute left-3 -top-5 h-8 w-[42%] max-w-40 rounded-tl-lg [clip-path:polygon(0_0,100%_0,76%_100%,0_100%)] ${
+          dark ? "bg-cover" : "bg-secondary"
+        }`}
       />
 
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="font-serif text-2xl">{project.title}</h2>
-        <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${dark ? "bg-background/20" : "bg-foreground/10"}`}>
-          {STATUS_LABELS[project.status]}
-        </span>
+      {/* Brillo diagonal + línea de pliegue bajo la lengüeta: puramente decorativos
+          (pointer-events-none, sin contenido) para dar la sensación de plástico/papel de una
+          carpeta real en vez de una tarjeta plana. El contenido de verdad va en el div `relative
+          z-10` de abajo para quedar siempre por encima de estos dos degradados. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-br from-white/20 via-transparent to-transparent"
+      />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-3 rounded-t-[inherit] bg-black/[0.06]" />
+
+      <div className="relative z-10 flex flex-1 flex-col">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="font-serif text-2xl">{project.title}</h2>
+          <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${dark ? "bg-background/20" : "bg-foreground/10"}`}>
+            {STATUS_LABELS[project.status]}
+          </span>
+        </div>
+
+        {project.description && <p className={`mt-2 text-sm ${dark ? "opacity-70" : "text-muted-foreground"}`}>{project.description}</p>}
+
+        <span className={`mt-6 text-xs ${dark ? "opacity-50" : "text-muted-foreground"}`}>Haz clic para abrir tus apuntes →</span>
       </div>
-
-      {project.description && <p className={`mt-2 text-sm ${dark ? "opacity-70" : "text-muted-foreground"}`}>{project.description}</p>}
-
-      <span className={`mt-6 text-xs ${dark ? "opacity-50" : "text-muted-foreground"}`}>Haz clic para abrir tus apuntes →</span>
     </button>
   );
 }
