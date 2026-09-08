@@ -1,5 +1,9 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import katex from "katex";
+// Antes en src/styles.css (global, cargado por CUALQUIER pestaña). Movido aquí para que Vite lo
+// separe en el mismo chunk que este componente — RichTextEditor solo lo usan las páginas `lazy`
+// de DashboardPage.tsx, así que abrir "Hoy" ya no descarga el CSS de KaTeX de más.
+import "katex/dist/katex.min.css";
 import { api, ApiError } from "../api/client";
 import { GOOGLE_FONTS, loadGoogleFont } from "../utils/googleFonts";
 

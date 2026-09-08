@@ -221,6 +221,11 @@ model Project {
   status      String // "idea", "en_curso", "pausado", "completado"
   priority    String // "low", "medium", "high"
   deadline    DateTime?
+  // Color de la "carpeta" en la galería del dashboard (ver NotebookCover en ProyectosPage.tsx):
+  // "cover" | "sand" | "sage", elegido al crear el proyecto. Nullable porque los proyectos
+  // creados antes de este campo no tienen uno — la galería cae entonces a su rotación por índice
+  // de siempre en vez de a un color fijo.
+  color       String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

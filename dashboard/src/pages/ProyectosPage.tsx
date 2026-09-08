@@ -5,7 +5,7 @@ import { useFetch } from "../hooks/useFetch";
 import { Loading, ErrorMessage, EmptyState } from "../components/Feedback";
 import { RichTextEditor } from "../components/RichTextEditor";
 import { exportPagesToPdf, exportPagesToWord } from "../utils/notebookExport";
-import { Project, ProjectPage, ProjectTask } from "../types";
+import { Project, ProjectColor, ProjectPage, ProjectTask } from "../types";
 
 const STATUS_LABELS: Record<Project["status"], string> = {
   idea: "Idea",
@@ -14,6 +14,15 @@ const STATUS_LABELS: Record<Project["status"], string> = {
   completado: "Completado",
 };
 const STATUS_ORDER: Project["status"][] = ["idea", "en_curso", "pausado", "completado"];
+
+// Colores de carpeta disponibles al crear un proyecto (ver ProjectColor en ../types) — los tres
+// tonos "sólidos" de la paleta cálida del sistema de diseño (ver el comentario de arriba de
+// dashboard/src/styles.css): --cover (cuero), --secondary/sand y --primary/sage. Mismo idioma de
+// selector que CALENDAR_COLOR_OPTIONS/AddCategoryForm en AnnualCalendarLegend.tsx (swatches
+// redondos, anillo al seleccionar), reutilizando aquí las clases de fondo de TONE_CLASSES (más
+// abajo) en vez de duplicarlas.
+const PROJECT_COLORS: ProjectColor[] = ["cover", "sand", "sage"];
+const PROJECT_COLOR_LABELS: Record<ProjectColor, string> = { cover: "Cuero", sand: "Arena", sage: "Verde salvia" };
 
 export function ProyectosPage({
   focusProjectId,
@@ -26,6 +35,11 @@ export function ProyectosPage({
 } = {}) {
   const [title, setTitle] = useState("");
   const [quickNote, setQuickNote] = useState("");
+  // `null` = "sin personalizar": el backend guarda color: null y la carpeta cae a la rotación
+  // por índice de siempre (ver el fallback `project.color ?? PROJECT_COLORS[...]` más abajo) —
+  // el mismo aspecto que tenían todos los proyectos antes de que existiera este selector. Solo se
+  // fija un color concreto si el usuario toca uno de los swatches.
+  const [color, setColor] = useState<ProjectColor | null>(null);
   const [openId, setOpenId] = useState<number | null>(focusProjectId ?? null);
   const { data, loading, error, reload } = useFetch(() => api.get<{ projects: Project[] }>("/projects"), []);
 
@@ -44,12 +58,13 @@ export function ProyectosPage({
             e.preventDefault();
             if (!title.trim()) return;
             const note = quickNote.trim();
-            const created = await api.post<Project>("/projects", { title: title.trim(), description: note || null });
+            const created = await api.post<Project>("/projects", { title: title.trim(), description: note || null, color });
             if (note) {
               await api.post(`/projects/${created.id}/tasks`, { title: note });
             }
             setTitle("");
             setQuickNote("");
+            setColor(null);
             reload();
           }}
           className="mb-10 grid gap-4 card-soft md:grid-cols-[1fr_2fr_auto]"
@@ -64,6 +79,36 @@ export function ProyectosPage({
           <button type="submit" className="btn-dark">
             Abrir página
           </button>
+
+          {/* Color de la carpeta en la galería — mismo idioma de swatches redondos que
+              AddCategoryForm en AnnualCalendarLegend.tsx (anillo alrededor del seleccionado).
+              "Auto" (primero, guiones) es `color: null`: la carpeta rota por índice como antes de
+              que existiera este selector — es el estado inicial, así que quien no lo toque
+              conserva exactamente el aspecto de siempre. */}
+          <div className="flex items-center gap-2 md:col-span-3">
+            <span className="text-xs text-muted-foreground">Color de la carpeta</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title="Automático (rota los colores de siempre)"
+                onClick={() => setColor(null)}
+                className={`size-5 shrink-0 cursor-pointer rounded-full border border-dashed border-muted-foreground ${
+                  color === null ? "ring-2 ring-foreground ring-offset-1 ring-offset-background" : ""
+                }`}
+              />
+              {PROJECT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  title={PROJECT_COLOR_LABELS[c]}
+                  onClick={() => setColor(c)}
+                  className={`size-5 shrink-0 cursor-pointer rounded-full ${TONE_CLASSES[c].tab} ${
+                    color === c ? "ring-2 ring-foreground ring-offset-1 ring-offset-background" : ""
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
         </form>
       )}
 
@@ -82,7 +127,12 @@ export function ProyectosPage({
       ) : (
         <div className="grid gap-x-6 gap-y-12 sm:grid-cols-2 xl:grid-cols-3">
           {data?.projects.map((project, i) => (
-            <NotebookCover key={project.id} project={project} dark={i % 2 === 0} onOpen={() => setOpenId(project.id)} />
+            <NotebookCover
+              key={project.id}
+              project={project}
+              tone={project.color ?? PROJECT_COLORS[i % PROJECT_COLORS.length]}
+              onOpen={() => setOpenId(project.id)}
+            />
           ))}
         </div>
       )}
@@ -90,29 +140,33 @@ export function ProyectosPage({
   );
 }
 
-function NotebookCover({ project, dark, onOpen }: { project: Project; dark: boolean; onOpen: () => void }) {
+// Clases por tono — "sand" es el único de los tres que necesita borde (su fondo, --secondary,
+// tiene una luminosidad parecida a --background y sin borde se difumina contra la página; --cover
+// y --primary/sage ya son lo bastante oscuros/saturados para destacar solos). "solid" agrupa
+// cover+sage porque ambos necesitan texto claro y las mismas superposiciones semitransparentes
+// (bg-background/opacity-N), frente a sand que usa los tokens normales de texto sobre fondo claro.
+const TONE_CLASSES: Record<ProjectColor, { card: string; tab: string; solid: boolean }> = {
+  cover: { card: "bg-cover text-background", tab: "bg-cover", solid: true },
+  sand: { card: "border border-secondary bg-secondary", tab: "bg-secondary", solid: false },
+  sage: { card: "bg-primary text-primary-foreground", tab: "bg-primary", solid: true },
+};
+
+function NotebookCover({ project, tone, onOpen }: { project: Project; tone: ProjectColor; onOpen: () => void }) {
+  const { card, tab, solid } = TONE_CLASSES[tone];
   return (
     <button
       onClick={onOpen}
-      className={`relative flex cursor-pointer flex-col rounded-3xl rounded-tl-none pt-9 p-6 text-left shadow-[var(--shadow-soft)] transition-transform hover:-translate-y-1 ${
-        dark ? "bg-cover text-background" : "border border-secondary bg-secondary"
-      }`}
+      className={`relative flex cursor-pointer flex-col rounded-3xl rounded-tl-none pt-9 p-6 text-left shadow-[var(--shadow-soft)] transition-transform hover:-translate-y-1 ${card}`}
     >
-      {/* Pestaña de carpeta colgante: silueta trapezoidal (borde derecho en diagonal vía
-          clip-path, en vez de un simple rectángulo) para que lea como la lengüeta real de una
-          carpeta — mismo color que la tapa (parte de la misma silueta recortada, no una pieza
+      {/* Pestaña de carpeta colgante: rectángulo recto (sin corte en diagonal — antes tenía un
+          clip-path trapezoidal, pero se pidió que cayera recta) con las dos esquinas superiores
+          redondeadas. Mismo color que la tapa (parte de la misma silueta recortada, no una pieza
           aparte). Sin sombra propia (dibujaba una raya justo en el solape, delatando que son dos
           piezas) y con el solape (-top) más largo que el padding superior de la tapa, para que
-          ningún borde de la pestaña quede nunca a la vista dentro de la tarjeta. Esquina exterior
-          (arriba-izda) redondeada como el resto del recorte; la esquina de la propia tapa
-          (arriba-izda del `button`, `rounded-tl-none`) se deja recta para que la lengüeta parezca
-          salir de ahí, no flotar sobre una esquina ya curva. */}
-      <div
-        aria-hidden
-        className={`absolute left-3 -top-5 h-8 w-[42%] max-w-40 rounded-tl-lg [clip-path:polygon(0_0,100%_0,76%_100%,0_100%)] ${
-          dark ? "bg-cover" : "bg-secondary"
-        }`}
-      />
+          ningún borde de la pestaña quede nunca a la vista dentro de la tarjeta. La esquina
+          arriba-izda del propio `button` (`rounded-tl-none`) se deja recta para que la lengüeta
+          parezca salir de ahí, no flotar sobre una esquina ya curva. */}
+      <div aria-hidden className={`absolute left-3 -top-5 h-8 w-[42%] max-w-40 rounded-t-lg ${tab}`} />
 
       {/* Brillo diagonal + línea de pliegue bajo la lengüeta: puramente decorativos
           (pointer-events-none, sin contenido) para dar la sensación de plástico/papel de una
@@ -127,14 +181,14 @@ function NotebookCover({ project, dark, onOpen }: { project: Project; dark: bool
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-4">
           <h2 className="font-serif text-2xl">{project.title}</h2>
-          <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${dark ? "bg-background/20" : "bg-foreground/10"}`}>
+          <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${solid ? "bg-background/20" : "bg-foreground/10"}`}>
             {STATUS_LABELS[project.status]}
           </span>
         </div>
 
-        {project.description && <p className={`mt-2 text-sm ${dark ? "opacity-70" : "text-muted-foreground"}`}>{project.description}</p>}
+        {project.description && <p className={`mt-2 text-sm ${solid ? "opacity-70" : "text-muted-foreground"}`}>{project.description}</p>}
 
-        <span className={`mt-6 text-xs ${dark ? "opacity-50" : "text-muted-foreground"}`}>Haz clic para abrir tus apuntes →</span>
+        <span className={`mt-6 text-xs ${solid ? "opacity-50" : "text-muted-foreground"}`}>Haz clic para abrir tus apuntes →</span>
       </div>
     </button>
   );

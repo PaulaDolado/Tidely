@@ -1,7 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap");
+/* Outfit/Instrument Serif ya no se cargan con @import aquí — ver el <link rel="stylesheet"> +
+ * preconnect en index.html (evita una cadena de 2 saltos cross-origin en serie antes del primer
+ * texto legible). El @import de KaTeX tampoco vive aquí: se movió a RichTextEditor.tsx (import
+ * directo del .css desde ahí) para que Vite lo separe en el mismo chunk que ese componente en vez
+ * de meterlo en el CSS global de toda la app — RichTextEditor solo lo usan las pestañas ahora
+ * `lazy` de DashboardPage.tsx (Proyectos, Páginas personalizadas, Planificador, Horario), así que
+ * alguien que solo abra "Hoy" ya no descarga ni el JS ni el CSS de KaTeX. */
 @import "tailwindcss";
-/* Estilos de KaTeX para el bloque de ecuación del editor de páginas (ver RichTextEditor.tsx). */
-@import "katex/dist/katex.min.css";
 
 /*
  * Sistema de diseño adaptado de difarmed/life-weaver-pro-23 ("Stoa OS", generado con Lovable).

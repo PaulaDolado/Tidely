@@ -1,17 +1,27 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AppShell, parseCustomPageTab, customPageTab, SearchFocus, Tab } from "../components/AppShell";
 import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
+import { Loading } from "../components/Feedback";
 import { HoyPage } from "./HoyPage";
-import { AgendaPage } from "./AgendaPage";
-import { PlanificadorPage } from "./PlanificadorPage";
-import { SchedulePage } from "./SchedulePage";
-import { MetasPage } from "./MetasPage";
-import { FinanzasPage } from "./FinanzasPage";
-import { MetasAhorroPage } from "./MetasAhorroPage";
-import { ProyectosPage } from "./ProyectosPage";
-import { CustomPagePage } from "./CustomPagePage";
 import { CustomPageSummary, CustomPageTemplate } from "../types";
+
+// "Hoy" (la pestaña por defecto) se importa arriba de forma normal — es lo primero que ve
+// cualquiera al entrar, así que cargarla de forma perezosa solo añadiría una petición de red de
+// más sin ahorrar nada. El resto de pestañas SÍ son `lazy`: antes se importaban todas de forma
+// estática (aunque solo se RENDERIZASE la activa, ver el JSX de abajo), así que su código —
+// incluido RichTextEditor y KaTeX (~varios cientos de KB), que arrastran Proyectos/Páginas
+// personalizadas/Planificador/Horario — viajaba entero en el bundle inicial aunque el usuario
+// jamás abriera esas pestañas en la sesión. Con `lazy`, ese código solo se descarga la primera vez
+// que se navega a cada una.
+const AgendaPage = lazy(() => import("./AgendaPage").then((m) => ({ default: m.AgendaPage })));
+const PlanificadorPage = lazy(() => import("./PlanificadorPage").then((m) => ({ default: m.PlanificadorPage })));
+const SchedulePage = lazy(() => import("./SchedulePage").then((m) => ({ default: m.SchedulePage })));
+const MetasPage = lazy(() => import("./MetasPage").then((m) => ({ default: m.MetasPage })));
+const FinanzasPage = lazy(() => import("./FinanzasPage").then((m) => ({ default: m.FinanzasPage })));
+const MetasAhorroPage = lazy(() => import("./MetasAhorroPage").then((m) => ({ default: m.MetasAhorroPage })));
+const ProyectosPage = lazy(() => import("./ProyectosPage").then((m) => ({ default: m.ProyectosPage })));
+const CustomPagePage = lazy(() => import("./CustomPagePage").then((m) => ({ default: m.CustomPagePage })));
 
 // Tras conectar Google Calendar (ver GoogleCalendarMenu en AgendaPage), Google redirige el
 // navegador completo de vuelta a la raíz con `?google=connected|error` en la URL — como no hay
@@ -100,42 +110,49 @@ export function DashboardPage() {
       onDeleteCustomPage={deleteCustomPage}
       onOpenGallery={openGallery}
     >
-      {activeCustomPageId !== null && (
-        // `key`: sin esto, pasar de una página personalizada a OTRA (p.ej. justo tras crear una
-        // nueva mientras ya se estaba viendo otra) no desmonta el componente — React lo reutiliza
-        // con un `pageId` distinto, y hasta que su useEffect (keyed en `page`, no en `pageId`) no
-        // termina de resincronizar título/subtítulo/contenido puede verse en blanco. Con `key` sí
-        // se desmonta y se vuelve a montar desde cero por cada página, sin ese hueco intermedio.
-        <CustomPagePage
-          key={activeCustomPageId}
-          pageId={activeCustomPageId}
-          onRenamed={reloadCustomPages}
-          onDeleted={handleCustomPageDeleted}
-        />
-      )}
       {activeTab === "hoy" && <HoyPage onNavigate={navigate} />}
-      {activeTab === "agenda" && (
-        <AgendaPage
-          focusEventId={focus?.type === "event" ? focus.id : undefined}
-          focusEventStartTime={focus?.type === "event" ? focus.startTime : undefined}
-          onFocusHandled={clearFocus}
-          onNavigate={navigate}
-        />
-      )}
-      {activeTab === "planificador" && (
-        <PlanificadorPage
-          focusTaskId={focus?.type === "task" ? focus.id : undefined}
-          focusPlannerId={focus?.type === "task" ? focus.plannerId : undefined}
-          onFocusHandled={clearFocus}
-        />
-      )}
-      {activeTab === "horario" && <SchedulePage />}
-      {activeTab === "metas" && <MetasPage />}
-      {activeTab === "finanzas" && <FinanzasPage />}
-      {activeTab === "finanzas-ahorro" && <MetasAhorroPage />}
-      {activeTab === "proyectos" && (
-        <ProyectosPage focusProjectId={focus?.type === "project" ? focus.id : undefined} onFocusHandled={clearFocus} />
-      )}
+
+      {/* Todo lo que no sea "Hoy" es `lazy` (ver los imports de arriba) — el Suspense solo
+          envuelve esto, no "Hoy", para que la pestaña por defecto nunca dependa de una carga
+          asíncrona de más. El fallback solo se ve la primera vez que se visita cada pestaña en la
+          sesión (Vite ya cachea el chunk descargado para las siguientes). */}
+      <Suspense fallback={<Loading label="Cargando..." />}>
+        {activeCustomPageId !== null && (
+          // `key`: sin esto, pasar de una página personalizada a OTRA (p.ej. justo tras crear una
+          // nueva mientras ya se estaba viendo otra) no desmonta el componente — React lo reutiliza
+          // con un `pageId` distinto, y hasta que su useEffect (keyed en `page`, no en `pageId`) no
+          // termina de resincronizar título/subtítulo/contenido puede verse en blanco. Con `key` sí
+          // se desmonta y se vuelve a montar desde cero por cada página, sin ese hueco intermedio.
+          <CustomPagePage
+            key={activeCustomPageId}
+            pageId={activeCustomPageId}
+            onRenamed={reloadCustomPages}
+            onDeleted={handleCustomPageDeleted}
+          />
+        )}
+        {activeTab === "agenda" && (
+          <AgendaPage
+            focusEventId={focus?.type === "event" ? focus.id : undefined}
+            focusEventStartTime={focus?.type === "event" ? focus.startTime : undefined}
+            onFocusHandled={clearFocus}
+            onNavigate={navigate}
+          />
+        )}
+        {activeTab === "planificador" && (
+          <PlanificadorPage
+            focusTaskId={focus?.type === "task" ? focus.id : undefined}
+            focusPlannerId={focus?.type === "task" ? focus.plannerId : undefined}
+            onFocusHandled={clearFocus}
+          />
+        )}
+        {activeTab === "horario" && <SchedulePage />}
+        {activeTab === "metas" && <MetasPage />}
+        {activeTab === "finanzas" && <FinanzasPage />}
+        {activeTab === "finanzas-ahorro" && <MetasAhorroPage />}
+        {activeTab === "proyectos" && (
+          <ProyectosPage focusProjectId={focus?.type === "project" ? focus.id : undefined} onFocusHandled={clearFocus} />
+        )}
+      </Suspense>
     </AppShell>
   );
 }

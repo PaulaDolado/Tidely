@@ -8,6 +8,9 @@ interface CreateProjectInput {
   status?: string;
   priority?: string;
   deadline?: string | Date | null;
+  // "cover" | "sand" | "sage", o null/ausente si el usuario no personalizó el color al crear el
+  // proyecto — la galería del dashboard cae entonces a su rotación por índice de siempre.
+  color?: string | null;
 }
 
 export async function createProject(userId: number, input: CreateProjectInput) {
@@ -19,6 +22,7 @@ export async function createProject(userId: number, input: CreateProjectInput) {
       status: input.status ?? "idea",
       priority: input.priority ?? "medium",
       deadline: input.deadline ? new Date(input.deadline) : null,
+      color: input.color ?? null,
     },
   });
 }
@@ -87,6 +91,7 @@ export async function updateProject(userId: number, projectId: number, input: Pa
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
       ...(input.deadline !== undefined ? { deadline: input.deadline ? new Date(input.deadline) : null } : {}),
+      ...(input.color !== undefined ? { color: input.color } : {}),
     },
   });
 }

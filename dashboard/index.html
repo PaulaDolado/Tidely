@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.ico" />
     <title>Tidely</title>
+    <!-- Antes esta hoja de estilos se cargaba con @import dentro de src/styles.css: el navegador
+         no podía ni empezar a pedirla hasta descargar Y EMPEZAR A PARSEAR el CSS del propio
+         bundle, y encima esa hoja de Google Fonts a su vez apunta a fonts.gstatic.com para los
+         .woff2 reales — dos saltos cross-origin en serie, cada uno con su propio DNS+TLS, antes de
+         poder pintar texto con la tipografía definitiva. Con <link> aquí, el navegador puede
+         empezar esa cadena de peticiones en paralelo con el resto nada más leer el <head>, y el
+         preconnect adelanta el DNS+TLS de ambos orígenes antes de que haga falta la hoja en sí. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>

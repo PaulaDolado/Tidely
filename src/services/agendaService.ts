@@ -86,9 +86,13 @@ async function findEventsInRange(userId: number, start: Date, end: Date, filters
   return { events, pagination: buildPagination(page, limit, allEvents.length) };
 }
 
-export async function getDay(userId: number, dateStr: string, filters: EventFilters = {}) {
+// `knownTimezone`: para cuando quien llama ya la pidió un momento antes (ver getToday en
+// todayService.ts, que necesita la timezone del usuario para calcular qué día es "hoy" ANTES de
+// poder llamar a getDay) — evita una segunda consulta idéntica a la base de datos. El resto de
+// llamadas (rutas normales de Agenda) no la pasan y se comportan exactamente igual que antes.
+export async function getDay(userId: number, dateStr: string, filters: EventFilters = {}, knownTimezone?: string) {
   parseDateParam(dateStr);
-  const timezone = await getUserTimezone(userId);
+  const timezone = knownTimezone ?? (await getUserTimezone(userId));
   const { start, end } = dayRange(dateStr, timezone);
   const { events, pagination } = await findEventsInRange(userId, start, end, filters);
   return { date: dateStr, timezone, events, pagination };

@@ -23,7 +23,10 @@ export async function getToday(userId: number) {
   const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
 
   const [agendaDay, tasksDueToday, habitsResult, notesResult, recentProjectEntries, combinedStreak] = await Promise.all([
-    getDay(userId, dateStr),
+    // `timezone` ya se pidió dos líneas arriba (hacía falta para calcular `dateStr`) — se le pasa
+    // aquí para que getDay no vuelva a consultarla (antes eran 2 SELECT idénticos por cada carga
+    // de "Hoy").
+    getDay(userId, dateStr, {}, timezone),
     prisma.task.findMany({
       where: { userId, dueDate: { gte: dayStart, lte: dayEnd } },
       include: { subtasks: { orderBy: { createdAt: "asc" } } },

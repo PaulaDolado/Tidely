@@ -3,6 +3,10 @@ import { paginationQuerySchema } from "./pagination";
 
 const STATUSES = ["idea", "en_curso", "pausado", "completado"];
 const PRIORITIES = ["low", "medium", "high"];
+// Color de la "carpeta" en la galería del dashboard (ver NotebookCover en ProyectosPage.tsx) —
+// `null`/ausente ("sin personalizar") deja que el frontend rote los tres tonos por índice como
+// hacía antes de que existiera este campo.
+const COLORS = ["cover", "sand", "sage"];
 
 export const idParamSchema = Joi.object({
   id: Joi.number().integer().positive().required(),
@@ -28,6 +32,9 @@ export const createProjectSchema = Joi.object({
     .valid(...PRIORITIES)
     .default("medium"),
   deadline: Joi.date().iso().allow(null),
+  color: Joi.string()
+    .valid(...COLORS)
+    .allow(null),
 }).options({ stripUnknown: true });
 
 export const updateProjectSchema = Joi.object({
@@ -36,6 +43,9 @@ export const updateProjectSchema = Joi.object({
   status: Joi.string().valid(...STATUSES),
   priority: Joi.string().valid(...PRIORITIES),
   deadline: Joi.date().iso().allow(null),
+  color: Joi.string()
+    .valid(...COLORS)
+    .allow(null),
 }).min(1);
 
 export const createTaskSchema = Joi.object({

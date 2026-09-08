@@ -257,6 +257,12 @@ export interface ProjectTask {
   completed: boolean;
 }
 
+// Color de la "carpeta" del proyecto en la galería (ver NotebookCover en ProyectosPage.tsx) — los
+// tres tonos sólidos de la paleta cálida del sistema de diseño (--cover, --secondary/sand,
+// --primary/sage). `null` en proyectos creados antes de que existiera este campo: la galería cae
+// entonces a la rotación por índice de siempre en vez de a un color fijo.
+export type ProjectColor = "cover" | "sand" | "sage";
+
 export interface Project {
   id: number;
   title: string;
@@ -264,6 +270,7 @@ export interface Project {
   status: "idea" | "en_curso" | "pausado" | "completado";
   priority: "low" | "medium" | "high";
   deadline: string | null;
+  color: ProjectColor | null;
   tasks?: ProjectTask[];
   progress?: { total: number; completed: number; percent: number };
 }
