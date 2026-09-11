@@ -82,6 +82,153 @@
   --scrollbar-thumb-hover: oklch(0.6 0 0);
 }
 
+/*
+ * Temas (Ajustes > General > Apariencia, ver ThemeContext.tsx y SettingsDialog.tsx). "Sistema"
+ * es la paleta de :root de arriba SIN CAMBIOS (el look actual de la app) — no pone `data-theme`
+ * en <html>, así que el bloque de abajo (`prefers-color-scheme: dark`) es lo único que la afecta,
+ * cuando el sistema operativo está en oscuro. El resto de temas SÍ ponen `data-theme` y ganan
+ * siempre a esa media query (`:not([data-theme])` en el selector de abajo), elija lo que elija
+ * el sistema operativo.
+ *
+ * No hace falta tocar ni un componente para que esto pinte toda la app: tanto las páginas como
+ * la paleta de categorías/etiquetas/marcadores (ver utils/calendarColors.ts) ya reutilizan estas
+ * mismas variables (--color-primary, --color-habit, --color-hobby...) en vez de colores sueltos.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: #000000;
+    --foreground: #f2f2f7;
+    --card: #1c1c1e;
+    --card-foreground: #f2f2f7;
+    --primary: #0a84ff;
+    --primary-foreground: #ffffff;
+    --secondary: #2c2c2e;
+    --secondary-foreground: #f2f2f7;
+    --muted: #2c2c2e;
+    --muted-foreground: #98989d;
+    --destructive: #ff453a;
+    --destructive-foreground: #ffffff;
+    --border: rgba(255, 255, 255, 0.12);
+    --input: rgba(255, 255, 255, 0.16);
+    --ring: #0a84ff;
+    --hobby: #ff9f0a;
+    --positive: #30d158;
+    --negative: #ff453a;
+    --warning: #ffd60a;
+    --habit: #5e5ce6;
+    --cover: #ac8e68;
+  }
+}
+
+/* Básico — paleta neutra estilo "Apple" (System Colors de iOS/macOS: azul de acento, grises
+   neutros, sin el tinte cálido de la paleta por defecto). */
+[data-theme="basico"] {
+  --background: #f2f2f7;
+  --foreground: #1c1c1e;
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --primary: #007aff;
+  --primary-foreground: #ffffff;
+  --secondary: #e5e5ea;
+  --secondary-foreground: #1c1c1e;
+  --muted: #e5e5ea;
+  --muted-foreground: #6e6e73;
+  --destructive: #ff3b30;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: rgba(0, 0, 0, 0.12);
+  --ring: #007aff;
+  --hobby: #ff9500;
+  --positive: #34c759;
+  --negative: #ff3b30;
+  --warning: #ffcc00;
+  --habit: #5856d6;
+  --cover: #a2845e;
+}
+
+/* Oscuro — contrapartida oscura de "Básico" (mismo acento azul, System Colors en su variante
+   dark). Elección explícita: se aplica siempre que esté seleccionada, siga el sistema operativo
+   lo que siga (a diferencia de "Sistema" en modo oscuro, arriba, que usa esta misma paleta pero
+   solo mientras no haya nada elegido a mano). */
+[data-theme="oscuro"] {
+  --background: #000000;
+  --foreground: #f2f2f7;
+  --card: #1c1c1e;
+  --card-foreground: #f2f2f7;
+  --primary: #0a84ff;
+  --primary-foreground: #ffffff;
+  --secondary: #2c2c2e;
+  --secondary-foreground: #f2f2f7;
+  --muted: #2c2c2e;
+  --muted-foreground: #98989d;
+  --destructive: #ff453a;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #0a84ff;
+  --hobby: #ff9f0a;
+  --positive: #30d158;
+  --negative: #ff453a;
+  --warning: #ffd60a;
+  --habit: #5e5ce6;
+  --cover: #ac8e68;
+}
+
+/* Salvia — tonos verdes/oliva y crema (marfil, champán, melocotón, bistre español, codium), a
+   partir de una paleta de referencia de tonos verdes. */
+[data-theme="salvia"] {
+  --background: #f9ead2;
+  --foreground: #322d1c;
+  --card: #fffbf3;
+  --card-foreground: #322d1c;
+  --primary: #4f5127;
+  --primary-foreground: #fbf6ea;
+  --secondary: #f8eec2;
+  --secondary-foreground: #322d1c;
+  --muted: #f3e9d6;
+  --muted-foreground: #837534;
+  --destructive: #c06b69;
+  --destructive-foreground: #fffbf3;
+  --border: rgba(50, 45, 28, 0.12);
+  --input: rgba(50, 45, 28, 0.15);
+  --ring: #4f5127;
+  --hobby: #db918f;
+  --positive: #6b6e35;
+  --negative: #c06b69;
+  --warning: #c9a227;
+  /* Único tono frío de la paleta (igual que --habit en :root) — se mantiene aunque el resto de
+     esta paleta sea cálida, para que Hábitos se siga distinguiendo del resto. */
+  --habit: #6e8fa3;
+  --cover: #837534;
+}
+
+/* Espresso — tonos marrón café (caramelo, moca, espresso, corteza, balsámico), a partir de una
+   paleta de referencia de tonos marrones. Fondo casi negro con acentos cálidos, no el gris frío
+   de "Oscuro". */
+[data-theme="espresso"] {
+  --background: #160c06;
+  --foreground: #f3e4d3;
+  --card: #332116;
+  --card-foreground: #f3e4d3;
+  --primary: #c89674;
+  --primary-foreground: #2a1b10;
+  --secondary: #91664a;
+  --secondary-foreground: #f3e4d3;
+  --muted: #5c402f;
+  --muted-foreground: #c9af9c;
+  --destructive: #c1503b;
+  --destructive-foreground: #f3e4d3;
+  --border: rgba(243, 228, 211, 0.14);
+  --input: rgba(243, 228, 211, 0.18);
+  --ring: #c89674;
+  --hobby: #c89674;
+  --positive: #7c8a5a;
+  --negative: #c1503b;
+  --warning: #d9a441;
+  --habit: #6e88a3;
+  --cover: #91664a;
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

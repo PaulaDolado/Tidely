@@ -8,6 +8,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts, Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold } from "@expo-google-fonts/outfit";
 import { InstrumentSerif_400Regular } from "@expo-google-fonts/instrument-serif";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
+import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 import { AppSidebar } from "./src/navigation/AppSidebar";
 import { SidebarProvider } from "./src/navigation/SidebarContext";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -20,7 +21,6 @@ import { FinanzasScreen } from "./src/screens/FinanzasScreen";
 import { MetasAhorroScreen } from "./src/screens/MetasAhorroScreen";
 import { PaginasScreen, PaginasStackParamList } from "./src/screens/PaginasScreen";
 import { ProyectosScreen } from "./src/screens/ProyectosScreen";
-import { colors } from "./src/theme";
 
 // Mantiene la splash nativa visible hasta que las fuentes (ver más abajo) terminen de cargar —
 // llamada en scope global, no dentro de un componente, tal y como pide la propia documentación
@@ -61,12 +61,13 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 
 function Root() {
   const { user, ready } = useAuth();
+  const { colors } = useTheme();
 
   if (!ready) {
     // Comprobando si había sesión guardada en SecureStore — instantáneo en la práctica, pero
     // evita un parpadeo Login→Hoy si el dispositivo tarda un poco.
     return (
-      <View style={styles.loading}>
+      <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -123,14 +124,24 @@ export default function App() {
 
   return (
     <SafeAreaProvider onLayout={onLayoutRootView}>
-      <AuthProvider>
-        <Root />
-        <StatusBar style="dark" />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <Root />
+          <ThemedStatusBar />
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
+// Iconos claros sobre fondo oscuro y viceversa — sin esto, un tema oscuro (Oscuro/Espresso, o
+// "Sistema" con el dispositivo en oscuro) dejaría la hora/batería del sistema en negro sobre
+// negro, ilegibles.
+function ThemedStatusBar() {
+  const { isDark } = useTheme();
+  return <StatusBar style={isDark ? "light" : "dark"} />;
+}
+
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

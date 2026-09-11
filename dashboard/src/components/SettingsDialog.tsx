@@ -1,5 +1,6 @@
 import { FormEvent, ReactNode, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { Theme, THEME_OPTIONS, useTheme } from "../context/ThemeContext";
 import { api, ApiError } from "../api/client";
 import { User } from "../types";
 
@@ -65,7 +66,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </div>
 
           {section === "cuenta" && <AccountSection />}
-          {section === "general" && <ComingSoonSection description="Elige cómo se ve Tidely: tema claro, oscuro o automático según tu sistema." />}
+          {section === "general" && <GeneralSection />}
           {section === "uso" && <TermsOfUseSection />}
           {section === "privacidad" && <PrivacyPolicySection />}
           {section === "invitar" && <ComingSoonSection description="Comparte Tidely con quien quieras a través de un enlace de invitación propio." />}
@@ -76,9 +77,63 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Sección genérica para lo que todavía no tiene funcionalidad real (General/apariencia, Invita a
-// un amigo, Obtener ayuda) — un único componente parametrizado en vez de tres casi idénticos,
-// ya que de momento los tres son solo un aviso de "esto llega más adelante".
+// Previsualización de cada tema en su propia miniatura (fondo/tarjeta/acento) — colores fijos en
+// vez de leer las variables CSS reales, a propósito: aquí hay que ENSEÑAR los 5 temas a la vez
+// sin que elegir uno cambie cómo se ven los otros 4 en esta misma pantalla (si leyeran
+// `var(--color-primary)` etc., las 5 miniaturas mostrarían siempre el tema ACTIVO, no el suyo
+// propio). Mismos valores que sus bloques `[data-theme="..."]` en styles.css — si cambian ahí,
+// cambian aquí también.
+const THEME_PREVIEWS: Record<Theme, { background: string; card: string; primary: string }> = {
+  sistema: { background: "#f7f4f1", card: "#ffffff", primary: "#5f7161" },
+  basico: { background: "#f2f2f7", card: "#ffffff", primary: "#007aff" },
+  oscuro: { background: "#000000", card: "#1c1c1e", primary: "#0a84ff" },
+  salvia: { background: "#f9ead2", card: "#fffbf3", primary: "#4f5127" },
+  espresso: { background: "#160c06", card: "#332116", primary: "#c89674" },
+};
+
+function GeneralSection() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="mb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Apariencia</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Elige cómo se ve Tidely. "Sistema" mantiene el aspecto actual y sigue el modo claro/oscuro de tu dispositivo.
+        </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {THEME_OPTIONS.map((option) => {
+            const preview = THEME_PREVIEWS[option.value];
+            const selected = theme === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setTheme(option.value)}
+                className={`cursor-pointer rounded-2xl border p-2 text-left transition-colors ${
+                  selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/30"
+                }`}
+              >
+                <span
+                  className="mb-2 flex h-14 items-end gap-1 overflow-hidden rounded-xl p-1.5"
+                  style={{ backgroundColor: preview.background }}
+                >
+                  <span className="h-full flex-1 rounded-md" style={{ backgroundColor: preview.card }} />
+                  <span className="size-3.5 shrink-0 rounded-full" style={{ backgroundColor: preview.primary }} />
+                </span>
+                <span className={`block text-xs font-medium ${selected ? "text-primary" : "text-foreground"}`}>{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sección genérica para lo que todavía no tiene funcionalidad real (Invita a un amigo, Obtener
+// ayuda) — un único componente parametrizado en vez de dos casi idénticos, ya que de momento los
+// dos son solo un aviso de "esto llega más adelante".
 function ComingSoonSection({ description }: { description: string }) {
   return (
     <div className="space-y-3">

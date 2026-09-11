@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Animated, Easing, View, Text, Pressable, Image, ScrollView, Modal, StyleSheet, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useAuth } from "../auth/AuthContext";
 import { useSidebar } from "./SidebarContext";
+import { useTheme } from "../context/ThemeContext";
 import { ApiError } from "../api/client";
 import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
 import { NewPageForm } from "../components/NewPageForm";
-import { colors, fonts, radius } from "../theme";
+import { AppearanceSettings } from "../components/AppearanceSettings";
+import { ColorPalette, fonts, radius } from "../theme";
 
 // Sidebar lateral para móvil — reemplaza la barra de pestañas inferior (bottom-tabs) por un menú
 // lateral colapsable, puerto de dashboard/src/components/AppShell.tsx (<aside> de escritorio) en
@@ -103,9 +105,12 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { collapsed, setCollapsed } = useSidebar();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [labelWidths, setLabelWidths] = useState<Record<string, number>>({});
   const [showCreatePage, setShowCreatePage] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [customPages, setCustomPages] = useState<CustomPageSummary[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -380,14 +385,17 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-          <View style={styles.footerUser}>
+          {/* Mismo gesto que la web (AppShell.tsx): tocar el nombre abre Ajustes — de momento solo
+              "Apariencia" (ver AppearanceSettings), el resto de secciones del diálogo web
+              (Cuenta, políticas...) todavía no tienen pantalla propia en mobile. */}
+          <Pressable style={styles.footerUser} onPress={() => setShowSettings(true)} hitSlop={8}>
             <Text numberOfLines={1} style={styles.userName}>
               {user?.name}
             </Text>
             <Text numberOfLines={1} style={styles.userEmail}>
               {user?.email}
             </Text>
-          </View>
+          </Pressable>
           <Pressable onPress={logout} hitSlop={8}>
             <Text style={styles.logout}>Salir</Text>
           </Pressable>
@@ -416,11 +424,30 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Ajustes</Text>
+              <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>
+                <Text style={styles.settingsClose}>Cerrar</Text>
+              </Pressable>
+            </View>
+            <AppearanceSettings />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
 
-const styles = StyleSheet.create({
+// Función, no objeto suelto: antes `styles` se calculaba UNA vez al importar este fichero (con
+// los colores del tema que estuviera activo en ese instante) y ya no se enteraba de más cambios
+// — ahora el componente la vuelve a llamar (ver `useMemo(() => createStyles(colors), [colors])`
+// arriba) cada vez que `useTheme()` entrega una paleta distinta.
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
   backdrop: {
     position: "absolute",
     top: 0,
@@ -600,4 +627,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-});
+  settingsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  settingsTitle: {
+    fontFamily: fonts.serif,
+    fontSize: 20,
+    color: colors.foreground,
+  },
+  settingsClose: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 12,
+    color: colors.mutedForeground,
+  },
+  });
+}
