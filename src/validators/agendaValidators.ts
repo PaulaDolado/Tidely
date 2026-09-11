@@ -21,6 +21,14 @@ export const idParamSchema = Joi.object({
   id: Joi.number().integer().positive().required(),
 });
 
+export const exportScopeParamSchema = Joi.object({
+  scope: Joi.string().valid("day", "week", "month", "year").required(),
+  date: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .required()
+    .messages({ "string.pattern.base": "date debe tener formato YYYY-MM-DD" }),
+});
+
 export const exceptionParamSchema = Joi.object({
   id: Joi.number().integer().positive().required(),
   originalStartTime: Joi.date().iso().required(),

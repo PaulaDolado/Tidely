@@ -8,6 +8,15 @@ import { HabitsTrackerCard } from "../components/HabitsTrackerCard";
 import { QuickNotesCard } from "../components/QuickNotesCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
 import {
+  ExportScope,
+  buildIcsFromEvents,
+  dateKeyToIsoWeekString,
+  downloadTextFile,
+  exportEventsToPdf,
+  isoWeekStringToMondayKey,
+  scopeLabel,
+} from "../utils/agendaExport";
+import {
   AgendaResponse,
   AgendaYearResponse,
   Event,
@@ -86,8 +95,9 @@ const TYPE_LABELS: Record<string, string> = {
   otro: "Otro",
 };
 
-type ViewMode = "week" | "month" | "year" | "agenda";
+type ViewMode = "day" | "week" | "month" | "year" | "agenda";
 const VIEW_MODES: { value: ViewMode; label: string }[] = [
+  { value: "day", label: "Día" },
   { value: "week", label: "Semana" },
   { value: "month", label: "Mes" },
   { value: "year", label: "Año" },
@@ -173,6 +183,7 @@ export function AgendaPage({
   const [open, setOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [showFreeTime, setShowFreeTime] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // "Agenda" (lista) usa los mismos eventos que "Mes" — solo cambia cómo se pintan (lista
   // cronológica agrupada por día en vez de cuadrícula). "Año" tiene su propio endpoint ligero
@@ -183,7 +194,9 @@ export function AgendaPage({
         ? api.get<AgendaResponse>(`/agenda/month/${selected}`)
         : viewMode === "week"
           ? api.get<AgendaResponse>(`/agenda/week/${selected}`)
-          : Promise.resolve(null as unknown as AgendaResponse),
+          : viewMode === "day"
+            ? api.get<AgendaResponse>(`/agenda/day/${selected}`)
+            : Promise.resolve(null as unknown as AgendaResponse),
     [selected, viewMode]
   );
 
@@ -255,6 +268,14 @@ export function AgendaPage({
 
   const rangeLabel = useMemo(() => {
     const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+    if (viewMode === "day") {
+      return new Date(`${selected}T00:00:00.000Z`).toLocaleDateString("es-ES", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        timeZone: "UTC",
+      });
+    }
     if (viewMode === "week") {
       if (week.length === 0) return "";
       return `Semana del ${fmt(week[0])} – ${fmt(week[6])}`;
@@ -308,7 +329,11 @@ export function AgendaPage({
             </div>
             <div className="flex items-center overflow-hidden rounded-full border border-border">
               <button
-                onClick={() => setSelected((s) => (viewMode === "year" ? addYears(s, -1) : addDays(s, viewMode === "week" ? -7 : -28)))}
+                onClick={() =>
+                  setSelected((s) =>
+                    viewMode === "year" ? addYears(s, -1) : addDays(s, viewMode === "day" ? -1 : viewMode === "week" ? -7 : -28)
+                  )
+                }
                 className="cursor-pointer px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
                 aria-label="Anterior"
               >
@@ -321,7 +346,11 @@ export function AgendaPage({
                 Hoy
               </button>
               <button
-                onClick={() => setSelected((s) => (viewMode === "year" ? addYears(s, 1) : addDays(s, viewMode === "week" ? 7 : 28)))}
+                onClick={() =>
+                  setSelected((s) =>
+                    viewMode === "year" ? addYears(s, 1) : addDays(s, viewMode === "day" ? 1 : viewMode === "week" ? 7 : 28)
+                  )
+                }
                 className="cursor-pointer px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
                 aria-label="Siguiente"
               >
@@ -330,6 +359,9 @@ export function AgendaPage({
             </div>
             <button onClick={() => setShowFreeTime((v) => !v)} className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted">
               {showFreeTime ? "Ocultar tiempo libre" : "⏱ Tiempo libre"}
+            </button>
+            <button onClick={() => setExportOpen(true)} className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted">
+              ⬇ Exportar
             </button>
             <IcsMenu onImported={reload} />
             <GoogleCalendarMenu onSynced={reload} />
@@ -372,6 +404,8 @@ export function AgendaPage({
           )
         ) : loading ? (
           <Loading label="Cargando agenda..." />
+        ) : viewMode === "day" ? (
+          <DayColumn date={new Date(`${selected}T00:00:00.000Z`)} events={data?.events ?? []} onSelect={setEditingEvent} />
         ) : viewMode === "week" ? (
           week.length > 0 && (
             <WeekTimeGrid week={week} events={data?.events ?? []} today={today} onSelect={setEditingEvent} onMoveToDay={moveEventToDay} />
@@ -412,6 +446,8 @@ export function AgendaPage({
           <QuickNotesCard notes={notesData?.notes ?? []} onChanged={reloadNotes} />
         </div>
       </section>
+
+      {exportOpen && <AgendaExportDialog initialDate={selected} onClose={() => setExportOpen(false)} />}
 
       {editingEvent && (
         <EventDialog
@@ -737,6 +773,37 @@ function WeekTimeGrid({
   );
 }
 
+// Vista "Día": una sola columna a todo el ancho, sin drag-and-drop (no hay otro día al que
+// soltar una tarjeta) — eventos del día ordenados por hora, con detalle completo (igual que una
+// columna de WeekTimeGrid, pero sin comprimir).
+function DayColumn({ date, events, onSelect }: { date: Date; events: Event[]; onSelect: (event: Event) => void }) {
+  const key = toKey(date);
+  const dayEvents = events.filter((e) => dayKeyOf(e) === key).sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  return (
+    <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-soft)] sm:p-6">
+      {dayEvents.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+          No hay eventos este día.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {dayEvents.map((event) => (
+            <EventCard
+              key={`${event.id}-${event.startTime}`}
+              event={event}
+              onSelect={() => onSelect(event)}
+              onDragStart={() => {}}
+              onDragEnd={() => {}}
+              draggedId={null}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonthGrid({
   days,
   events,
@@ -900,34 +967,140 @@ function FreeTimePanel({ date, onScheduled }: { date: string; onScheduled: () =>
   );
 }
 
+const EXPORT_SCOPES: { value: ExportScope; label: string }[] = [
+  { value: "day", label: "Día" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mes" },
+  { value: "year", label: "Año" },
+];
+
 /**
- * Exportar/importar .ics: sincronizar con Google Calendar/Outlook. Exportar descarga un
- * archivo (blob + enlace temporal, ya que `fetch` con cabecera Authorization no puede ser una
- * navegación normal a `/agenda/ics`); importar lee el archivo elegido como texto en el propio
- * navegador y lo manda como JSON — no hace falta multipart para un solo archivo de texto.
+ * Diálogo de exportación: el usuario elige un periodo (día/semana/mes/año, el actual — precargado
+ * a partir de `initialDate`, la fecha que se estuviera viendo — o cualquier otro) y un formato
+ * (.ics para importar en otro calendario, o PDF). Pide los eventos de ese periodo sin paginar a
+ * `/agenda/export/:scope/:date` (ver agendaController.getAgendaExport) y genera el archivo en el
+ * propio navegador (ver utils/agendaExport.ts) — no hay petición previa "de vista previa", solo
+ * al pulsar "Descargar", igual que FinanceExportMenu en FinanzasPage.tsx.
+ */
+function AgendaExportDialog({ initialDate, onClose }: { initialDate: string; onClose: () => void }) {
+  const [scope, setScope] = useState<ExportScope>("week");
+  const [day, setDay] = useState(initialDate);
+  const [week, setWeek] = useState(() => dateKeyToIsoWeekString(initialDate));
+  const [month, setMonth] = useState(initialDate.slice(0, 7));
+  const [year, setYear] = useState(() => Number(initialDate.slice(0, 4)));
+  const [format, setFormat] = useState<"ics" | "pdf">("ics");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fecha (cualquiera dentro del periodo elegido) que se manda al backend — el endpoint calcula
+  // el rango exacto (lunes-domingo, día 1-último del mes...) a partir de ella, igual que las
+  // vistas semana/mes/año normales.
+  const resolvedDate =
+    scope === "day"
+      ? day
+      : scope === "week"
+        ? (isoWeekStringToMondayKey(week) ?? initialDate)
+        : scope === "month"
+          ? `${month}-01`
+          : `${year}-01-01`;
+
+  const runExport = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.get<AgendaResponse>(`/agenda/export/${scope}/${resolvedDate}`);
+      const label = scopeLabel(scope, response);
+      if (format === "ics") {
+        downloadTextFile(buildIcsFromEvents(response.events), `agenda-${scope}-${resolvedDate}.ics`, "text/calendar;charset=utf-8");
+      } else {
+        exportEventsToPdf(`Agenda · ${label}`, "", response.events, response.timezone);
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo exportar la agenda");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-foreground/50 p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-3xl bg-card p-6 shadow-[var(--shadow-soft)] sm:p-8">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="font-serif text-xl">Exportar agenda</h2>
+          <button type="button" onClick={onClose} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            ✕ Cerrar
+          </button>
+        </div>
+
+        <p className="mb-1.5 text-xs text-muted-foreground">Periodo</p>
+        <div className="mb-4 flex items-center overflow-hidden rounded-full border border-border">
+          {EXPORT_SCOPES.map(({ value, label }, index) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setScope(value)}
+              className={`flex-1 cursor-pointer px-3 py-2 text-xs font-medium transition-colors ${index > 0 ? "border-l border-border" : ""} ${
+                scope === value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-5">
+          {scope === "day" && <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="field-input w-full" />}
+          {scope === "week" && <input type="week" value={week} onChange={(e) => setWeek(e.target.value)} className="field-input w-full" />}
+          {scope === "month" && <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="field-input w-full" />}
+          {scope === "year" && (
+            <input type="number" min={2000} max={2100} value={year} onChange={(e) => setYear(Number(e.target.value))} className="field-input w-full" />
+          )}
+        </div>
+
+        <p className="mb-1.5 text-xs text-muted-foreground">Formato</p>
+        <div className="mb-6 flex items-center overflow-hidden rounded-full border border-border">
+          <button
+            type="button"
+            onClick={() => setFormat("ics")}
+            className={`flex-1 cursor-pointer px-3 py-2 text-xs font-medium transition-colors ${
+              format === "ics" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            .ics · importar a otro calendario
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormat("pdf")}
+            className={`flex-1 cursor-pointer border-l border-border px-3 py-2 text-xs font-medium transition-colors ${
+              format === "pdf" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            PDF
+          </button>
+        </div>
+
+        {error && <ErrorMessage message={error} />}
+
+        <button onClick={runExport} disabled={busy} className="btn-dark w-full disabled:opacity-50">
+          {busy ? "Exportando..." : "Descargar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Importar .ics (sincronizar con Google Calendar/Outlook exportado desde allí). Lee el archivo
+ * elegido como texto en el propio navegador y lo manda como JSON — no hace falta multipart para
+ * un solo archivo de texto. La exportación vive aparte, en AgendaExportDialog (día/semana/mes/
+ * año concretos, .ics o PDF) — antes este mismo menú tenía un botón "⬇ .ics" de exportación
+ * rápida de todo el calendario, sustituido por ese diálogo para no duplicar la entrada.
  */
 function IcsMenu({ onImported }: { onImported: () => void }) {
   const [busy, setBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<IcsImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const exportIcs = async () => {
-    setBusy(true);
-    try {
-      const text = await api.get<string>("/agenda/ics");
-      const blob = new Blob([text], { type: "text/calendar;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "agenda.ics";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const importIcs = async (file: File) => {
     setBusy(true);
@@ -944,24 +1117,14 @@ function IcsMenu({ onImported }: { onImported: () => void }) {
 
   return (
     <div className="relative">
-      <div className="flex items-center overflow-hidden rounded-full border border-border">
-        <button
-          onClick={exportIcs}
-          disabled={busy}
-          title="Descargar tus eventos como .ics"
-          className="cursor-pointer px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-        >
-          ⬇ .ics
-        </button>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={busy}
-          title="Importar eventos desde un .ics"
-          className="cursor-pointer border-l border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-        >
-          ⬆ .ics
-        </button>
-      </div>
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={busy}
+        title="Importar eventos desde un .ics"
+        className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+      >
+        ⬆ Importar .ics
+      </button>
       <input
         ref={fileInputRef}
         type="file"

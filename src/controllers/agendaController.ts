@@ -49,6 +49,29 @@ export async function getAgendaYear(req: AuthRequest, res: Response, next: NextF
   }
 }
 
+// Sin paginar (límite alto fijo) a propósito: es para exportar el periodo entero a .ics/PDF
+// (ver AgendaExportDialog en el dashboard), no para pintar una vista — truncar eventos de un
+// mes o año muy cargado daría una exportación incompleta sin avisar al usuario.
+const EXPORT_LIMIT = 5000;
+
+export async function getAgendaExport(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const { scope, date } = req.params as { scope: "day" | "week" | "month" | "year"; date: string };
+    const result =
+      scope === "day"
+        ? await agendaService.getDay(userId, date, { limit: EXPORT_LIMIT })
+        : scope === "week"
+          ? await agendaService.getWeek(userId, date, { limit: EXPORT_LIMIT })
+          : scope === "month"
+            ? await agendaService.getMonth(userId, date, { limit: EXPORT_LIMIT })
+            : await agendaService.getYearEvents(userId, date, { limit: EXPORT_LIMIT });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getFreeTime(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId as number;

@@ -11,6 +11,7 @@ import {
   eventTypeQuerySchema,
   setExceptionSchema,
   importIcsSchema,
+  exportScopeParamSchema,
 } from "../validators/agendaValidators";
 
 const router = Router();
@@ -125,6 +126,27 @@ router.get("/year/:date", validate(dateParamSchema, "params"), agendaController.
  *       200: { description: Huecos libres y sugerencias }
  */
 router.get("/free-time/:date", validate(dateParamSchema, "params"), agendaController.getFreeTime);
+
+/**
+ * @openapi
+ * /agenda/export/{scope}/{date}:
+ *   get:
+ *     tags: [Agenda]
+ *     summary: Eventos completos (sin paginar) del día/semana/mes/año que contiene la fecha dada — para exportar a .ics o PDF
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: scope
+ *         required: true
+ *         schema: { type: string, enum: [day, week, month, year] }
+ *       - in: path
+ *         name: date
+ *         required: true
+ *         schema: { type: string, example: "2026-08-24" }
+ *     responses:
+ *       200: { description: Eventos del periodo, sin paginar }
+ */
+router.get("/export/:scope/:date", validate(exportScopeParamSchema, "params"), agendaController.getAgendaExport);
 
 /**
  * @openapi

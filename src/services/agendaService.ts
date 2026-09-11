@@ -139,6 +139,20 @@ export async function getYear(userId: number, dateStr: string) {
   return { year: dateStr.slice(0, 4), timezone, counts };
 }
 
+/**
+ * Igual que `getYear`, pero con el evento completo de cada ocurrencia en vez de un recuento —
+ * la usa `getAgendaExport` (exportar el año a .ics/PDF), que sí necesita título/hora/lugar de
+ * cada evento. No la usa la vista anual normal (YearGrid): para pintar solo un puntito por día
+ * `getYear` es mucho más ligera.
+ */
+export async function getYearEvents(userId: number, dateStr: string, filters: EventFilters = {}) {
+  parseDateParam(dateStr);
+  const timezone = await getUserTimezone(userId);
+  const { start, end } = yearRange(dateStr, timezone);
+  const { events, pagination } = await findEventsInRange(userId, start, end, { ...filters, limit: filters.limit ?? 5000 });
+  return { year: dateStr.slice(0, 4), yearStart: start, yearEnd: end, timezone, events, pagination };
+}
+
 interface CreateEventInput {
   title: string;
   description?: string | null;

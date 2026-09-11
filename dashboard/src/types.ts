@@ -75,10 +75,13 @@ export interface AgendaResponse {
   week?: string;
   date?: string;
   month?: string;
+  year?: string;
   weekStart?: string;
   weekEnd?: string;
   monthStart?: string;
   monthEnd?: string;
+  yearStart?: string;
+  yearEnd?: string;
   timezone: string;
   events: Event[];
   pagination: Pagination;
