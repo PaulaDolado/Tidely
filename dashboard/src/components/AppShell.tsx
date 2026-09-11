@@ -285,7 +285,7 @@ export function AppShell({
                 <GlobalSearch onNavigate={onSearchNavigate} />
               </div>
 
-              <div className="min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6">
+              <div className="capsule-scrollbar min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6">
               <nav className="flex flex-col gap-1">
                 {NAV.map((item) => {
                   const sectionCollapsed = collapsedSections.has(item.key);
@@ -573,7 +573,7 @@ export function AppShell({
           overflow-x-auto — con min-w-0 el hijo sí puede encoger a su hueco asignado y el scroll
           horizontal queda contenido donde corresponde. */}
       <div className="min-w-0 flex-1">
-        <nav className="flex gap-1 overflow-x-auto border-b border-border px-6 py-4 lg:hidden">
+        <nav className="capsule-scrollbar flex gap-1 overflow-x-auto border-b border-border px-6 py-4 lg:hidden">
           {FLAT_NAV.map((item) => (
             <button
               key={item.key}

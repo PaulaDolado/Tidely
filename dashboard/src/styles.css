@@ -75,6 +75,13 @@
   --border: oklch(0.284 0.008 59.3 / 0.1);
   --input: oklch(0.284 0.008 59.3 / 0.12);
   --ring: var(--sage);
+  /* Barra de scroll "cápsula" del menú (ver .capsule-scrollbar): pista oscura a juego con
+     --foreground y barra marrón chocolate a juego con --cover (la tapa de cuero de las
+     libretas), pero con más chroma para que se lea claramente "chocolate" y no un marrón
+     apagado casi gris sobre una pista tan oscura. */
+  --scrollbar-track: var(--foreground);
+  --scrollbar-thumb: oklch(0.45 0.1 50);
+  --scrollbar-thumb-hover: oklch(0.52 0.1 50);
 }
 
 @layer base {
@@ -108,6 +115,34 @@
 
   .card-soft {
     @apply rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-soft)];
+  }
+
+  /* Scrollbar "cápsula" para el menú lateral (y la barra de pestañas móvil): pista oscura
+     redondeada, siempre visible, con la barra que se arrastra en marrón chocolate e "flotando"
+     con un margen hacia dentro (el `border` del thumb, del mismo color que la pista, hace de
+     hueco) — mismo efecto que una uña dentro de su ranura. Firefox vía `scrollbar-*`; Chrome/
+     Safari/Edge vía los pseudo-elementos `::-webkit-scrollbar-*` (sin soporte en Firefox, de
+     ahí las dos rutas). */
+  .capsule-scrollbar {
+    scrollbar-width: auto;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  .capsule-scrollbar::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  .capsule-scrollbar::-webkit-scrollbar-track {
+    background-color: var(--scrollbar-track);
+    border-radius: 999px;
+  }
+  .capsule-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 3px solid var(--scrollbar-track);
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  .capsule-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
   }
 
   /* Editor de páginas de proyecto: contentEditable con placeholder y estilos para listas/imágenes. */

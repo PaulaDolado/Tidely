@@ -360,10 +360,7 @@ export function AgendaPage({
             <button onClick={() => setShowFreeTime((v) => !v)} className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted">
               {showFreeTime ? "Ocultar tiempo libre" : "⏱ Tiempo libre"}
             </button>
-            <button onClick={() => setExportOpen(true)} className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted">
-              ⬇ Exportar
-            </button>
-            <IcsMenu onImported={reload} />
+            <AgendaFileMenu onExport={() => setExportOpen(true)} onImported={reload} />
             <GoogleCalendarMenu onSynced={reload} />
             <button onClick={() => setOpen((v) => !v)} className="btn-dark">
               {open ? "Cerrar" : "+ Nuevo evento"}
@@ -1091,13 +1088,12 @@ function AgendaExportDialog({ initialDate, onClose }: { initialDate: string; onC
 }
 
 /**
- * Importar .ics (sincronizar con Google Calendar/Outlook exportado desde allí). Lee el archivo
- * elegido como texto en el propio navegador y lo manda como JSON — no hace falta multipart para
- * un solo archivo de texto. La exportación vive aparte, en AgendaExportDialog (día/semana/mes/
- * año concretos, .ics o PDF) — antes este mismo menú tenía un botón "⬇ .ics" de exportación
- * rápida de todo el calendario, sustituido por ese diálogo para no duplicar la entrada.
+ * Exportar/importar .ics, unificados en un mismo control de dos segmentos (antes eran dos
+ * botones sueltos en la cabecera) — "Exportar" abre AgendaExportDialog (día/semana/mes/año
+ * concretos, .ics o PDF), "Importar" lee el archivo elegido como texto en el propio navegador y
+ * lo manda como JSON (no hace falta multipart para un solo archivo de texto).
  */
-function IcsMenu({ onImported }: { onImported: () => void }) {
+function AgendaFileMenu({ onExport, onImported }: { onExport: () => void; onImported: () => void }) {
   const [busy, setBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<IcsImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1117,14 +1113,22 @@ function IcsMenu({ onImported }: { onImported: () => void }) {
 
   return (
     <div className="relative">
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        disabled={busy}
-        title="Importar eventos desde un .ics"
-        className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-      >
-        ⬆ Importar .ics
-      </button>
+      <div className="flex items-center overflow-hidden rounded-full border border-border">
+        <button
+          onClick={onExport}
+          className="cursor-pointer px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
+        >
+          ⬇ Exportar
+        </button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+          title="Importar eventos desde un .ics"
+          className="cursor-pointer border-l border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          ⬆ Importar
+        </button>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
