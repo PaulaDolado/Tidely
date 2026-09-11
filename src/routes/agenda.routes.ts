@@ -31,8 +31,8 @@ router.use(authMiddleware);
  *         required: true
  *         schema: { type: string, example: "2026-08-24" }
  *       - in: query
- *         name: type
- *         schema: { type: string, enum: [work, study, gym, meeting, free, evento, cita, cumpleanos, otro] }
+ *         name: categoryId
+ *         schema: { type: integer }
  *     responses:
  *       200: { description: Lista de eventos del día }
  */
@@ -56,8 +56,8 @@ router.get(
  *         required: true
  *         schema: { type: string, example: "2026-08-24" }
  *       - in: query
- *         name: type
- *         schema: { type: string, enum: [work, study, gym, meeting, free, evento, cita, cumpleanos, otro] }
+ *         name: categoryId
+ *         schema: { type: integer }
  *     responses:
  *       200: { description: Lista de eventos de la semana }
  */
@@ -81,8 +81,8 @@ router.get(
  *         required: true
  *         schema: { type: string, example: "2026-08-24" }
  *       - in: query
- *         name: type
- *         schema: { type: string, enum: [work, study, gym, meeting, free, evento, cita, cumpleanos, otro] }
+ *         name: categoryId
+ *         schema: { type: integer }
  *     responses:
  *       200: { description: Lista de eventos del mes }
  */

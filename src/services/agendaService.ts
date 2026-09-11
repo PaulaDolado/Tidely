@@ -7,6 +7,7 @@ import { safeTimezone } from "../utils/timezone";
 import { ForbiddenError, NotFoundError, ValidationError } from "../utils/errorHandler";
 import { logger } from "../utils/logger";
 import { recordTombstone } from "./tombstoneService";
+import { findOwnedCategory } from "./eventCategoryService";
 
 /**
  * El "día de hoy" o "esta semana" depende de la zona horaria del usuario, no de dónde esté
@@ -21,7 +22,7 @@ export async function getUserTimezone(userId: number): Promise<string> {
 }
 
 interface EventFilters {
-  type?: string;
+  categoryId?: number;
   page?: number;
   limit?: number;
 }
@@ -38,14 +39,14 @@ const DEFAULT_LIMIT = 50;
  * ambos conjuntos.
  */
 async function findEventsInRange(userId: number, start: Date, end: Date, filters: EventFilters) {
-  const typeFilter = filters.type ? { type: filters.type } : {};
+  const categoryFilter = filters.categoryId ? { categoryId: filters.categoryId } : {};
 
   const [nonRecurring, recurringTemplates] = await Promise.all([
     prisma.event.findMany({
-      where: { userId, isRecurring: false, startTime: { gte: start }, endTime: { lte: end }, ...typeFilter },
+      where: { userId, isRecurring: false, startTime: { gte: start }, endTime: { lte: end }, ...categoryFilter },
     }),
     prisma.event.findMany({
-      where: { userId, isRecurring: true, startTime: { lte: end }, ...typeFilter },
+      where: { userId, isRecurring: true, startTime: { lte: end }, ...categoryFilter },
     }),
   ]);
 
@@ -156,7 +157,7 @@ export async function getYearEvents(userId: number, dateStr: string, filters: Ev
 interface CreateEventInput {
   title: string;
   description?: string | null;
-  type: string;
+  categoryId: number;
   startTime: string | Date;
   endTime: string | Date;
   location?: string | null;
@@ -171,12 +172,18 @@ interface CreateEventInput {
 }
 
 export async function createEvent(userId: number, input: CreateEventInput) {
+  // Comprueba que la categoría exista y sea del propio usuario antes de asignarla — `type` se
+  // sigue rellenando con su `label` (ver comentario en schema.prisma) para no dejar esa columna
+  // vacía en ningún evento nuevo.
+  const category = await findOwnedCategory(userId, input.categoryId);
+
   return prisma.event.create({
     data: {
       userId,
       title: input.title,
       description: input.description ?? null,
-      type: input.type,
+      type: category.label,
+      categoryId: category.id,
       startTime: new Date(input.startTime),
       endTime: new Date(input.endTime),
       location: input.location ?? null,
@@ -204,12 +211,18 @@ async function assertOwnership(userId: number, eventId: number) {
 export async function updateEvent(userId: number, eventId: number, input: Partial<CreateEventInput>) {
   await assertOwnership(userId, eventId);
 
+  // `categoryId: null` explícito quita la categoría del evento (p.ej. si el usuario prefiere
+  // dejarlo "sin categoría"); si no viene en el body, no se toca. Cuando sí viene (con valor),
+  // se comprueba que la categoría sea del usuario y se refresca `type` con su `label`, igual que
+  // en createEvent.
+  const category = input.categoryId !== undefined && input.categoryId !== null ? await findOwnedCategory(userId, input.categoryId) : null;
+
   return prisma.event.update({
     where: { id: eventId },
     data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.type !== undefined ? { type: input.type } : {}),
+      ...(input.categoryId !== undefined ? { categoryId: category?.id ?? null, type: category?.label ?? "Otro" } : {}),
       ...(input.startTime !== undefined ? { startTime: new Date(input.startTime) } : {}),
       ...(input.endTime !== undefined ? { endTime: new Date(input.endTime) } : {}),
       ...(input.location !== undefined ? { location: input.location } : {}),
@@ -432,7 +445,7 @@ export async function importIcs(userId: number, icsText: string): Promise<Import
           userId,
           title: e.title,
           description: e.description,
-          type: "free", // el .ics no trae nuestra categoría; "free" es el valor más neutro
+          type: "Sin categoría", // el .ics no trae nuestra categoría — se importan sin una (categoryId null)
           startTime: e.startTime,
           endTime: e.endTime,
           location: e.location,

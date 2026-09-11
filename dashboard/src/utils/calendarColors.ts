@@ -27,3 +27,19 @@ export const CALENDAR_COLOR_CLASSES: Record<CalendarColor, { swatch: string; cel
   secondary: { swatch: "bg-secondary", cellBg: "bg-secondary/70", cellBorder: "border-secondary" },
   muted: { swatch: "bg-muted-foreground/50", cellBg: "bg-muted", cellBorder: "border-border" },
 };
+
+// Mismos 8 tokens, pero pensados como acento de tarjeta (fondo muy suave + texto del mismo tono)
+// en vez de "celda pintada" — las usa EventCard (AgendaPage/HoyPage) para colorear un evento
+// según su categoría (ver EventCategory en types.ts). "secondary" y "muted" llevan un tratamiento
+// algo distinto (fondo sólido/tenue + texto neutro) porque su versión "/15 + texto" quedaba
+// demasiado floja para leerse bien en una tarjeta pequeña.
+export const EVENT_CATEGORY_COLOR_CLASSES: Record<CalendarColor, string> = {
+  primary: "bg-primary/15 text-primary",
+  habit: "bg-habit/15 text-habit",
+  positive: "bg-positive/15 text-positive",
+  hobby: "bg-hobby/15 text-hobby",
+  warning: "bg-warning/15 text-warning",
+  negative: "bg-negative/15 text-negative",
+  secondary: "bg-secondary/70 text-foreground",
+  muted: "bg-muted text-muted-foreground",
+};

@@ -2,6 +2,9 @@ jest.mock("../../../src/config/database", () => ({
   prisma: {
     event: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), delete: jest.fn() },
     eventException: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
+    // findOwnedCategory (eventCategoryService, la usa createEvent/updateEvent para comprobar el
+    // categoryId antes de asignarlo) también pasa por este mismo `prisma` mockeado.
+    eventCategory: { findUnique: jest.fn() },
     task: { findMany: jest.fn() },
     user: { findUnique: jest.fn() },
   },
@@ -14,6 +17,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "../../../src/uti
 const prismaMock = prisma as unknown as {
   event: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock; delete: jest.Mock };
   eventException: { findMany: jest.Mock; upsert: jest.Mock; deleteMany: jest.Mock };
+  eventCategory: { findUnique: jest.Mock };
   task: { findMany: jest.Mock };
   user: { findUnique: jest.Mock };
 };
@@ -58,22 +62,22 @@ describe("agendaService", () => {
       expect(result.timezone).toBe("Europe/Madrid"); // DEFAULT_TIMEZONE
     });
 
-    it("aplica el filtro por type cuando se indica", async () => {
+    it("aplica el filtro por categoryId cuando se indica", async () => {
       prismaMock.event.findMany.mockResolvedValue([]);
 
-      await agendaService.getDay(1, "2026-08-24", { type: "gym" });
+      await agendaService.getDay(1, "2026-08-24", { categoryId: 3 });
 
       const whereArg = prismaMock.event.findMany.mock.calls[0][0].where;
-      expect(whereArg.type).toBe("gym");
+      expect(whereArg.categoryId).toBe(3);
     });
 
-    it("no incluye type en el where cuando no se indica filtro", async () => {
+    it("no incluye categoryId en el where cuando no se indica filtro", async () => {
       prismaMock.event.findMany.mockResolvedValue([]);
 
       await agendaService.getDay(1, "2026-08-24");
 
       const whereArg = prismaMock.event.findMany.mock.calls[0][0].where;
-      expect(whereArg.type).toBeUndefined();
+      expect(whereArg.categoryId).toBeUndefined();
     });
   });
 

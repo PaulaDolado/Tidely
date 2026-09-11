@@ -6,6 +6,8 @@ import { createEventReminders, createGoalRiskAlerts } from "../../src/services/n
 describe("Notifications Endpoints", () => {
   let token: string;
   let userId: number;
+  // Ver el mismo comentario en tests/integration/agenda.test.ts.
+  let categoryIds: Record<string, number>;
 
   beforeEach(async () => {
     await prisma.notification.deleteMany({});
@@ -21,6 +23,9 @@ describe("Notifications Endpoints", () => {
     });
     token = response.body.token;
     userId = response.body.user.id;
+
+    const categories = await request(app).get("/event-categories").set({ Authorization: `Bearer ${token}` });
+    categoryIds = Object.fromEntries(categories.body.categories.map((c: { id: number; label: string }) => [c.label, c.id]));
   });
 
   afterAll(async () => {
@@ -47,7 +52,7 @@ describe("Notifications Endpoints", () => {
 
       await request(app).post("/agenda/events").set(authed()).send({
         title: "Reunión importante",
-        type: "meeting",
+        categoryId: categoryIds["Reunión"],
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
       });
@@ -70,7 +75,7 @@ describe("Notifications Endpoints", () => {
 
       await request(app).post("/agenda/events").set(authed()).send({
         title: "Reunión importante",
-        type: "meeting",
+        categoryId: categoryIds["Reunión"],
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
       });

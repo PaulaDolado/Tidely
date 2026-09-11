@@ -4,6 +4,8 @@ import { prisma } from "../../src/config/database";
 
 describe("Today Endpoint", () => {
   let token: string;
+  // Ver el mismo comentario en tests/integration/agenda.test.ts.
+  let categoryIds: Record<string, number>;
 
   beforeEach(async () => {
     await prisma.habitLog.deleteMany({});
@@ -25,6 +27,9 @@ describe("Today Endpoint", () => {
       timezone: "UTC",
     });
     token = response.body.token;
+
+    const categories = await request(app).get("/event-categories").set({ Authorization: `Bearer ${token}` });
+    categoryIds = Object.fromEntries(categories.body.categories.map((c: { id: number; label: string }) => [c.label, c.id]));
   });
 
   afterAll(async () => {
@@ -131,7 +136,7 @@ describe("Today Endpoint", () => {
     await request(app)
       .post("/agenda/events")
       .set(authed())
-      .send({ title: "Mañana", type: "work", startTime: "2099-01-01T10:00:00.000Z", endTime: "2099-01-01T11:00:00.000Z" });
+      .send({ title: "Mañana", categoryId: categoryIds["Trabajo"], startTime: "2099-01-01T10:00:00.000Z", endTime: "2099-01-01T11:00:00.000Z" });
     await request(app).post("/planner/tasks").set(authed()).send({ title: "Futuro", dueDate: "2099-01-01T00:00:00.000Z" });
 
     const response = await request(app).get("/today").set(authed());

@@ -130,8 +130,13 @@
   .capsule-scrollbar::-webkit-scrollbar-track {
     background-color: transparent;
   }
+  /* -webkit-appearance: none además de display:none — en algunos Chromium/Edge (sobre todo
+     Windows) display:none solo no basta para quitar del todo las flechas de los extremos, se
+     siguen pintando con su apariencia nativa del SO por encima. */
   .capsule-scrollbar::-webkit-scrollbar-button {
     display: none;
+    -webkit-appearance: none;
+    appearance: none;
     width: 0;
     height: 0;
   }

@@ -5,6 +5,7 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/
 import { generateVerificationToken, hashToken } from "../utils/verificationToken";
 import { sendVerificationEmail } from "../utils/mailer";
 import { ConflictError, TooManyRequestsError, UnauthorizedError, ValidationError } from "../utils/errorHandler";
+import { seedDefaultCategories } from "./eventCategoryService";
 
 // El username solo se puede cambiar una vez cada N días — evita que alguien lo use como
 // picadero para "reservar" varios handles o para dar esquinazo a quien lo busca. El email NO
@@ -101,6 +102,11 @@ export async function register(input: RegisterInput) {
       ...(input.timezone ? { timezone: input.timezone } : {}),
     },
   });
+
+  // Categorías de evento con las que arranca toda cuenta nueva (ver eventCategoryService) —
+  // "Trabajo", "Estudio"... el usuario puede renombrarlas, cambiarles el color o borrarlas desde
+  // Agenda > + Nuevo evento igual que cualquier categoría creada a mano.
+  await seedDefaultCategories(user.id);
 
   // El registro NO espera a que el email "salga" para completarse (ver mailer.ts: hoy es solo
   // un log, pero incluso con un proveedor real no tiene sentido que un email lento bloquee la

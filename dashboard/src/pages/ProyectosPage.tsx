@@ -612,7 +612,7 @@ function ExportMenu({ onExport }: { onExport: (format: "pdf" | "word", scope: "c
       <summary
         className="flex cursor-pointer list-none items-center gap-1 whitespace-nowrap rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground [&::-webkit-details-marker]:hidden"
       >
-        ⬇ Exportar
+        Exportar
       </summary>
       <div className="absolute right-0 z-10 mt-2 w-56 overflow-hidden rounded-2xl border border-border bg-card py-1.5 shadow-lg">
         <p className="px-4 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Esta página</p>

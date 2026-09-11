@@ -120,10 +120,10 @@ describe("syncService", () => {
 
       const result = await syncService.push(1, {
         ...emptyBody(),
-        events: { create: [{ localId: "local-1", title: "X", type: "work" }], update: [] },
+        events: { create: [{ localId: "local-1", title: "X", categoryId: 5 }], update: [] },
       });
 
-      expect(agendaService.createEvent).toHaveBeenCalledWith(1, { title: "X", type: "work" });
+      expect(agendaService.createEvent).toHaveBeenCalledWith(1, { title: "X", categoryId: 5 });
       expect(result.idMappings).toEqual([{ entityType: "event", localId: "local-1", id: 42 }]);
     });
 

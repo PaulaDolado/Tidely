@@ -4,6 +4,10 @@ import { prisma } from "../../src/config/database";
 
 describe("Agenda Endpoints", () => {
   let token: string;
+  // Id de cada categoría por defecto (ver eventCategoryService.DEFAULT_EVENT_CATEGORIES),
+  // indexado por su nombre — el registro ya las crea automáticamente, así que los tests solo
+  // necesitan saber qué id le tocó a cada una en esta cuenta de prueba.
+  let categoryIds: Record<string, number>;
 
   beforeEach(async () => {
     await prisma.eventException.deleteMany({});
@@ -17,6 +21,9 @@ describe("Agenda Endpoints", () => {
       name: "Agenda User",
     });
     token = response.body.token;
+
+    const categories = await request(app).get("/event-categories").set({ Authorization: `Bearer ${token}` });
+    categoryIds = Object.fromEntries(categories.body.categories.map((c: { id: number; label: string }) => [c.label, c.id]));
   });
 
   afterAll(async () => {
@@ -34,7 +41,7 @@ describe("Agenda Endpoints", () => {
         .set(authed())
         .send({
           title: "Gimnasio",
-          type: "gym",
+          categoryId: categoryIds["Gimnasio"],
           startTime: "2026-08-24T18:00:00.000Z",
           endTime: "2026-08-24T19:00:00.000Z",
         });
@@ -46,7 +53,7 @@ describe("Agenda Endpoints", () => {
     it("debería rechazar un evento sin token", async () => {
       const response = await request(app).post("/agenda/events").send({
         title: "Gimnasio",
-        type: "gym",
+        categoryId: categoryIds["Gimnasio"],
         startTime: "2026-08-24T18:00:00.000Z",
         endTime: "2026-08-24T19:00:00.000Z",
       });
@@ -60,7 +67,7 @@ describe("Agenda Endpoints", () => {
         .set(authed())
         .send({
           title: "Evento inválido",
-          type: "work",
+          categoryId: categoryIds["Trabajo"],
           startTime: "2026-08-24T18:00:00.000Z",
           endTime: "2026-08-24T17:00:00.000Z",
         });
@@ -76,7 +83,7 @@ describe("Agenda Endpoints", () => {
         .set(authed())
         .send({
           title: "Reunión",
-          type: "meeting",
+          categoryId: categoryIds["Reunión"],
           startTime: "2026-08-24T10:00:00.000Z",
           endTime: "2026-08-24T11:00:00.000Z",
         });
@@ -96,7 +103,7 @@ describe("Agenda Endpoints", () => {
         .set(authed())
         .send({
           title: "Gimnasio semanal",
-          type: "gym",
+          categoryId: categoryIds["Gimnasio"],
           startTime: "2026-08-03T18:00:00.000Z",
           endTime: "2026-08-03T19:00:00.000Z",
           isRecurring: true,
@@ -121,7 +128,7 @@ describe("Agenda Endpoints", () => {
           .set(authed())
           .send({
             title: `Bloque ${hour}h`,
-            type: "work",
+            categoryId: categoryIds["Trabajo"],
             startTime: `2026-08-24T${String(hour).padStart(2, "0")}:00:00.000Z`,
             endTime: `2026-08-24T${String(hour).padStart(2, "0")}:30:00.000Z`,
           });
@@ -145,7 +152,7 @@ describe("Agenda Endpoints", () => {
         .set(authed())
         .send({
           title: "Estudio",
-          type: "study",
+          categoryId: categoryIds["Estudio"],
           startTime: "2026-08-24T09:00:00.000Z",
           endTime: "2026-08-24T10:00:00.000Z",
         });
@@ -167,7 +174,7 @@ describe("Agenda Endpoints", () => {
         .set(authed())
         .send({
           title: "Privado",
-          type: "work",
+          categoryId: categoryIds["Trabajo"],
           startTime: "2026-08-24T09:00:00.000Z",
           endTime: "2026-08-24T10:00:00.000Z",
         });
@@ -192,13 +199,13 @@ describe("Agenda Endpoints", () => {
     it("lista los eventos del mes completo, incluidas ocurrencias recurrentes de semanas distintas", async () => {
       await request(app).post("/agenda/events").set(authed()).send({
         title: "Suelto",
-        type: "work",
+        categoryId: categoryIds["Trabajo"],
         startTime: "2026-08-05T09:00:00.000Z",
         endTime: "2026-08-05T10:00:00.000Z",
       });
       await request(app).post("/agenda/events").set(authed()).send({
         title: "Semanal",
-        type: "gym",
+        categoryId: categoryIds["Gimnasio"],
         startTime: "2026-08-03T18:00:00.000Z",
         endTime: "2026-08-03T19:00:00.000Z",
         isRecurring: true,
@@ -217,7 +224,7 @@ describe("Agenda Endpoints", () => {
     it("crea un evento con varias antelaciones de aviso y las devuelve", async () => {
       const response = await request(app).post("/agenda/events").set(authed()).send({
         title: "Boda",
-        type: "meeting",
+        categoryId: categoryIds["Reunión"],
         startTime: "2026-08-24T18:00:00.000Z",
         endTime: "2026-08-24T22:00:00.000Z",
         reminderMinutesBefore: [15, 1440],
@@ -230,7 +237,7 @@ describe("Agenda Endpoints", () => {
     it("usa [30] por defecto si no se especifica", async () => {
       const response = await request(app).post("/agenda/events").set(authed()).send({
         title: "Café",
-        type: "free",
+        categoryId: categoryIds["Libre"],
         startTime: "2026-08-24T18:00:00.000Z",
         endTime: "2026-08-24T18:30:00.000Z",
       });
@@ -241,7 +248,7 @@ describe("Agenda Endpoints", () => {
     it("rechaza una antelación fuera de rango", async () => {
       const response = await request(app).post("/agenda/events").set(authed()).send({
         title: "X",
-        type: "work",
+        categoryId: categoryIds["Trabajo"],
         startTime: "2026-08-24T18:00:00.000Z",
         endTime: "2026-08-24T19:00:00.000Z",
         reminderMinutesBefore: [999999],
@@ -255,7 +262,7 @@ describe("Agenda Endpoints", () => {
     it("crea y edita la lista de invitados de un evento", async () => {
       const created = await request(app).post("/agenda/events").set(authed()).send({
         title: "Cena",
-        type: "free",
+        categoryId: categoryIds["Libre"],
         startTime: "2026-08-24T20:00:00.000Z",
         endTime: "2026-08-24T22:00:00.000Z",
         guests: ["ana@example.com", "Luis"],
@@ -275,7 +282,7 @@ describe("Agenda Endpoints", () => {
     async function createWeeklyEvent() {
       const response = await request(app).post("/agenda/events").set(authed()).send({
         title: "Gimnasio semanal",
-        type: "gym",
+        categoryId: categoryIds["Gimnasio"],
         startTime: "2026-08-03T18:00:00.000Z", // lunes
         endTime: "2026-08-03T19:00:00.000Z",
         isRecurring: true,
@@ -322,7 +329,7 @@ describe("Agenda Endpoints", () => {
     it("rechaza una excepción sobre un evento no recurrente", async () => {
       const single = await request(app).post("/agenda/events").set(authed()).send({
         title: "Único",
-        type: "work",
+        categoryId: categoryIds["Trabajo"],
         startTime: "2026-08-24T09:00:00.000Z",
         endTime: "2026-08-24T10:00:00.000Z",
       });
@@ -356,7 +363,7 @@ describe("Agenda Endpoints", () => {
     it("calcula huecos libres y sugiere una tarea pendiente del planificador que encaje", async () => {
       await request(app).post("/agenda/events").set(authed()).send({
         title: "Reunión",
-        type: "meeting",
+        categoryId: categoryIds["Reunión"],
         startTime: "2026-08-24T10:00:00.000Z",
         endTime: "2026-08-24T12:00:00.000Z",
       });
@@ -379,7 +386,7 @@ describe("Agenda Endpoints", () => {
     it("GET /agenda/ics exporta los eventos como .ics descargable", async () => {
       await request(app).post("/agenda/events").set(authed()).send({
         title: "Dentista",
-        type: "work",
+        categoryId: categoryIds["Trabajo"],
         startTime: "2026-08-24T16:00:00.000Z",
         endTime: "2026-08-24T17:00:00.000Z",
       });
@@ -399,10 +406,13 @@ describe("Agenda Endpoints", () => {
         password: "Password123",
         name: "Otro",
       });
+      const otherAuth = { Authorization: `Bearer ${otherUser.body.token}` };
+      const otherCategories = await request(app).get("/event-categories").set(otherAuth);
+      const otherCategoryId = otherCategories.body.categories.find((c: { label: string }) => c.label === "Trabajo").id;
       await request(app)
         .post("/agenda/events")
-        .set({ Authorization: `Bearer ${otherUser.body.token}` })
-        .send({ title: "Privado ajeno", type: "work", startTime: "2026-08-24T09:00:00.000Z", endTime: "2026-08-24T10:00:00.000Z" });
+        .set(otherAuth)
+        .send({ title: "Privado ajeno", categoryId: otherCategoryId, startTime: "2026-08-24T09:00:00.000Z", endTime: "2026-08-24T10:00:00.000Z" });
 
       const response = await request(app).get("/agenda/ics").set(authed());
 

@@ -20,7 +20,7 @@ describe("agendaValidators", () => {
   describe("createEventSchema", () => {
     const base = {
       title: "Gimnasio",
-      type: "gym",
+      categoryId: 1,
       startTime: "2026-08-24T18:00:00.000Z",
       endTime: "2026-08-24T19:00:00.000Z",
     };
@@ -30,8 +30,8 @@ describe("agendaValidators", () => {
       expect(error).toBeUndefined();
     });
 
-    it("rechaza un tipo de evento no soportado", () => {
-      const { error } = createEventSchema.validate({ ...base, type: "inventado" });
+    it("rechaza un categoryId que no sea un entero positivo", () => {
+      const { error } = createEventSchema.validate({ ...base, categoryId: "inventado" });
       expect(error).toBeDefined();
     });
 

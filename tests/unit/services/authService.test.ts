@@ -1,6 +1,10 @@
 jest.mock("../../../src/config/database", () => ({
   prisma: {
     user: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    // register() crea las categorías de evento por defecto de la cuenta nueva (ver
+    // eventCategoryService.seedDefaultCategories) — createMany no se usa en ninguna aserción de
+    // este archivo, solo hace falta que exista para no romper esa llamada.
+    eventCategory: { createMany: jest.fn() },
   },
 }));
 

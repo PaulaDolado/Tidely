@@ -5,24 +5,10 @@
 // reconstruir la serie completa) aquí basta un VEVENT sin recurrencia por ocurrencia — export con
 // alcance ("esta semana", "este año"), no un volcado de la serie entera.
 
-import { AgendaResponse, Event } from "../types";
+import { AgendaResponse, Event, EventCategory } from "../types";
+import { eventCategoryLabel } from "./eventCategories";
 
 export type ExportScope = "day" | "week" | "month" | "year";
-
-// Mismas etiquetas que TYPE_LABELS en AgendaPage.tsx — duplicado a propósito en vez de
-// compartido: este módulo no depende de AgendaPage (evita un import circular) y la lista de
-// tipos de evento apenas cambia.
-const TYPE_LABELS: Record<string, string> = {
-  work: "Trabajo",
-  study: "Estudio",
-  gym: "Gimnasio",
-  meeting: "Reunión",
-  evento: "Evento",
-  cita: "Cita",
-  cumpleanos: "Cumpleaños",
-  free: "Libre",
-  otro: "Otro",
-};
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -111,7 +97,7 @@ function escapeHtml(text: string): string {
 // Mismo enfoque que dashboard/src/utils/notebookExport.ts: iframe oculto + window.print(), el
 // usuario elige "Guardar como PDF" en el diálogo de impresión del navegador — evita depender de
 // una librería de generación de PDF solo para esto.
-export function exportEventsToPdf(title: string, subtitle: string, events: Event[], timezone: string) {
+export function exportEventsToPdf(title: string, subtitle: string, events: Event[], timezone: string, categories: EventCategory[]) {
   const byDay = new Map<string, Event[]>();
   for (const event of events) {
     const { dateKey } = zonedParts(event.startTime, timezone);
@@ -143,7 +129,7 @@ export function exportEventsToPdf(title: string, subtitle: string, events: Event
                     <td class="time">${start} – ${end}</td>
                     <td>
                       <div class="event-title">${escapeHtml(event.title)}</div>
-                      <div class="event-meta">${escapeHtml(TYPE_LABELS[event.type] ?? event.type)}${event.location ? ` · ${escapeHtml(event.location)}` : ""}</div>
+                      <div class="event-meta">${escapeHtml(eventCategoryLabel(categories, event))}${event.location ? ` · ${escapeHtml(event.location)}` : ""}</div>
                     </td>
                   </tr>`;
               })

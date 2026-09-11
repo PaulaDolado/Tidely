@@ -1,7 +1,11 @@
 import Joi from "joi";
 
-const EVENT_TYPES = ["work", "study", "gym", "meeting", "free", "evento", "cita", "cumpleanos", "otro"];
 const RECURRING_PATTERNS = ["daily", "weekly", "biweekly", "monthly", "weekday_range"];
+// La categoría del evento ya no es un enum fijo (ver EventCategory / eventCategoryValidators):
+// cualquier entero positivo es, en principio, un id válido — agendaService comprueba que
+// pertenezca al usuario antes de asignarlo. `null` en el update sirve para dejar el evento sin
+// categoría (p.ej. si se borró la que tenía).
+const categoryIdSchema = Joi.number().integer().positive();
 // 1=lunes .. 7=domingo (ISO) — ver el comentario de estos mismos campos en prisma/schema.prisma.
 const weekdaySchema = Joi.number().integer().min(1).max(7);
 const EXCEPTION_ACTIONS = ["moved", "cancelled"];
@@ -37,9 +41,7 @@ export const exceptionParamSchema = Joi.object({
 export const createEventSchema = Joi.object({
   title: Joi.string().min(1).max(200).required(),
   description: Joi.string().max(1000).allow(null, ""),
-  type: Joi.string()
-    .valid(...EVENT_TYPES)
-    .required(),
+  categoryId: categoryIdSchema.required(),
   startTime: Joi.date().iso().required(),
   endTime: Joi.date().iso().greater(Joi.ref("startTime")).required().messages({
     "date.greater": "endTime debe ser posterior a startTime",
@@ -60,7 +62,7 @@ export const createEventSchema = Joi.object({
 export const updateEventSchema = Joi.object({
   title: Joi.string().min(1).max(200),
   description: Joi.string().max(1000).allow(null, ""),
-  type: Joi.string().valid(...EVENT_TYPES),
+  categoryId: categoryIdSchema.allow(null),
   startTime: Joi.date().iso(),
   endTime: Joi.date().iso(),
   location: Joi.string().max(200).allow(null, ""),
@@ -84,7 +86,7 @@ export const updateEventSchema = Joi.object({
   .messages({ "any.invalid": "endTime debe ser posterior a startTime" });
 
 export const eventTypeQuerySchema = Joi.object({
-  type: Joi.string().valid(...EVENT_TYPES),
+  categoryId: categoryIdSchema,
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(200).default(50),
 });

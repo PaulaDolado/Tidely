@@ -229,7 +229,7 @@ export function FinanzasPage() {
 }
 
 // Mismo patrón que ExportMenu (ProyectosPage) / IcsMenu (AgendaPage): un <details> desplegable
-// con "⬇ Exportar" — pero aquí, en vez de una lista fija de opciones, cada modo pide un dato
+// con "Exportar" — pero aquí, en vez de una lista fija de opciones, cada modo pide un dato
 // (el mes, o el año) antes de descargar, así que las dos secciones son mini-formularios en vez
 // de simples botones de menú.
 function FinanceExportMenu() {
@@ -279,7 +279,7 @@ function FinanceExportMenu() {
   return (
     <details ref={detailsRef} className="relative">
       <summary className="flex cursor-pointer list-none items-center gap-1 whitespace-nowrap rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground [&::-webkit-details-marker]:hidden">
-        ⬇ Exportar
+        Exportar
       </summary>
       <div className="absolute right-0 z-10 mt-2 w-72 rounded-2xl border border-border bg-card p-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
         <p className="mb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Un mes</p>

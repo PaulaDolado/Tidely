@@ -59,6 +59,7 @@ model User {
   customPages   CustomPage[]
   calendarLegendCategories CalendarLegendCategory[]
   calendarDayMarks         CalendarDayMark[]
+  eventCategories          EventCategory[]
   googleCalendarConnection GoogleCalendarConnection?
 
   @@index([emailVerificationTokenHash])
@@ -69,7 +70,16 @@ model Event {
   userId           Int
   title            String
   description      String?
-  type             String // "work", "study", "gym", "meeting", "free", "evento", "cita", "cumpleanos", "otro"
+  // Deprecado: antes era la categoría del evento, de una lista fija de 9 valores ("work",
+  // "study"...). Ahora la categoría es `categoryId` (ver EventCategory, gestionable por el
+  // usuario), pero esta columna se mantiene tal cual para no perder el dato en eventos antiguos
+  // ni romper integraciones que aún la lean — al crear/editar se sigue rellenando con el `label`
+  // de la categoría elegida, mejor que dejarla huérfana.
+  type             String
+  // Categoría del evento (color + nombre que el usuario gestiona en Agenda > + Nuevo evento —
+  // ver EventCategory). Nullable: null = "sin categoría" (p.ej. eventos importados por .ics, o
+  // cuya categoría se borró — onDelete: SetNull, borrar una categoría no borra sus eventos).
+  categoryId       Int?
   startTime        DateTime
   endTime          DateTime
   location         String?
@@ -102,10 +112,12 @@ model Event {
   updatedAt        DateTime @updatedAt
 
   user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   EventCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   exceptions EventException[]
 
   @@index([userId])
   @@index([userId, startTime])
+  @@index([userId, categoryId])
   @@unique([userId, googleEventId])
 }
 
@@ -129,6 +141,28 @@ model EventException {
 
   @@unique([eventId, originalStartTime])
   @@index([eventId])
+}
+
+// Categoría de evento (Agenda > + Nuevo evento): el usuario puede añadir las que quiera, con el
+// color que quiera de la paleta de la app (ver CALENDAR_COLORS/CalendarLegendCategory — mismo
+// concepto reutilizado aquí, no una tabla compartida porque una cosa es la leyenda del calendario
+// anual y otra la categoría de un evento), renombrarlas o borrarlas — incluidas las 9 que trae la
+// cuenta por defecto (creadas al registrarse, ver authService.register; las cuentas ya existentes
+// las reciben en la migración que añadió esta tabla). Borrar una categoría no borra los eventos
+// que la usaban (ver Event.categoryId: onDelete SetNull) — simplemente se quedan sin categoría.
+model EventCategory {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  label     String
+  color     String // clave de la paleta de la app: "primary" | "secondary" | "habit" | "hobby" | "positive" | "negative" | "warning" | "muted"
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events Event[]
+
+  @@index([userId, order])
 }
 
 model Goal {

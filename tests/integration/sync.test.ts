@@ -4,6 +4,8 @@ import { prisma } from "../../src/config/database";
 
 describe("Sync Endpoints", () => {
   let token: string;
+  // Ver el mismo comentario en tests/integration/agenda.test.ts.
+  let categoryIds: Record<string, number>;
 
   beforeEach(async () => {
     await prisma.syncTombstone.deleteMany({});
@@ -24,6 +26,9 @@ describe("Sync Endpoints", () => {
       timezone: "UTC",
     });
     token = response.body.token;
+
+    const categories = await request(app).get("/event-categories").set({ Authorization: `Bearer ${token}` });
+    categoryIds = Object.fromEntries(categories.body.categories.map((c: { id: number; label: string }) => [c.label, c.id]));
   });
 
   afterAll(async () => {
@@ -39,7 +44,7 @@ describe("Sync Endpoints", () => {
       await request(app)
         .post("/agenda/events")
         .set(authed())
-        .send({ title: "Reunión", type: "work", startTime: "2026-09-01T10:00:00.000Z", endTime: "2026-09-01T11:00:00.000Z" });
+        .send({ title: "Reunión", categoryId: categoryIds["Trabajo"], startTime: "2026-09-01T10:00:00.000Z", endTime: "2026-09-01T11:00:00.000Z" });
       await request(app).post("/planner/tasks").set(authed()).send({ title: "Informe" });
       await request(app).post("/notes").set(authed()).send({ content: "Comprar leche" });
       await request(app).post("/habits").set(authed()).send({ title: "Leer" });
@@ -91,7 +96,7 @@ describe("Sync Endpoints", () => {
               {
                 localId: "11111111-1111-1111-1111-111111111111",
                 title: "Creado offline",
-                type: "work",
+                categoryId: categoryIds["Trabajo"],
                 startTime: "2026-09-05T09:00:00.000Z",
                 endTime: "2026-09-05T10:00:00.000Z",
               },

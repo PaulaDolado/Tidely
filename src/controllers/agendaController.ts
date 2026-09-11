@@ -6,8 +6,8 @@ export async function getAgendaDay(req: AuthRequest, res: Response, next: NextFu
   try {
     const userId = req.userId as number;
     const { date } = req.params;
-    const { type, page, limit } = req.query as unknown as { type?: string; page: number; limit: number };
-    const result = await agendaService.getDay(userId, date, { type, page, limit });
+    const { categoryId, page, limit } = req.query as unknown as { categoryId?: number; page: number; limit: number };
+    const result = await agendaService.getDay(userId, date, { categoryId, page, limit });
     res.json(result);
   } catch (error) {
     next(error);
@@ -18,8 +18,8 @@ export async function getAgendaWeek(req: AuthRequest, res: Response, next: NextF
   try {
     const userId = req.userId as number;
     const { date } = req.params;
-    const { type, page, limit } = req.query as unknown as { type?: string; page: number; limit: number };
-    const result = await agendaService.getWeek(userId, date, { type, page, limit });
+    const { categoryId, page, limit } = req.query as unknown as { categoryId?: number; page: number; limit: number };
+    const result = await agendaService.getWeek(userId, date, { categoryId, page, limit });
     res.json(result);
   } catch (error) {
     next(error);
@@ -30,8 +30,8 @@ export async function getAgendaMonth(req: AuthRequest, res: Response, next: Next
   try {
     const userId = req.userId as number;
     const { date } = req.params;
-    const { type, page, limit } = req.query as unknown as { type?: string; page: number; limit: number };
-    const result = await agendaService.getMonth(userId, date, { type, page, limit });
+    const { categoryId, page, limit } = req.query as unknown as { categoryId?: number; page: number; limit: number };
+    const result = await agendaService.getMonth(userId, date, { categoryId, page, limit });
     res.json(result);
   } catch (error) {
     next(error);

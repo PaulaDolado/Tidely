@@ -6,26 +6,8 @@ import { Loading, ErrorMessage } from "../components/Feedback";
 import { QuickNotesCard } from "../components/QuickNotesCard";
 import { QuickAccessCard } from "../components/QuickAccessCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
-import { Habit, Task, TodayResponse } from "../types";
-
-const TYPE_LABELS: Record<string, string> = {
-  work: "Trabajo",
-  study: "Estudio",
-  gym: "Gimnasio",
-  meeting: "Reunión",
-  evento: "Evento",
-  cita: "Cita",
-  free: "Libre",
-};
-const TYPE_STYLES: Record<string, string> = {
-  work: "bg-primary/15 text-primary",
-  study: "bg-secondary/70 text-foreground",
-  gym: "bg-hobby/15 text-hobby",
-  meeting: "bg-warning/15 text-warning",
-  evento: "bg-positive/15 text-positive",
-  cita: "bg-habit/15 text-habit",
-  free: "bg-muted text-muted-foreground",
-};
+import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
+import { EventCategory, Habit, Task, TodayResponse } from "../types";
 
 /**
  * Vista "Hoy": un único vistazo a lo que toca hoy, en vez de entrar a Agenda + Planificador +
@@ -34,6 +16,8 @@ const TYPE_STYLES: Record<string, string> = {
  */
 export function HoyPage({ onNavigate }: { onNavigate: (tab: Tab, focus?: SearchFocus) => void }) {
   const { data, loading, error, reload } = useFetch(() => api.get<TodayResponse>("/today"), []);
+  const { data: categoriesData } = useFetch(() => api.get<{ categories: EventCategory[] }>("/event-categories"), []);
+  const categories = categoriesData?.categories ?? [];
 
   // "Hoy" es la pantalla de aterrizaje — se queda abierta más tiempo que el resto (no hay razón
   // para cambiar de pestaña si no hace falta), así que es la que más se nota vieja si algo cambia
@@ -110,8 +94,8 @@ export function HoyPage({ onNavigate }: { onNavigate: (tab: Tab, focus?: SearchF
                           {new Date(event.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm">{event.title}</span>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${TYPE_STYLES[event.type] ?? "bg-muted text-muted-foreground"}`}>
-                          {TYPE_LABELS[event.type] ?? event.type}
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${eventCategoryStyle(categories, event.categoryId)}`}>
+                          {eventCategoryLabel(categories, event)}
                         </span>
                       </button>
                     </li>

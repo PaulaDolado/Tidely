@@ -16,11 +16,14 @@ import {
   isoWeekStringToMondayKey,
   scopeLabel,
 } from "../utils/agendaExport";
+import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
+import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
 import {
   AgendaResponse,
   AgendaYearResponse,
+  CalendarColor,
   Event,
-  EventType,
+  EventCategory,
   FreeTimeResponse,
   Goal,
   GoogleCalendarStatus,
@@ -33,17 +36,6 @@ import {
 } from "../types";
 
 const DAY_LABELS = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
-const TYPES: { value: EventType; label: string }[] = [
-  { value: "work", label: "Trabajo" },
-  { value: "study", label: "Estudio" },
-  { value: "gym", label: "Gimnasio" },
-  { value: "meeting", label: "Reunión" },
-  { value: "evento", label: "Evento" },
-  { value: "cita", label: "Cita" },
-  { value: "cumpleanos", label: "Cumpleaños" },
-  { value: "free", label: "Libre" },
-  { value: "otro", label: "Otro" },
-];
 const RECURRENCES: { value: RecurringPattern; label: string }[] = [
   { value: "daily", label: "Cada día" },
   { value: "weekly", label: "Cada semana" },
@@ -69,31 +61,6 @@ const REMINDER_PRESETS: { minutes: number; label: string }[] = [
   { minutes: 60, label: "1 hora antes" },
   { minutes: 1440, label: "1 día antes" },
 ];
-
-// Estilo por tipo de evento: usado como acento de la tarjeta en el bloque semanal.
-const TYPE_STYLES: Record<string, string> = {
-  work: "bg-primary/15 text-primary",
-  study: "bg-secondary/70 text-foreground",
-  gym: "bg-hobby/15 text-hobby",
-  meeting: "bg-warning/15 text-warning",
-  evento: "bg-positive/15 text-positive",
-  cita: "bg-habit/15 text-habit",
-  cumpleanos: "bg-cover/15 text-cover",
-  free: "bg-muted text-muted-foreground",
-  otro: "bg-muted text-muted-foreground",
-};
-const DEFAULT_TYPE_STYLE = "bg-muted text-muted-foreground";
-const TYPE_LABELS: Record<string, string> = {
-  work: "Trabajo",
-  study: "Estudio",
-  gym: "Gimnasio",
-  meeting: "Reunión",
-  evento: "Evento",
-  cita: "Cita",
-  cumpleanos: "Cumpleaños",
-  free: "Libre",
-  otro: "Otro",
-};
 
 type ViewMode = "day" | "week" | "month" | "year" | "agenda";
 const VIEW_MODES: { value: ViewMode; label: string }[] = [
@@ -223,6 +190,14 @@ export function AgendaPage({
   const { data: habitsData, reload: reloadHabits } = useFetch(() => api.get<{ habits: Habit[] }>("/habits"), []);
   const { data: notesData, reload: reloadNotes } = useFetch(() => api.get<{ notes: Note[] }>("/notes"), []);
   const { data: recentEntriesData } = useFetch(() => api.get<{ entries: RecentProjectEntry[] }>("/projects/recent-entries"), []);
+  // Categorías de evento (Agenda > + Nuevo evento): el propio usuario las gestiona —añadir,
+  // renombrar, cambiar el color o borrar, incluidas las que trae la cuenta por defecto— desde
+  // EventCategoryManager, embebido tanto en NewEventForm como en EventDialog.
+  const { data: categoriesData, reload: reloadCategories } = useFetch(
+    () => api.get<{ categories: EventCategory[] }>("/event-categories"),
+    []
+  );
+  const categories = categoriesData?.categories ?? [];
 
   // Los días de la cuadrícula se calculan a partir de `selected` (una fecha de calendario,
   // sin ambigüedad de zona horaria) — NO a partir de `data.weekStart`/`monthStart`, que son
@@ -372,6 +347,8 @@ export function AgendaPage({
       {open && (
         <NewEventForm
           date={selected}
+          categories={categories}
+          onCategoriesChanged={reloadCategories}
           onSubmit={async (input) => {
             await api.post("/agenda/events", input);
             setOpen(false);
@@ -382,7 +359,7 @@ export function AgendaPage({
 
       {error && <ErrorMessage message={error} />}
 
-      {showFreeTime && <FreeTimePanel date={selected} onScheduled={reload} />}
+      {showFreeTime && <FreeTimePanel date={selected} categories={categories} onScheduled={reload} />}
 
       <section className="mb-8">
         {viewMode === "year" ? (
@@ -402,18 +379,26 @@ export function AgendaPage({
         ) : loading ? (
           <Loading label="Cargando agenda..." />
         ) : viewMode === "day" ? (
-          <DayColumn date={new Date(`${selected}T00:00:00.000Z`)} events={data?.events ?? []} onSelect={setEditingEvent} />
+          <DayColumn date={new Date(`${selected}T00:00:00.000Z`)} events={data?.events ?? []} categories={categories} onSelect={setEditingEvent} />
         ) : viewMode === "week" ? (
           week.length > 0 && (
-            <WeekTimeGrid week={week} events={data?.events ?? []} today={today} onSelect={setEditingEvent} onMoveToDay={moveEventToDay} />
+            <WeekTimeGrid
+              week={week}
+              events={data?.events ?? []}
+              categories={categories}
+              today={today}
+              onSelect={setEditingEvent}
+              onMoveToDay={moveEventToDay}
+            />
           )
         ) : viewMode === "agenda" ? (
-          <AgendaListView events={data?.events ?? []} today={today} onSelect={setEditingEvent} />
+          <AgendaListView events={data?.events ?? []} categories={categories} today={today} onSelect={setEditingEvent} />
         ) : (
           month.length > 0 && (
             <MonthGrid
               days={month}
               events={data?.events ?? []}
+              categories={categories}
               today={today}
               currentMonthKey={currentMonthKey}
               onSelect={setEditingEvent}
@@ -444,11 +429,13 @@ export function AgendaPage({
         </div>
       </section>
 
-      {exportOpen && <AgendaExportDialog initialDate={selected} onClose={() => setExportOpen(false)} />}
+      {exportOpen && <AgendaExportDialog initialDate={selected} categories={categories} onClose={() => setExportOpen(false)} />}
 
       {editingEvent && (
         <EventDialog
           event={editingEvent}
+          categories={categories}
+          onCategoriesChanged={reloadCategories}
           onClose={() => setEditingEvent(null)}
           onSaved={async (input) => {
             await api.put(`/agenda/events/${editingEvent.id}`, input);
@@ -583,7 +570,17 @@ function MiniMonth({
 
 // Vista "Agenda": lista cronológica agrupada por día (mismos eventos que "Mes", solo cambia la
 // presentación) — sin drag-and-drop, que no tiene columnas de día donde soltar.
-function AgendaListView({ events, today, onSelect }: { events: Event[]; today: string; onSelect: (event: Event) => void }) {
+function AgendaListView({
+  events,
+  categories,
+  today,
+  onSelect,
+}: {
+  events: Event[];
+  categories: EventCategory[];
+  today: string;
+  onSelect: (event: Event) => void;
+}) {
   const grouped = useMemo(() => {
     const byDay = new Map<string, Event[]>();
     for (const event of events) {
@@ -623,6 +620,7 @@ function AgendaListView({ events, today, onSelect }: { events: Event[]; today: s
               <EventCard
                 key={`${event.id}-${event.startTime}`}
                 event={event}
+                categories={categories}
                 onSelect={() => onSelect(event)}
                 onDragStart={() => {}}
                 onDragEnd={() => {}}
@@ -638,6 +636,7 @@ function AgendaListView({ events, today, onSelect }: { events: Event[]; today: s
 
 function EventCard({
   event,
+  categories,
   compact,
   onSelect,
   onDragStart,
@@ -645,6 +644,7 @@ function EventCard({
   draggedId,
 }: {
   event: Event;
+  categories: EventCategory[];
   compact?: boolean;
   onSelect: () => void;
   onDragStart: (e: React.DragEvent) => void;
@@ -656,7 +656,7 @@ function EventCard({
   // tarjeta lleva el color de esa categoría (antes solo la etiqueta lo llevaba), así que sigue
   // siendo distinguible de un vistazo sin ocupar espacio con el nombre. El nombre no desaparece
   // del todo: queda como `title` (tooltip nativo al pasar el ratón) para no perder accesibilidad.
-  const title = event.source === "google" ? `Importado de Google Calendar` : (TYPE_LABELS[event.type] ?? event.type);
+  const title = event.source === "google" ? `Importado de Google Calendar` : eventCategoryLabel(categories, event);
   return (
     <button
       draggable
@@ -664,9 +664,10 @@ function EventCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onSelect}
-      className={`w-full cursor-grab rounded-xl border border-border/60 px-2.5 py-2 text-left transition-colors hover:border-primary/30 active:cursor-grabbing ${
-        TYPE_STYLES[event.type] ?? DEFAULT_TYPE_STYLE
-      } ${draggedId === dragKey ? "opacity-40" : ""} ${compact ? "px-2 py-1" : ""}`}
+      className={`w-full cursor-grab rounded-xl border border-border/60 px-2.5 py-2 text-left transition-colors hover:border-primary/30 active:cursor-grabbing ${eventCategoryStyle(
+        categories,
+        event.categoryId
+      )} ${draggedId === dragKey ? "opacity-40" : ""} ${compact ? "px-2 py-1" : ""}`}
     >
       <p className={`truncate font-medium ${compact ? "text-[11px]" : "text-xs"}`}>
         {event.source === "google" && "📅 "}
@@ -687,12 +688,14 @@ function EventCard({
 function WeekTimeGrid({
   week,
   events,
+  categories,
   today,
   onSelect,
   onMoveToDay,
 }: {
   week: Date[];
   events: Event[];
+  categories: EventCategory[];
   today: string;
   onSelect: (event: Event) => void;
   onMoveToDay: (event: Event, targetDayKey: string) => void;
@@ -751,6 +754,7 @@ function WeekTimeGrid({
                     <EventCard
                       key={dragKey}
                       event={event}
+                      categories={categories}
                       draggedId={draggedKey}
                       onSelect={() => onSelect(event)}
                       onDragStart={(e) => {
@@ -773,7 +777,17 @@ function WeekTimeGrid({
 // Vista "Día": una sola columna a todo el ancho, sin drag-and-drop (no hay otro día al que
 // soltar una tarjeta) — eventos del día ordenados por hora, con detalle completo (igual que una
 // columna de WeekTimeGrid, pero sin comprimir).
-function DayColumn({ date, events, onSelect }: { date: Date; events: Event[]; onSelect: (event: Event) => void }) {
+function DayColumn({
+  date,
+  events,
+  categories,
+  onSelect,
+}: {
+  date: Date;
+  events: Event[];
+  categories: EventCategory[];
+  onSelect: (event: Event) => void;
+}) {
   const key = toKey(date);
   const dayEvents = events.filter((e) => dayKeyOf(e) === key).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
@@ -789,6 +803,7 @@ function DayColumn({ date, events, onSelect }: { date: Date; events: Event[]; on
             <EventCard
               key={`${event.id}-${event.startTime}`}
               event={event}
+              categories={categories}
               onSelect={() => onSelect(event)}
               onDragStart={() => {}}
               onDragEnd={() => {}}
@@ -804,6 +819,7 @@ function DayColumn({ date, events, onSelect }: { date: Date; events: Event[]; on
 function MonthGrid({
   days,
   events,
+  categories,
   today,
   currentMonthKey,
   onSelect,
@@ -812,6 +828,7 @@ function MonthGrid({
 }: {
   days: Date[];
   events: Event[];
+  categories: EventCategory[];
   today: string;
   currentMonthKey: string;
   onSelect: (event: Event) => void;
@@ -881,6 +898,7 @@ function MonthGrid({
                     <EventCard
                       key={dragKey}
                       event={event}
+                      categories={categories}
                       compact
                       draggedId={draggedKey}
                       onSelect={() => onSelect(event)}
@@ -906,13 +924,18 @@ function MonthGrid({
   );
 }
 
-function FreeTimePanel({ date, onScheduled }: { date: string; onScheduled: () => void }) {
+function FreeTimePanel({ date, categories, onScheduled }: { date: string; categories: EventCategory[]; onScheduled: () => void }) {
   const { data, loading, error, reload } = useFetch(() => api.get<FreeTimeResponse>(`/agenda/free-time/${date}`), [date]);
 
   const scheduleSuggestion = async (suggestion: FreeTimeResponse["suggestions"][number]) => {
+    // Sin selector propio (es una sugerencia de un clic): cae en "Trabajo" si existe, o si no en
+    // la primera categoría disponible — el usuario siempre puede cambiarla después desde el
+    // evento ya creado.
+    const categoryId = categories.find((c) => c.label === "Trabajo")?.id ?? categories[0]?.id;
+    if (!categoryId) return; // sin categorías (el usuario las borró todas) — nada que asignar
     await api.post("/agenda/events", {
       title: suggestion.task.title,
-      type: "work",
+      categoryId,
       startTime: suggestion.block.start,
       endTime: new Date(new Date(suggestion.block.start).getTime() + suggestion.task.estimatedMinutes * 60000).toISOString(),
     });
@@ -979,7 +1002,15 @@ const EXPORT_SCOPES: { value: ExportScope; label: string }[] = [
  * propio navegador (ver utils/agendaExport.ts) — no hay petición previa "de vista previa", solo
  * al pulsar "Descargar", igual que FinanceExportMenu en FinanzasPage.tsx.
  */
-function AgendaExportDialog({ initialDate, onClose }: { initialDate: string; onClose: () => void }) {
+function AgendaExportDialog({
+  initialDate,
+  categories,
+  onClose,
+}: {
+  initialDate: string;
+  categories: EventCategory[];
+  onClose: () => void;
+}) {
   const [scope, setScope] = useState<ExportScope>("week");
   const [day, setDay] = useState(initialDate);
   const [week, setWeek] = useState(() => dateKeyToIsoWeekString(initialDate));
@@ -1010,7 +1041,7 @@ function AgendaExportDialog({ initialDate, onClose }: { initialDate: string; onC
       if (format === "ics") {
         downloadTextFile(buildIcsFromEvents(response.events), `agenda-${scope}-${resolvedDate}.ics`, "text/calendar;charset=utf-8");
       } else {
-        exportEventsToPdf(`Agenda · ${label}`, "", response.events, response.timezone);
+        exportEventsToPdf(`Agenda · ${label}`, "", response.events, response.timezone, categories);
       }
       onClose();
     } catch (err) {
@@ -1301,7 +1332,7 @@ function GoogleCalendarMenu({ onSynced }: { onSynced: () => void }) {
 
 interface EventInputFields {
   title: string;
-  type: EventType;
+  categoryId: number;
   startTime: string;
   endTime: string;
   isRecurring: boolean;
@@ -1426,8 +1457,254 @@ function GuestsEditor({ value, onChange }: { value: string[]; onChange: (guests:
   );
 }
 
+// Selector de categoría del evento + gestión inline — el usuario puede añadir categorías nuevas
+// (eligiendo su color de la paleta de la app), renombrarlas o borrarlas, incluidas las que trae
+// la cuenta por defecto ("Trabajo", "Estudio"...), sin salir del formulario de creación/edición
+// del evento. La asignación al evento la sigue haciendo el <select> de encima; el panel de abajo
+// (tras pulsar "Gestionar categorías") solo edita la lista, igual patrón que AnnualCalendarLegend
+// (Horario > vista anual) pero sin la parte de "pintar días".
+function EventCategoryField({
+  categoryId,
+  onChange,
+  categories,
+  onCategoriesChanged,
+}: {
+  categoryId: number | null;
+  onChange: (id: number) => void;
+  categories: EventCategory[];
+  onCategoriesChanged: () => void;
+}) {
+  const [managing, setManaging] = useState(false);
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <select
+          value={categoryId ?? ""}
+          onChange={(e) => onChange(Number(e.target.value))}
+          disabled={categories.length === 0}
+          className="field-input flex-1"
+        >
+          {categories.length === 0 && <option value="">Sin categorías</option>}
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setManaging((v) => !v)}
+          className="shrink-0 cursor-pointer text-xs text-muted-foreground underline hover:text-foreground"
+        >
+          {managing ? "Ocultar categorías" : "Gestionar categorías"}
+        </button>
+      </div>
+      {managing && <EventCategoryManager categories={categories} onChanged={onCategoriesChanged} />}
+    </div>
+  );
+}
+
+function EventCategoryManager({ categories, onChanged }: { categories: EventCategory[]; onChanged: () => void }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const [editingColorId, setEditingColorId] = useState<number | null>(null);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editingColorId === null) return;
+    const closeOnOutsideClick = (e: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) setEditingColorId(null);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [editingColorId]);
+
+  const addCategory = async (label: string, color: CalendarColor) => {
+    await api.post("/event-categories", { label, color });
+    onChanged();
+  };
+  const renameCategory = async (id: number, label: string) => {
+    await api.put(`/event-categories/${id}`, { label });
+    onChanged();
+  };
+  const changeCategoryColor = async (id: number, color: CalendarColor) => {
+    setEditingColorId(null);
+    await api.put(`/event-categories/${id}`, { color });
+    onChanged();
+  };
+  const deleteCategory = async (id: number) => {
+    await api.delete(`/event-categories/${id}`);
+    onChanged();
+  };
+
+  return (
+    <div className="mt-2 rounded-2xl border border-border bg-background p-3">
+      <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Categorías de evento</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {categories.map((category) => {
+          const isRenaming = renamingId === category.id;
+          const swatch = CALENDAR_COLOR_OPTIONS.find((o) => o.key === category.color)?.swatch ?? "bg-muted";
+          return (
+            <div key={category.id} className="group relative">
+              {isRenaming ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={async () => {
+                    const trimmed = renameValue.trim();
+                    setRenamingId(null);
+                    if (trimmed && trimmed !== category.label) await renameCategory(category.id, trimmed);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setRenamingId(null);
+                  }}
+                  className="rounded-full border border-primary bg-background px-3 py-1.5 text-xs outline-none"
+                />
+              ) : (
+                <div className="flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 text-xs transition-colors hover:border-primary/30">
+                  <button
+                    type="button"
+                    title="Cambiar color"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingColorId((id) => (id === category.id ? null : category.id));
+                    }}
+                    className={`size-3.5 shrink-0 cursor-pointer rounded-full transition-shadow hover:ring-2 hover:ring-foreground/40 ${swatch}`}
+                  />
+                  <span>{category.label}</span>
+                </div>
+              )}
+              {editingColorId === category.id && (
+                <div
+                  ref={colorPickerRef}
+                  className="absolute left-0 top-full z-10 mt-1 flex items-center gap-1 rounded-full border border-border bg-card p-1.5 shadow-[var(--shadow-soft)]"
+                >
+                  {CALENDAR_COLOR_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      title={opt.label}
+                      onClick={() => changeCategoryColor(category.id, opt.key)}
+                      className={`size-5 shrink-0 cursor-pointer rounded-full ${opt.swatch} ${
+                        category.color === opt.key ? "ring-2 ring-foreground ring-offset-1 ring-offset-background" : ""
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+              {!isRenaming && (
+                <span className="absolute -right-1.5 -top-7 z-10 flex items-center gap-0.5 rounded-full border border-border bg-card px-0.5 py-0.5 opacity-0 shadow-[var(--shadow-soft)] transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    title="Renombrar"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingId(category.id);
+                      setRenameValue(category.label);
+                    }}
+                    className="cursor-pointer rounded p-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    title={confirmingDeleteId === category.id ? "Confirmar eliminar" : "Eliminar categoría"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirmingDeleteId === category.id) {
+                        setConfirmingDeleteId(null);
+                        deleteCategory(category.id);
+                      } else {
+                        setConfirmingDeleteId(category.id);
+                      }
+                    }}
+                    onMouseLeave={() => setConfirmingDeleteId((id) => (id === category.id ? null : id))}
+                    className={`cursor-pointer rounded p-1 text-xs ${
+                      confirmingDeleteId === category.id ? "font-bold text-destructive" : "text-muted-foreground hover:text-destructive"
+                    }`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+            </div>
+          );
+        })}
+
+        {showAdd ? (
+          <AddEventCategoryForm
+            onCancel={() => setShowAdd(false)}
+            onAdd={async (label, color) => {
+              await addCategory(label, color);
+              setShowAdd(false);
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAdd(true)}
+            className="cursor-pointer rounded-full border border-dashed border-primary/30 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            + Categoría
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AddEventCategoryForm({ onAdd, onCancel }: { onAdd: (label: string, color: CalendarColor) => Promise<void>; onCancel: () => void }) {
+  const [label, setLabel] = useState("");
+  const [color, setColor] = useState<CalendarColor>(CALENDAR_COLOR_OPTIONS[0].key);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    onAdd(trimmed, color);
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 rounded-full border border-border bg-background px-3 py-1">
+      <input
+        autoFocus
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        placeholder="Nombre"
+        className="w-28 bg-transparent text-xs outline-none"
+      />
+      <div className="flex items-center gap-1">
+        {CALENDAR_COLOR_OPTIONS.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            title={opt.label}
+            onClick={() => setColor(opt.key)}
+            className={`size-4 shrink-0 cursor-pointer rounded-full ${opt.swatch} ${
+              color === opt.key ? "ring-2 ring-foreground ring-offset-1 ring-offset-background" : ""
+            }`}
+          />
+        ))}
+      </div>
+      <button type="submit" className="btn-dark shrink-0 px-2.5 py-1 text-[11px]">
+        Crear
+      </button>
+      <button type="button" onClick={onCancel} className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+        Cancelar
+      </button>
+    </form>
+  );
+}
+
 function EventDialog({
   event,
+  categories,
+  onCategoriesChanged,
   onClose,
   onSaved,
   onDeleted,
@@ -1435,6 +1712,8 @@ function EventDialog({
   onRestoreOccurrence,
 }: {
   event: Event;
+  categories: EventCategory[];
+  onCategoriesChanged: () => void;
   onClose: () => void;
   onSaved: (input: EventInputFields) => Promise<void>;
   onDeleted: () => Promise<void>;
@@ -1445,7 +1724,7 @@ function EventDialog({
   const [eventDate, setEventDate] = useState(localDateOf(event.startTime));
   const [startTime, setStartTime] = useState(localTimeOf(event.startTime));
   const [endTime, setEndTime] = useState(localTimeOf(event.endTime));
-  const [type, setType] = useState<EventType>(event.type as EventType);
+  const [categoryId, setCategoryId] = useState<number | null>(event.categoryId);
   const [isRecurring, setIsRecurring] = useState(event.isRecurring ?? false);
   const [recurringPattern, setRecurringPattern] = useState<RecurringPattern>(event.recurringPattern ?? "weekly");
   // Por defecto lunes a viernes (1-5) — el caso de uso que da nombre a la funcionalidad.
@@ -1472,12 +1751,12 @@ function EventDialog({
         onClick={(e) => e.stopPropagation()}
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!title.trim()) return;
+          if (!title.trim() || categoryId == null) return;
           setSubmitting(true);
           try {
             await onSaved({
               title: title.trim(),
-              type,
+              categoryId,
               ...buildTimes(),
               isRecurring,
               ...(isRecurring ? { recurringPattern } : {}),
@@ -1512,13 +1791,12 @@ function EventDialog({
             <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field-input" />
             <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field-input" />
           </div>
-          <select value={type} onChange={(e) => setType(e.target.value as EventType)} className="field-input">
-            {TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+          <EventCategoryField
+            categoryId={categoryId}
+            onChange={setCategoryId}
+            categories={categories}
+            onCategoriesChanged={onCategoriesChanged}
+          />
 
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
@@ -1638,12 +1916,28 @@ function GoalsProgressCard({ goals }: { goals: Goal[] }) {
   );
 }
 
-function NewEventForm({ date, onSubmit }: { date: string; onSubmit: (input: EventInputFields) => Promise<void> }) {
+function NewEventForm({
+  date,
+  categories,
+  onCategoriesChanged,
+  onSubmit,
+}: {
+  date: string;
+  categories: EventCategory[];
+  onCategoriesChanged: () => void;
+  onSubmit: (input: EventInputFields) => Promise<void>;
+}) {
   const [title, setTitle] = useState("");
   const [eventDate, setEventDate] = useState(date);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
-  const [type, setType] = useState<EventType>("work");
+  const [categoryId, setCategoryId] = useState<number | null>(null);
+  // La primera categoría (por `order`) precarga el <select> en cuanto llega — antes de eso
+  // (fetch inicial todavía en vuelo) queda en null y el formulario no deja enviar (ver el guard
+  // en el onSubmit de abajo).
+  useEffect(() => {
+    if (categoryId === null && categories.length > 0) setCategoryId(categories[0].id);
+  }, [categories, categoryId]);
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringPattern, setRecurringPattern] = useState<RecurringPattern>("weekly");
   const [recurringWeekdayStart, setRecurringWeekdayStart] = useState(1);
@@ -1656,12 +1950,12 @@ function NewEventForm({ date, onSubmit }: { date: string; onSubmit: (input: Even
     <form
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!title.trim()) return;
+        if (!title.trim() || categoryId == null) return;
         setSubmitting(true);
         try {
           await onSubmit({
             title: title.trim(),
-            type,
+            categoryId,
             startTime: new Date(`${eventDate}T${startTime}:00`).toISOString(),
             endTime: new Date(`${eventDate}T${endTime}:00`).toISOString(),
             isRecurring,
@@ -1681,13 +1975,7 @@ function NewEventForm({ date, onSubmit }: { date: string; onSubmit: (input: Even
       <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="field-input" />
       <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field-input" />
       <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field-input" />
-      <select value={type} onChange={(e) => setType(e.target.value as EventType)} className="field-input">
-        {TYPES.map((t) => (
-          <option key={t.value} value={t.value}>
-            {t.label}
-          </option>
-        ))}
-      </select>
+      <EventCategoryField categoryId={categoryId} onChange={setCategoryId} categories={categories} onCategoriesChanged={onCategoriesChanged} />
 
       <label className="flex items-center gap-2 text-sm text-muted-foreground md:col-span-2">
         <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />

@@ -27,14 +27,18 @@ export interface AuthResponse {
   user: User;
 }
 
-export type EventType = "work" | "study" | "gym" | "meeting" | "free" | "evento" | "cita" | "cumpleanos" | "otro";
 export type RecurringPattern = "daily" | "weekly" | "biweekly" | "monthly" | "weekday_range";
 
 export interface Event {
   id: number;
   title: string;
   description: string | null;
+  // Deprecado: ver el mismo comentario en prisma/schema.prisma — la categoría de verdad es
+  // `categoryId` (ver EventCategory), esto solo se conserva para eventos antiguos.
   type: string;
+  // Categoría del evento (ver Agenda > + Nuevo evento) — null en eventos sin categoría (p.ej.
+  // importados por .ics, o cuya categoría se borró).
+  categoryId: number | null;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -473,4 +477,14 @@ export interface CalendarLegendCategory {
 export interface CalendarDayMark {
   date: string; // YYYY-MM-DD
   categoryId: number;
+}
+
+// Categoría de evento (Agenda > + Nuevo evento) — mismo concepto que CalendarLegendCategory
+// (nombre + color de la paleta de la app, gestionable por el usuario) pero para categorizar
+// eventos en vez de días del calendario anual.
+export interface EventCategory {
+  id: number;
+  label: string;
+  color: CalendarColor;
+  order: number;
 }
