@@ -1145,19 +1145,27 @@ function AgendaFileMenu({ onExport, onImported }: { onExport: () => void; onImpo
   return (
     <div className="relative">
       <div className="flex items-center overflow-hidden rounded-full border border-border">
+        {/* Solo icono a propósito (sin la etiqueta "Exportar" al lado): con etiqueta, en anchos de
+            ventana ajustados este control competía por espacio con el resto de la cabecera y a
+            veces acababa recortado — un botón de solo icono no tiene ese problema en ningún ancho.
+            `title` conserva la pista para quien pase el ratón por encima (y para lectores de
+            pantalla, junto con aria-label). */}
         <button
           onClick={onExport}
-          className="cursor-pointer whitespace-nowrap px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
+          title="Exportar agenda"
+          aria-label="Exportar agenda"
+          className="flex size-9 cursor-pointer items-center justify-center text-sm text-muted-foreground transition-colors hover:bg-muted"
         >
-          ↓ Exportar
+          ↓
         </button>
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
           title="Importar eventos desde un .ics"
-          className="cursor-pointer whitespace-nowrap border-l border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          aria-label="Importar eventos desde un .ics"
+          className="flex size-9 cursor-pointer items-center justify-center border-l border-border text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
         >
-          ↑ Importar
+          ↑
         </button>
       </div>
       <input
