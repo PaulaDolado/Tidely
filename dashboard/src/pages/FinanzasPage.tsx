@@ -176,7 +176,7 @@ export function FinanzasPage() {
         </div>
       </div>
 
-      {/* Mismo patrón que ProfileDialog.tsx: overlay fixed + tarjeta centrada, en vez de editar
+      {/* Mismo patrón que SettingsDialog.tsx: overlay fixed + tarjeta centrada, en vez de editar
           la fila en su propia posición dentro de la lista. */}
       {editingTx && (
         <div

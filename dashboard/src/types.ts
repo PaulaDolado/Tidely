@@ -6,7 +6,7 @@ export interface Pagination {
 }
 
 // `username` es un alias de login independiente del email — ambos sirven para iniciar sesión
-// (ver ProfileDialog/AppShell/LoginPage). El email requiere verificación (ver `emailVerified`),
+// (ver SettingsDialog/AppShell/LoginPage). El email requiere verificación (ver `emailVerified`),
 // pero el login no la exige: solo se muestra un aviso hasta que se confirme.
 export interface User {
   id: number;
@@ -17,7 +17,7 @@ export interface User {
   timezone?: string;
   emailVerified: boolean;
   // Fecha (ISO) a partir de la cual se puede volver a cambiar el username — null si nunca se
-  // cambió o si el cooldown de 15 días ya pasó. Ver ProfileDialog.
+  // cambió o si el cooldown de 15 días ya pasó. Ver SettingsDialog.
   nextUsernameChangeAllowedAt?: string | null;
 }
 

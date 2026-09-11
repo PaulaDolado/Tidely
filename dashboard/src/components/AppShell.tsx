@@ -2,7 +2,7 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
 import { api, ApiError } from "../api/client";
-import { ProfileDialog } from "./ProfileDialog";
+import { SettingsDialog } from "./SettingsDialog";
 import { AgendaResponse, CustomPageSummary, CustomPageTemplate, Notification, SearchResults } from "../types";
 import { CUSTOM_PAGE_TEMPLATES } from "../utils/customPageTemplates";
 import clipClosedUrl from "../assets/clipClosed.png";
@@ -129,7 +129,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const { user, logout } = useAuth();
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [renamingPageId, setRenamingPageId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -473,23 +473,25 @@ export function AppShell({
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl px-1 text-sm">
-                  {/* El nombre sigue abriendo el editor de perfil al clicar — "Cerrar sesión" ya
-                      no vive al lado como botón fijo, sino en un popover que aparece ARRIBA al
-                      pasar el ratón por encima del nombre (mismo `group`/`group-hover` que el
-                      popover de descarga de al lado). Vive dentro del mismo contenedor `group`
-                      que el propio disparador (no como hermano suelto) para que mover el ratón
-                      del nombre al popover no rompa el hover: un descendiente absolutamente
-                      posicionado sigue contando como "dentro" del `group` a efectos de :hover
-                      aunque se dibuje fuera de su caja en el layout normal. */}
+                  {/* El nombre sigue abriendo el diálogo de ajustes al clicar (antes solo el
+                      editor de perfil; ver SettingsDialog, que ahora tiene "Cuenta" como una
+                      sección más entre varias) — "Cerrar sesión" ya no vive al lado como botón
+                      fijo, sino en un popover que aparece ARRIBA al pasar el ratón por encima del
+                      nombre (mismo `group`/`group-hover` que el popover de descarga de al lado).
+                      Vive dentro del mismo contenedor `group` que el propio disparador (no como
+                      hermano suelto) para que mover el ratón del nombre al popover no rompa el
+                      hover: un descendiente absolutamente posicionado sigue contando como "dentro"
+                      del `group` a efectos de :hover aunque se dibuje fuera de su caja en el
+                      layout normal. */}
                   <div className="group relative min-w-0 flex-1">
                     <button
-                      onClick={() => setProfileOpen(true)}
-                      title="Editar perfil"
+                      onClick={() => setSettingsOpen(true)}
+                      title="Ajustes"
                       className="min-w-0 w-full cursor-pointer text-left text-muted-foreground hover:text-foreground"
                     >
                       <span className="block truncate">{user?.name}</span>
-                      {/* Refleja al instante cualquier cambio guardado en el diálogo de perfil,
-                          porque ambos leen el mismo `user` del contexto (ver ProfileDialog). */}
+                      {/* Refleja al instante cualquier cambio guardado en Ajustes → Cuenta,
+                          porque ambos leen el mismo `user` del contexto (ver SettingsDialog). */}
                       {user?.username && (
                         <span className="block truncate text-xs opacity-70">
                           @{user.username}
@@ -632,7 +634,7 @@ export function AppShell({
         <NotificationsWidget />
       </div>
 
-      {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {showCreatePage && (
         <CreatePageModal
           onClose={() => setShowCreatePage(false)}

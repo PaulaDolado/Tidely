@@ -379,7 +379,13 @@ export function AgendaPage({
         ) : loading ? (
           <Loading label="Cargando agenda..." />
         ) : viewMode === "day" ? (
-          <DayColumn date={new Date(`${selected}T00:00:00.000Z`)} events={data?.events ?? []} categories={categories} onSelect={setEditingEvent} />
+          <DayColumn
+            date={new Date(`${selected}T00:00:00.000Z`)}
+            events={data?.events ?? []}
+            categories={categories}
+            today={today}
+            onSelect={setEditingEvent}
+          />
         ) : viewMode === "week" ? (
           week.length > 0 && (
             <WeekTimeGrid
@@ -777,28 +783,39 @@ function WeekTimeGrid({
 // Vista "Día": una sola columna a todo el ancho, sin drag-and-drop (no hay otro día al que
 // soltar una tarjeta) — eventos del día ordenados por hora, con detalle completo (igual que una
 // columna de WeekTimeGrid, pero sin comprimir).
+// Misma presentación que AgendaListView (la vista "Agenda": tarjeta con cabecera de día +
+// lista de eventos, resaltada si es hoy) pero con un solo día en vez de agrupar el periodo entero
+// — así "Día" se ve como un recorte de la vista Agenda a la fecha seleccionada, no como un diseño
+// aparte.
 function DayColumn({
   date,
   events,
   categories,
+  today,
   onSelect,
 }: {
   date: Date;
   events: Event[];
   categories: EventCategory[];
+  today: string;
   onSelect: (event: Event) => void;
 }) {
   const key = toKey(date);
+  const isToday = key === today;
   const dayEvents = events.filter((e) => dayKeyOf(e) === key).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   return (
-    <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-soft)] sm:p-6">
+    <div className={`rounded-2xl border p-4 ${isToday ? "border-primary/30 bg-primary/5" : "border-border bg-card"}`}>
+      <p className={`mb-3 text-xs font-medium uppercase tracking-wide ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+        {date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" })}
+        {isToday && " · Hoy"}
+      </p>
       {dayEvents.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
           No hay eventos este día.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="space-y-1.5">
           {dayEvents.map((event) => (
             <EventCard
               key={`${event.id}-${event.startTime}`}

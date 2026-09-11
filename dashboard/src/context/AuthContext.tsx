@@ -18,7 +18,7 @@ interface AuthContextValue {
   register: (username: string, email: string, password: string, name: string, timezone?: string) => Promise<void>;
   logout: () => void;
   // No llama a la API — solo sincroniza React state + localStorage con un perfil ya guardado en
-  // el backend (ver ProfileDialog: hace el PUT /auth/me ella misma y luego llama a esto). Deja
+  // el backend (ver SettingsDialog: hace el PUT /auth/me ella misma y luego llama a esto). Deja
   // token/refreshToken intactos, a diferencia de `persist` (que se usa solo en login/register).
   // El resto de la app (p.ej. el pie de la barra lateral, ver AppShell) lee siempre `user` de
   // este contexto, así que cualquier llamada a `updateUser` se refleja ahí al instante.
