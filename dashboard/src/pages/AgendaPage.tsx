@@ -1465,12 +1465,13 @@ function GuestsEditor({ value, onChange }: { value: string[]; onChange: (guests:
   );
 }
 
-// Selector de categoría del evento + gestión inline — el usuario puede añadir categorías nuevas
-// (eligiendo su color de la paleta de la app), renombrarlas o borrarlas, incluidas las que trae
-// la cuenta por defecto ("Trabajo", "Estudio"...), sin salir del formulario de creación/edición
-// del evento. La asignación al evento la sigue haciendo el <select> de encima; el panel de abajo
-// (tras pulsar "Gestionar categorías") solo edita la lista, igual patrón que AnnualCalendarLegend
-// (Horario > vista anual) pero sin la parte de "pintar días".
+// Selector de categoría del evento + gestión inline, fundidos en un solo control: cada categoría
+// es un chip clicable que a la vez SELECCIONA esa categoría para el evento (resaltado con borde)
+// y permite renombrarla, cambiar su color o borrarla (incluidas las que trae la cuenta por
+// defecto, "Trabajo"/"Estudio"...) sin salir del formulario. Antes había un <select> separado
+// para elegir + un botón "Gestionar categorías" que enseñaba/ocultaba este mismo panel — quitados
+// los dos: el panel de chips se ve siempre y es la única forma de elegir categoría, no hay nada
+// que desplegar ni alternar.
 function EventCategoryField({
   categoryId,
   onChange,
@@ -1482,36 +1483,20 @@ function EventCategoryField({
   categories: EventCategory[];
   onCategoriesChanged: () => void;
 }) {
-  const [managing, setManaging] = useState(false);
-
-  return (
-    <div>
-      <select
-        value={categoryId ?? ""}
-        onChange={(e) => onChange(Number(e.target.value))}
-        disabled={categories.length === 0}
-        className="field-input w-full"
-      >
-        {categories.length === 0 && <option value="">Sin categorías</option>}
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.label}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onClick={() => setManaging((v) => !v)}
-        className="mt-1.5 cursor-pointer text-xs text-muted-foreground underline hover:text-foreground"
-      >
-        {managing ? "Ocultar categorías" : "Gestionar categorías"}
-      </button>
-      {managing && <EventCategoryManager categories={categories} onChanged={onCategoriesChanged} />}
-    </div>
-  );
+  return <EventCategoryManager categories={categories} onChanged={onCategoriesChanged} selectedId={categoryId} onSelect={onChange} />;
 }
 
-function EventCategoryManager({ categories, onChanged }: { categories: EventCategory[]; onChanged: () => void }) {
+function EventCategoryManager({
+  categories,
+  onChanged,
+  selectedId,
+  onSelect,
+}: {
+  categories: EventCategory[];
+  onChanged: () => void;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
   const [showAdd, setShowAdd] = useState(false);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -1547,11 +1532,12 @@ function EventCategoryManager({ categories, onChanged }: { categories: EventCate
   };
 
   return (
-    <div className="mt-2 rounded-2xl border border-border bg-background p-3">
+    <div className="rounded-2xl border border-border bg-background p-3">
       <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Categorías de evento</p>
       <div className="flex flex-wrap items-center gap-2">
         {categories.map((category) => {
           const isRenaming = renamingId === category.id;
+          const isSelected = selectedId === category.id;
           const swatch = CALENDAR_COLOR_OPTIONS.find((o) => o.key === category.color)?.swatch ?? "bg-muted";
           return (
             <div key={category.id} className="group relative">
@@ -1572,7 +1558,16 @@ function EventCategoryManager({ categories, onChanged }: { categories: EventCate
                   className="rounded-full border border-primary bg-background px-3 py-1.5 text-xs outline-none"
                 />
               ) : (
-                <div className="flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 text-xs transition-colors hover:border-primary/30">
+                // <div> con onClick, no <button>: dentro va el botón de color (y, al pasar el
+                // ratón, renombrar/borrar) — anidar <button> dentro de <button> es HTML inválido.
+                // Esos botones internos ya paran la propagación del click, así que seleccionar la
+                // categoría (clic en el chip) y editarla (clic en sus controles) no chocan entre sí.
+                <div
+                  onClick={() => onSelect(category.id)}
+                  className={`flex cursor-pointer items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-xs transition-colors ${
+                    isSelected ? "border-primary bg-primary/10" : "border-border hover:border-primary/30"
+                  }`}
+                >
                   <button
                     type="button"
                     title="Cambiar color"
@@ -1582,7 +1577,7 @@ function EventCategoryManager({ categories, onChanged }: { categories: EventCate
                     }}
                     className={`size-3.5 shrink-0 cursor-pointer rounded-full transition-shadow hover:ring-2 hover:ring-foreground/40 ${swatch}`}
                   />
-                  <span>{category.label}</span>
+                  <span className={isSelected ? "font-medium text-primary" : ""}>{category.label}</span>
                 </div>
               )}
               {editingColorId === category.id && (
@@ -1975,7 +1970,7 @@ function NewEventForm({
           setSubmitting(false);
         }
       }}
-      className="mb-10 grid gap-4 card-soft md:grid-cols-[2fr_1fr_1fr_1fr_1fr]"
+      className="mb-10 grid items-start gap-4 card-soft md:grid-cols-[2fr_1fr_1fr_1fr_1fr]"
     >
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="¿Qué necesitas hacer?" className="field-input" />
       <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="field-input" />
