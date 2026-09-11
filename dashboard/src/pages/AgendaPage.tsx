@@ -1970,51 +1970,71 @@ function NewEventForm({
           setSubmitting(false);
         }
       }}
-      className="mb-10 grid items-start gap-4 card-soft md:grid-cols-[2fr_1fr_1fr_1fr_1fr]"
+      className="mb-10 card-soft"
     >
-      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="¿Qué necesitas hacer?" className="field-input" />
-      <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="field-input" />
-      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field-input" />
-      <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field-input" />
-      <EventCategoryField categoryId={categoryId} onChange={setCategoryId} categories={categories} onCategoriesChanged={onCategoriesChanged} />
+      {/* Dos columnas independientes en vez de una única grid de 5 columnas: antes el panel de
+          categorías (ahora siempre visible, con todos sus chips) compartía fila con el título/
+          fecha/horas, y al ser el más alto de los cinco estiraba la altura de ESA fila — pero el
+          resto de campos (recurrencia, avisos, invitados), en filas de la grid POR DEBAJO, no
+          tienen nada que ver con esa altura y aun así quedaban empujados hacia abajo, dejando un
+          hueco enorme bajo el título/fecha/horas. Con `md:flex-row md:items-start`, la columna
+          izquierda (todo excepto categorías) fluye pegada a su propio contenido y la de
+          categorías, a la derecha, puede ser tan alta como haga falta sin arrastrar a la otra. */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
+        <div className="grid flex-1 gap-4 md:grid-cols-4">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="¿Qué necesitas hacer?"
+            className="field-input md:col-span-4"
+          />
+          <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="field-input" />
+          <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field-input" />
+          <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field-input" />
 
-      <label className="flex items-center gap-2 text-sm text-muted-foreground md:col-span-2">
-        <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
-        Evento recurrente
-      </label>
-      {isRecurring && (
-        <select
-          value={recurringPattern}
-          onChange={(e) => setRecurringPattern(e.target.value as RecurringPattern)}
-          className="field-input md:col-span-1"
-        >
-          {RECURRENCES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </select>
-      )}
-      {isRecurring && recurringPattern === "weekday_range" && (
-        <WeekdayRangeFields
-          start={recurringWeekdayStart}
-          end={recurringWeekdayEnd}
-          onStartChange={setRecurringWeekdayStart}
-          onEndChange={setRecurringWeekdayEnd}
-          className="md:col-span-2"
-        />
-      )}
+          <label className="flex items-center gap-2 text-sm text-muted-foreground md:col-span-4">
+            <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+            Evento recurrente
+          </label>
+          {isRecurring && (
+            <select
+              value={recurringPattern}
+              onChange={(e) => setRecurringPattern(e.target.value as RecurringPattern)}
+              className="field-input md:col-span-2"
+            >
+              {RECURRENCES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {isRecurring && recurringPattern === "weekday_range" && (
+            <WeekdayRangeFields
+              start={recurringWeekdayStart}
+              end={recurringWeekdayEnd}
+              onStartChange={setRecurringWeekdayStart}
+              onEndChange={setRecurringWeekdayEnd}
+              className="md:col-span-2"
+            />
+          )}
 
-      <div className="md:col-span-5">
-        <ReminderCheckboxes value={reminderMinutesBefore} onChange={setReminderMinutesBefore} />
+          <div className="md:col-span-4">
+            <ReminderCheckboxes value={reminderMinutesBefore} onChange={setReminderMinutesBefore} />
+          </div>
+          <div className="md:col-span-4">
+            <GuestsEditor value={guests} onChange={setGuests} />
+          </div>
+
+          <button type="submit" disabled={submitting} className="btn-primary md:col-span-4 md:justify-self-start">
+            {submitting ? "Guardando..." : "Añadir evento"}
+          </button>
+        </div>
+
+        <div className="md:w-64 md:shrink-0">
+          <EventCategoryField categoryId={categoryId} onChange={setCategoryId} categories={categories} onCategoriesChanged={onCategoriesChanged} />
+        </div>
       </div>
-      <div className="md:col-span-5">
-        <GuestsEditor value={guests} onChange={setGuests} />
-      </div>
-
-      <button type="submit" disabled={submitting} className="btn-primary md:col-span-5 md:justify-self-start">
-        {submitting ? "Guardando..." : "Añadir evento"}
-      </button>
     </form>
   );
 }
