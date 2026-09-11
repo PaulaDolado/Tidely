@@ -1478,28 +1478,26 @@ function EventCategoryField({
 
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <select
-          value={categoryId ?? ""}
-          onChange={(e) => onChange(Number(e.target.value))}
-          disabled={categories.length === 0}
-          className="field-input flex-1"
-        >
-          {categories.length === 0 && <option value="">Sin categorías</option>}
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={() => setManaging((v) => !v)}
-          className="shrink-0 cursor-pointer text-xs text-muted-foreground underline hover:text-foreground"
-        >
-          {managing ? "Ocultar categorías" : "Gestionar categorías"}
-        </button>
-      </div>
+      <select
+        value={categoryId ?? ""}
+        onChange={(e) => onChange(Number(e.target.value))}
+        disabled={categories.length === 0}
+        className="field-input w-full"
+      >
+        {categories.length === 0 && <option value="">Sin categorías</option>}
+        {categories.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => setManaging((v) => !v)}
+        className="mt-1.5 cursor-pointer text-xs text-muted-foreground underline hover:text-foreground"
+      >
+        {managing ? "Ocultar categorías" : "Gestionar categorías"}
+      </button>
       {managing && <EventCategoryManager categories={categories} onChanged={onCategoriesChanged} />}
     </div>
   );
