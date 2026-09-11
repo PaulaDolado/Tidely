@@ -1,0 +1,27 @@
+# Evita que el backend (Render, plan free) se "duerma": Render para el contenedor tras ~15 min
+# sin peticiones y el siguiente request tarda 30-60s+ en arrancarlo de nuevo (arranque en frío) —
+# de ahí el "⚠️ No se pudo conectar con la API" que salta de vez en cuando en el dashboard (ver
+# dashboard/src/api/client.ts): no es que el servidor esté caído, es que estaba dormido y el
+# fetch falla o expira mientras arranca. Este workflow hace ping a /health cada 10 minutos
+# (margen bajo los 15 min de Render) para que nunca llegue a dormirse.
+#
+# No sustituye por completo al plan free: si Render tiene una interrupción real, o el propio
+# runner de GitHub Actions se retrasa más de lo habitual entre ejecuciones, el arranque en frío
+# puede volver a darse alguna vez — para eliminarlo del todo hace falta un plan de pago sin
+# spin-down (ver DEPLOYMENT.md). Este workflow reduce la frecuencia a prácticamente cero sin
+# coste extra.
+name: Mantener despierta la API (Render)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GET /health
+        run: |
+          curl --fail --silent --show-error --max-time 20 --retry 2 --retry-delay 5 \
+            "https://tidely-api-pa09.onrender.com/health"

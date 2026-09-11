@@ -52,7 +52,10 @@ async function tryRefresh(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const response = await fetch(`${API_URL}/auth/refresh`, {
+        // fetchWithRetry, no fetch directo: un refresh que choca con el arranque en frío del
+        // backend (ver comentario junto a fetchWithRetry, más abajo en este fichero) no debe
+        // desloguear a nadie por un simple error de red transitorio.
+        const response = await fetchWithRetry(`${API_URL}/auth/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refreshToken }),
@@ -73,6 +76,31 @@ async function tryRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// El backend (Render, plan free) se "duerme" tras ~15 min sin tráfico — hay un workflow
+// (.github/workflows/keep-alive.yml) haciéndole ping cada 10 min para que casi nunca llegue a
+// pasar, pero sigue habiendo una ventana (justo tras un deploy, o si ese workflow se retrasa)
+// donde la primera petición choca con el contenedor arrancando y `fetch` falla con un error de
+// red (no es un simple "está tardando": eso lo tolera fetch solo, sin timeout propio). En vez de
+// enseñar directamente "¿Está corriendo el servidor?" por ese primer fallo transitorio,
+// reintentamos un par de veces con una pausa corta — si de verdad está caído, el error se sigue
+// mostrando igual, solo que unos segundos más tarde.
+const NETWORK_RETRY_DELAYS_MS = [1000, 2500];
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      if (attempt >= NETWORK_RETRY_DELAYS_MS.length) throw err;
+      await sleep(NETWORK_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -84,7 +112,7 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
 
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, { ...options, headers });
+    response = await fetchWithRetry(`${API_URL}${path}`, { ...options, headers });
   } catch {
     throw new ApiError(`No se pudo conectar con la API en ${API_URL}. ¿Está corriendo el servidor?`, 0);
   }
