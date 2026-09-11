@@ -27,3 +27,18 @@ export const CALENDAR_COLOR_CLASSES: Record<CalendarColor, { swatch: string; cel
   secondary: { swatch: colors.secondary, cellBg: "rgba(222, 208, 182, 0.7)", cellBorder: colors.secondary },
   muted: { swatch: "rgba(109, 104, 100, 0.5)", cellBg: colors.muted, cellBorder: colors.border },
 };
+
+// Mismos 8 tokens, pero como acento de tarjeta (fondo tenue + texto sólido) en vez de "celda
+// pintada" — puerto de EVENT_CATEGORY_COLOR_CLASSES en dashboard/src/utils/calendarColors.ts,
+// reutilizando los mismos `*Tint` que ya existían para esto en theme.ts (antes solo para
+// `eventTypeStyle`, ahora también para colorear por EventCategory — ver utils/eventCategories.ts).
+export const EVENT_CATEGORY_COLOR_STYLES: Record<CalendarColor, { bg: string; text: string }> = {
+  primary: { bg: colors.primaryTint, text: colors.primary },
+  habit: { bg: colors.habitTint, text: colors.habit },
+  positive: { bg: colors.positiveTint, text: colors.positive },
+  hobby: { bg: colors.hobbyTint, text: colors.hobby },
+  warning: { bg: colors.warningTint, text: colors.warning },
+  negative: { bg: colors.destructiveTint, text: colors.destructive },
+  secondary: { bg: colors.secondary, text: colors.secondaryForeground },
+  muted: { bg: colors.muted, text: colors.mutedForeground },
+};

@@ -10,26 +10,15 @@ import { listTasksDueToday, toggleTaskDone } from "../db/tasksRepo";
 import { listHabits, isHabitDoneToday, toggleHabitToday } from "../db/habitsRepo";
 import { listNotes, createNoteLocal, toggleNoteChecked, deleteNoteLocal } from "../db/notesRepo";
 import { EventOccurrence } from "../utils/recurrence";
-import { LocalHabit, LocalNote, LocalTask } from "../types";
-import { colors, fonts, radius, eventTypeStyle } from "../theme";
+import { listEventCategories } from "../api/eventCategories";
+import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
+import { EventCategory, LocalHabit, LocalNote, LocalTask } from "../types";
+import { colors, fonts, radius } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { QuickAccessCard } from "../components/QuickAccessCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
 
 const SYNC_INTERVAL_MS = 60_000;
-
-// Mapeo de tipos a etiquetas (igual que web)
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  work: "Trabajo",
-  study: "Estudio",
-  gym: "Gimnasio",
-  meeting: "Reunión",
-  evento: "Evento",
-  cita: "Cita",
-  cumpleanos: "Cumpleaños",
-  free: "Libre",
-  otro: "Otro",
-};
 
 // Estilos especiales por tipo de sección (fondos, bordes y color del título tintados IGUAL que la
 // web — antes "habits" llevaba el borde al 50% de opacidad "para que se viera más", pero eso
@@ -85,6 +74,9 @@ export function HoyScreen() {
   const { collapsed } = useSidebar();
 
   const [events, setEvents] = useState<EventOccurrence<ParsedEvent>[]>([]);
+  // Categorías de evento (mismo criterio que AgendaScreen): se leen directas de la API, no del
+  // caché SQLite — solo hacen falta para pintar la etiqueta/color de cada evento de hoy.
+  const [categories, setCategories] = useState<EventCategory[]>([]);
   const [tasks, setTasks] = useState<LocalTask[]>([]);
   const [habits, setHabits] = useState<(LocalHabit & { done: boolean })[]>([]);
   const [notes, setNotes] = useState<LocalNote[]>([]);
@@ -143,6 +135,13 @@ export function HoyScreen() {
   useEffect(() => {
     reload();
     sync();
+    listEventCategories()
+      .then(setCategories)
+      .catch(() => {
+        // Silencioso a propósito, igual que el resto de fallos "de fondo" de esta pantalla (ver
+        // el catch de combinedStreak más abajo): sin ellas, cada evento simplemente cae en el
+        // estilo neutro por defecto (ver eventCategoryStyle) en vez de romper la pantalla.
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -271,7 +270,7 @@ export function HoyScreen() {
                 <EmptyText text="Sin eventos hoy — día libre." />
               )}
               {events.map((occ) => {
-                const typeStyle = eventTypeStyle(occ.event.type);
+                const typeStyle = eventCategoryStyle(categories, occ.event.categoryId);
                 return (
                   <View
                     key={`${occ.event.id}-${occ.startTime.toISOString()}`}
@@ -300,8 +299,7 @@ export function HoyScreen() {
                           { color: typeStyle.text },
                         ]}
                       >
-                        {EVENT_TYPE_LABELS[occ.event.type] ||
-                          occ.event.type}
+                        {eventCategoryLabel(categories, occ.event)}
                       </Text>
                     </View>
                   </View>

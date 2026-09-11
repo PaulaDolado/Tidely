@@ -69,33 +69,6 @@ export const fonts = {
   serif: "InstrumentSerif_400Regular",
 } as const;
 
-export type EventTypeKey = "work" | "study" | "gym" | "meeting" | "evento" | "cita" | "cumpleanos" | "free" | "otro";
-
-/** Mismo mapeo que `TYPE_STYLES`/`DEFAULT_TYPE_STYLE` en dashboard/src/pages/AgendaPage.tsx —
- * "study" usa `--secondary` (arena) como fondo sólido, no un tinte al 15%, igual que en la web
- * (`bg-secondary/70`); el resto de tipos no listados caen en el mismo fallback neutro que
- * `DEFAULT_TYPE_STYLE` (free/otro). */
-export function eventTypeStyle(type: string): { bg: string; text: string } {
-  switch (type) {
-    case "work":
-      return { bg: colors.primaryTint, text: colors.primary };
-    case "study":
-      return { bg: colors.secondary, text: colors.secondaryForeground };
-    case "gym":
-      return { bg: colors.hobbyTint, text: colors.hobby };
-    case "meeting":
-      return { bg: colors.warningTint, text: colors.warning };
-    case "evento":
-      return { bg: colors.positiveTint, text: colors.positive };
-    case "cita":
-      return { bg: colors.habitTint, text: colors.habit };
-    case "cumpleanos":
-      return { bg: colors.coverTint, text: colors.cover };
-    default:
-      return { bg: colors.muted, text: colors.mutedForeground };
-  }
-}
-
 /** Mismo mapeo que `PRIORITY_STYLES` en dashboard/src/pages/PlanificadorPage.tsx. */
 export function priorityStyle(priority: "low" | "medium" | "high"): { bg: string; text: string } {
   switch (priority) {

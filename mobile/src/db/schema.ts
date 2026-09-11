@@ -21,6 +21,7 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       title TEXT NOT NULL,
       description TEXT,
       type TEXT NOT NULL,
+      categoryId INTEGER,
       startTime TEXT NOT NULL,
       endTime TEXT NOT NULL,
       location TEXT,
@@ -99,4 +100,18 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       pendingOp TEXT
     );
   `);
+
+  // `categoryId` en `events` (categorías de evento gestionables por el usuario — ver
+  // EventCategory en types.ts, sustituye a la lista fija que antes vivía en `type`) se añadió
+  // DESPUÉS de que esta app ya estuviera instalada en dispositivos reales, a diferencia del
+  // salto de v1 a v2 de schema (ver el comentario en db/index.ts): ahí no había instalaciones que
+  // migrar y bastó con cambiar de nombre de fichero; aquí sí las hay, así que en vez de eso se
+  // añade la columna en caliente. `CREATE TABLE IF NOT EXISTS` de arriba ya la incluye para una
+  // base de datos nueva, así que esto es un no-op ahí (columna duplicada) — de ahí el try/catch:
+  // SQLite no tiene `ADD COLUMN IF NOT EXISTS`.
+  try {
+    await db.execAsync(`ALTER TABLE events ADD COLUMN categoryId INTEGER;`);
+  } catch {
+    // Ya existía (o la tabla se acaba de crear con la columna incluida) — nada que hacer.
+  }
 }

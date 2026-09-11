@@ -12,6 +12,7 @@ export interface ParsedEvent {
   title: string;
   description: string | null;
   type: string;
+  categoryId: number | null;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -27,6 +28,7 @@ export function parseEvent(row: LocalEvent): ParsedEvent {
     title: row.title,
     description: row.description,
     type: row.type,
+    categoryId: row.categoryId,
     startTime: row.startTime,
     endTime: row.endTime,
     location: row.location,
@@ -47,12 +49,13 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
       const id = String(e.id);
       await db.runAsync(
         `INSERT INTO events
-           (id, title, description, type, startTime, endTime, location, isRecurring,
+           (id, title, description, type, categoryId, startTime, endTime, location, isRecurring,
             recurringPattern, reminderMinutesBefore, guests, source, googleEventId,
             createdAt, updatedAt, synced, pendingOp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title, description = excluded.description, type = excluded.type,
+           categoryId = excluded.categoryId,
            startTime = excluded.startTime, endTime = excluded.endTime, location = excluded.location,
            isRecurring = excluded.isRecurring, recurringPattern = excluded.recurringPattern,
            reminderMinutesBefore = excluded.reminderMinutesBefore, guests = excluded.guests,
@@ -64,6 +67,7 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
           e.title,
           e.description,
           e.type,
+          e.categoryId,
           e.startTime,
           e.endTime,
           e.location,
@@ -167,6 +171,7 @@ export async function createEventLocal(input: {
   title: string;
   description: string | null;
   type: string;
+  categoryId: number | null;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -180,14 +185,15 @@ export async function createEventLocal(input: {
   const now = new Date().toISOString();
   await db.runAsync(
     `INSERT INTO events
-       (id, title, description, type, startTime, endTime, location, isRecurring, recurringPattern,
+       (id, title, description, type, categoryId, startTime, endTime, location, isRecurring, recurringPattern,
         reminderMinutesBefore, guests, source, googleEventId, createdAt, updatedAt, synced, pendingOp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tidely', NULL, ?, ?, 0, NULL)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tidely', NULL, ?, ?, 0, NULL)`,
     [
       id,
       input.title,
       input.description,
       input.type,
+      input.categoryId,
       input.startTime,
       input.endTime,
       input.location,
@@ -208,6 +214,7 @@ export async function updateEventLocal(
     title: string;
     description: string | null;
     type: string;
+    categoryId: number | null;
     startTime: string;
     endTime: string;
     location: string | null;
@@ -221,7 +228,7 @@ export async function updateEventLocal(
   const now = new Date().toISOString();
   await db.runAsync(
     `UPDATE events SET
-       title = ?, description = ?, type = ?, startTime = ?, endTime = ?, location = ?,
+       title = ?, description = ?, type = ?, categoryId = ?, startTime = ?, endTime = ?, location = ?,
        isRecurring = ?, recurringPattern = ?, reminderMinutesBefore = ?, guests = ?, updatedAt = ?,
        pendingOp = CASE WHEN synced = 1 THEN 'update' ELSE pendingOp END
      WHERE id = ?`,
@@ -229,6 +236,7 @@ export async function updateEventLocal(
       input.title,
       input.description,
       input.type,
+      input.categoryId,
       input.startTime,
       input.endTime,
       input.location,

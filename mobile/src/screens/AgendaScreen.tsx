@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform } from "react-native";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
 // está deprecado, este es el reemplazo recomendado.
@@ -9,16 +9,24 @@ import { runSync } from "../sync";
 import { listExpandedEvents, createEventLocal, updateEventLocal, deleteEventLocal, ParsedEvent } from "../db/eventsRepo";
 import { EventOccurrence } from "../utils/recurrence";
 import {
-  EVENT_TYPES,
-  EVENT_TYPE_LABELS,
-  EventType,
+  listEventCategories,
+  createEventCategory,
+  renameEventCategory,
+  changeEventCategoryColor,
+  deleteEventCategory,
+} from "../api/eventCategories";
+import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
+import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
+import {
+  CalendarColor,
+  EventCategory,
   RECURRING_PATTERNS,
   RECURRING_PATTERN_LABELS,
   RecurringPattern,
   REMINDER_PRESETS_MINUTES,
   REMINDER_PRESET_LABELS,
 } from "../types";
-import { colors, eventTypeStyle, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { HabitsCard } from "../components/HabitsCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
@@ -49,7 +57,7 @@ interface EventForm {
   id: string | null;
   title: string;
   description: string;
-  type: EventType;
+  categoryId: number | null;
   startTime: Date;
   endTime: Date;
   location: string;
@@ -66,7 +74,9 @@ function defaultForm(dateKey: string): EventForm {
     id: null,
     title: "",
     description: "",
-    type: "otro",
+    // null hasta que llegue la primera categoría de la cuenta (ver el useEffect en
+    // AgendaScreen que la precarga en cuanto `listEventCategories()` responde).
+    categoryId: null,
     startTime,
     endTime,
     location: "",
@@ -82,7 +92,7 @@ function formToOccurrenceEditor(event: ParsedEvent): EventForm {
     id: event.id,
     title: event.title,
     description: event.description ?? "",
-    type: event.type as EventType,
+    categoryId: event.categoryId,
     startTime: new Date(event.startTime),
     endTime: new Date(event.endTime),
     location: event.location ?? "",
@@ -103,6 +113,34 @@ export function AgendaScreen() {
   const [form, setForm] = useState<EventForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [picker, setPicker] = useState<"start-date" | "start-time" | "end-date" | "end-time" | null>(null);
+  // Categorías de evento (Agenda > + Nuevo evento): igual que la leyenda del calendario anual,
+  // se leen directas de la API (no pasan por SQLite/sync) — ver api/eventCategories.ts.
+  const [categories, setCategories] = useState<EventCategory[]>([]);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+
+  const reloadCategories = useCallback(async () => {
+    try {
+      setCategories(await listEventCategories());
+      setCategoriesError(null);
+    } catch {
+      setCategoriesError("No se pudieron cargar las categorías");
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadCategories();
+  }, [reloadCategories]);
+
+  // Precarga la primera categoría (por `order`) en cuanto llega, solo si el formulario abierto es
+  // de un evento NUEVO (form.id === null) — un evento antiguo sin categoría (categoryId null, ver
+  // el mismo comentario en dashboard/src/pages/AgendaPage.tsx) no debe verse "recategorizado" solo
+  // por abrir su diálogo de edición.
+  useEffect(() => {
+    if (form && form.id === null && form.categoryId === null && categories.length > 0) {
+      setForm({ ...form, categoryId: categories[0].id });
+    }
+  }, [form, categories]);
 
   const reload = useCallback(async () => {
     const rangeStart = weekStart;
@@ -148,6 +186,7 @@ export function AgendaScreen() {
   const closeForm = () => {
     setForm(null);
     setPicker(null);
+    setShowCategoryManager(false);
   };
 
   const toggleReminder = (minutes: number) => {
@@ -159,7 +198,7 @@ export function AgendaScreen() {
   };
 
   const handleSave = async () => {
-    if (!form || !form.title.trim() || form.endTime.getTime() <= form.startTime.getTime()) return;
+    if (!form || !form.title.trim() || form.endTime.getTime() <= form.startTime.getTime() || form.categoryId == null) return;
     setSaving(true);
     const guests = form.guestsText
       .split(",")
@@ -168,7 +207,10 @@ export function AgendaScreen() {
     const input = {
       title: form.title.trim(),
       description: form.description.trim() || null,
-      type: form.type,
+      // `type` es la columna heredada (ver el comentario en types.ts/schema.ts) — se mantiene
+      // rellena con el nombre de la categoría elegida, igual que hace el backend al crear/editar.
+      type: categories.find((c) => c.id === form.categoryId)?.label ?? "Otro",
+      categoryId: form.categoryId,
       startTime: form.startTime.toISOString(),
       endTime: form.endTime.toISOString(),
       location: form.location.trim() || null,
@@ -250,9 +292,9 @@ export function AgendaScreen() {
             </Text>
             <View style={styles.eventInfo}>
               <Text style={styles.eventTitle}>{occ.event.title}</Text>
-              <View style={[styles.eventTypeBadge, { backgroundColor: eventTypeStyle(occ.event.type).bg }]}>
-                <Text style={[styles.eventTypeText, { color: eventTypeStyle(occ.event.type).text }]}>
-                  {EVENT_TYPE_LABELS[occ.event.type as EventType] ?? occ.event.type}
+              <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
+                <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
+                  {eventCategoryLabel(categories, occ.event)}
                 </Text>
               </View>
               {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
@@ -295,18 +337,32 @@ export function AgendaScreen() {
                 multiline
               />
 
-              <Text style={styles.fieldLabel}>Tipo</Text>
+              <View style={styles.categoryHeaderRow}>
+                <Text style={styles.fieldLabel}>Categoría</Text>
+                <Pressable onPress={() => setShowCategoryManager((v) => !v)} hitSlop={6}>
+                  <Text style={styles.manageCategoriesLink}>{showCategoryManager ? "Ocultar" : "Gestionar"}</Text>
+                </Pressable>
+              </View>
+              {categoriesError && <Text style={styles.errorBanner}>{categoriesError}</Text>}
               <View style={styles.chipRow}>
-                {EVENT_TYPES.map((type) => (
+                {categories.length === 0 && <Text style={styles.emptyText}>Sin categorías todavía</Text>}
+                {categories.map((category) => (
                   <Pressable
-                    key={type}
-                    style={[styles.chip, form?.type === type && styles.chipSelected]}
-                    onPress={() => form && setForm({ ...form, type })}
+                    key={category.id}
+                    style={[styles.chip, form?.categoryId === category.id && styles.chipSelected]}
+                    onPress={() => form && setForm({ ...form, categoryId: category.id })}
                   >
-                    <Text style={[styles.chipText, form?.type === type && styles.chipTextSelected]}>{EVENT_TYPE_LABELS[type]}</Text>
+                    <Text style={[styles.chipText, form?.categoryId === category.id && styles.chipTextSelected]}>{category.label}</Text>
                   </Pressable>
                 ))}
               </View>
+              {showCategoryManager && (
+                <EventCategoryManager
+                  categories={categories}
+                  onChanged={reloadCategories}
+                  onError={(message) => setCategoriesError(message)}
+                />
+              )}
 
               <Text style={styles.fieldLabel}>Empieza</Text>
               <View style={styles.dateRow}>
@@ -442,6 +498,241 @@ export function AgendaScreen() {
   );
 }
 
+// Gestión de categorías de evento (añadir, renombrar, recolorear o borrar, incluidas las que
+// trae la cuenta por defecto) sin salir del formulario de creación/edición — puerto simplificado
+// de CategoryChip/AddCategoryForm en components/AnnualCalendarLegend.tsx: aquí no hay "pintar
+// días", solo la lista editable, y el borrado es directo (un toque, sin doble confirmación) igual
+// que el resto de "✕" de esta app (ver el comentario de ese mismo criterio en AnnualCalendarLegend).
+function EventCategoryManager({
+  categories,
+  onChanged,
+  onError,
+}: {
+  categories: EventCategory[];
+  onChanged: () => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [editingColorId, setEditingColorId] = useState<number | null>(null);
+
+  const guarded = (action: () => Promise<unknown>) => async () => {
+    try {
+      await action();
+      await onChanged();
+    } catch {
+      onError("No se pudo actualizar la categoría");
+    }
+  };
+
+  return (
+    <View style={managerStyles.card}>
+      <Text style={managerStyles.title}>Categorías de evento</Text>
+      <View style={managerStyles.list}>
+        {categories.map((category) => {
+          const swatch = CALENDAR_COLOR_OPTIONS.find((o) => o.key === category.color)?.swatch ?? colors.muted;
+          const isRenaming = renamingId === category.id;
+          return (
+            <View key={category.id} style={managerStyles.chipWrap}>
+              {isRenaming ? (
+                <TextInput
+                  style={managerStyles.renameInput}
+                  value={renameValue}
+                  onChangeText={setRenameValue}
+                  autoFocus
+                  onBlur={guarded(async () => {
+                    const trimmed = renameValue.trim();
+                    setRenamingId(null);
+                    if (trimmed && trimmed !== category.label) await renameEventCategory(category.id, trimmed);
+                  })}
+                  onSubmitEditing={guarded(async () => {
+                    const trimmed = renameValue.trim();
+                    setRenamingId(null);
+                    if (trimmed && trimmed !== category.label) await renameEventCategory(category.id, trimmed);
+                  })}
+                />
+              ) : (
+                <View style={managerStyles.chip}>
+                  <Pressable
+                    onPress={() => setEditingColorId((id) => (id === category.id ? null : category.id))}
+                    hitSlop={6}
+                    style={[managerStyles.chipSwatch, { backgroundColor: swatch }]}
+                  />
+                  <Text style={managerStyles.chipLabel}>{category.label}</Text>
+                  <Pressable
+                    onPress={() => {
+                      setRenamingId(category.id);
+                      setRenameValue(category.label);
+                    }}
+                    hitSlop={6}
+                  >
+                    <Text style={managerStyles.chipAction}>✎</Text>
+                  </Pressable>
+                  <Pressable onPress={guarded(() => deleteEventCategory(category.id))} hitSlop={6}>
+                    <Text style={[managerStyles.chipAction, managerStyles.chipActionDelete]}>✕</Text>
+                  </Pressable>
+                </View>
+              )}
+              {editingColorId === category.id && (
+                <View style={managerStyles.colorPicker}>
+                  {CALENDAR_COLOR_OPTIONS.map((opt) => (
+                    <Pressable
+                      key={opt.key}
+                      onPress={guarded(async () => {
+                        setEditingColorId(null);
+                        await changeEventCategoryColor(category.id, opt.key);
+                      })}
+                      style={[managerStyles.colorSwatch, { backgroundColor: opt.swatch }, category.color === opt.key && managerStyles.colorSwatchActive]}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        })}
+
+        {showAdd ? (
+          <AddEventCategoryForm
+            onCancel={() => setShowAdd(false)}
+            onAdd={async (label, color) => {
+              try {
+                await createEventCategory(label, color);
+                setShowAdd(false);
+                await onChanged();
+              } catch {
+                onError("No se pudo crear la categoría");
+              }
+            }}
+          />
+        ) : (
+          <Pressable style={managerStyles.addButton} onPress={() => setShowAdd(true)}>
+            <Text style={managerStyles.addButtonText}>+ Categoría</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function AddEventCategoryForm({ onAdd, onCancel }: { onAdd: (label: string, color: CalendarColor) => Promise<void>; onCancel: () => void }) {
+  const [label, setLabel] = useState("");
+  const [color, setColor] = useState<CalendarColor>(CALENDAR_COLOR_OPTIONS[0].key);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    try {
+      await onAdd(trimmed, color);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <View style={managerStyles.addForm}>
+      <TextInput
+        style={managerStyles.addFormInput}
+        value={label}
+        onChangeText={setLabel}
+        placeholder="Nombre de la categoría"
+        placeholderTextColor={colors.mutedForeground}
+        autoFocus
+      />
+      <View style={managerStyles.colorPicker}>
+        {CALENDAR_COLOR_OPTIONS.map((opt) => (
+          <Pressable
+            key={opt.key}
+            onPress={() => setColor(opt.key)}
+            style={[managerStyles.colorSwatch, { backgroundColor: opt.swatch }, color === opt.key && managerStyles.colorSwatchActive]}
+          />
+        ))}
+      </View>
+      <View style={managerStyles.addFormActions}>
+        <Pressable style={managerStyles.addFormSubmit} onPress={submit} disabled={submitting}>
+          <Text style={managerStyles.addFormSubmitText}>{submitting ? "Creando…" : "Crear"}</Text>
+        </Pressable>
+        <Pressable onPress={onCancel} hitSlop={6}>
+          <Text style={managerStyles.addFormCancel}>Cancelar</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const managerStyles = StyleSheet.create({
+  card: { marginTop: 4, marginBottom: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, padding: 10 },
+  title: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, color: colors.mutedForeground, marginBottom: 8 },
+  list: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "flex-start" },
+  chipWrap: { maxWidth: "100%" },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    paddingVertical: 6,
+    paddingLeft: 6,
+    paddingRight: 10,
+  },
+  chipSwatch: { width: 12, height: 12, borderRadius: 6 },
+  chipLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.foreground },
+  chipAction: { fontFamily: fonts.sansMedium, fontSize: 10, color: colors.mutedForeground, paddingHorizontal: 2 },
+  chipActionDelete: { color: colors.destructive, fontFamily: fonts.sansBold },
+  renameInput: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary,
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.foreground,
+    minWidth: 100,
+    paddingVertical: 4,
+  },
+  colorPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+    padding: 6,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  colorSwatch: { width: 18, height: 18, borderRadius: 9 },
+  colorSwatchActive: { borderWidth: 2, borderColor: colors.foreground },
+  addButton: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(95, 113, 97, 0.3)",
+    backgroundColor: "rgba(95, 113, 97, 0.05)",
+    borderRadius: radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  addButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.primary },
+  addForm: { minWidth: 200, gap: 8, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, padding: 10 },
+  addFormInput: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.input,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.foreground,
+    backgroundColor: colors.background,
+  },
+  addFormActions: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 2 },
+  addFormSubmit: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
+  addFormSubmitText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.background },
+  addFormCancel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
@@ -513,6 +804,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   inputMultiline: { minHeight: 60, textAlignVertical: "top" },
+  categoryHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  manageCategoriesLink: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, textDecorationLine: "underline" },
   fieldLabel: {
     fontFamily: fonts.sansBold,
     fontSize: 11,

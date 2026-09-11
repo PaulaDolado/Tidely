@@ -19,21 +19,6 @@ export interface AuthResponse {
 // --- Constantes compartidas por los formularios (mismos valores que agendaValidators.ts /
 // plannerValidators.ts en el backend — ver comentarios ahí para el porqué de cada uno) ---
 
-export const EVENT_TYPES = ["work", "study", "gym", "meeting", "free", "evento", "cita", "cumpleanos", "otro"] as const;
-export type EventType = (typeof EVENT_TYPES)[number];
-
-export const EVENT_TYPE_LABELS: Record<EventType, string> = {
-  work: "Trabajo",
-  study: "Estudio",
-  gym: "Gimnasio",
-  meeting: "Reunión",
-  free: "Libre",
-  evento: "Evento",
-  cita: "Cita",
-  cumpleanos: "Cumpleaños",
-  otro: "Otro",
-};
-
 export const RECURRING_PATTERNS = ["daily", "weekly", "biweekly", "monthly"] as const;
 export type RecurringPattern = (typeof RECURRING_PATTERNS)[number];
 
@@ -80,7 +65,10 @@ export interface ServerEvent {
   id: number;
   title: string;
   description: string | null;
+  // Deprecado: ver el mismo comentario en dashboard/src/types.ts / prisma/schema.prisma — la
+  // categoría de verdad es `categoryId` (ver EventCategory, más abajo).
   type: string;
+  categoryId: number | null;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -189,6 +177,7 @@ export interface LocalEvent {
   title: string;
   description: string | null;
   type: string;
+  categoryId: number | null;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -285,4 +274,15 @@ export interface CalendarLegendCategory {
 export interface CalendarDayMark {
   date: string; // YYYY-MM-DD
   categoryId: number;
+}
+
+// Categoría de evento (Agenda > + Nuevo evento) — mismo concepto que CalendarLegendCategory
+// (nombre + color de la paleta de la app, gestionable por el usuario) pero para categorizar
+// eventos en vez de días del calendario anual. Igual que calendar-legend, no pasa por SQLite ni
+// por sync/ (ver api/eventCategories.ts): solo `categoryId` en el propio Event viaja offline.
+export interface EventCategory {
+  id: number;
+  label: string;
+  color: CalendarColor;
+  order: number;
 }
