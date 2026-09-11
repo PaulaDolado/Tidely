@@ -1149,7 +1149,7 @@ function AgendaFileMenu({ onExport, onImported }: { onExport: () => void; onImpo
           onClick={onExport}
           className="cursor-pointer whitespace-nowrap px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
         >
-          ⬇ Exportar
+          ↓ Exportar
         </button>
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -1157,7 +1157,7 @@ function AgendaFileMenu({ onExport, onImported }: { onExport: () => void; onImpo
           title="Importar eventos desde un .ics"
           className="cursor-pointer whitespace-nowrap border-l border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
         >
-          ⬆ Importar
+          ↑ Importar
         </button>
       </div>
       <input
