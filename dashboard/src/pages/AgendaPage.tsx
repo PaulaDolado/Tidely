@@ -294,7 +294,7 @@ export function AgendaPage({
                 <button
                   key={value}
                   onClick={() => setViewMode(value)}
-                  className={`cursor-pointer px-3 py-2 text-xs font-medium transition-colors ${index > 0 ? "border-l border-border" : ""} ${
+                  className={`cursor-pointer whitespace-nowrap px-3 py-2 text-xs font-medium transition-colors ${index > 0 ? "border-l border-border" : ""} ${
                     viewMode === value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
                   }`}
                 >
@@ -309,14 +309,14 @@ export function AgendaPage({
                     viewMode === "year" ? addYears(s, -1) : addDays(s, viewMode === "day" ? -1 : viewMode === "week" ? -7 : -28)
                   )
                 }
-                className="cursor-pointer px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+                className="cursor-pointer whitespace-nowrap px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
                 aria-label="Anterior"
               >
                 ‹
               </button>
               <button
                 onClick={() => setSelected(today)}
-                className="cursor-pointer border-x border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+                className="cursor-pointer whitespace-nowrap border-x border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
               >
                 Hoy
               </button>
@@ -326,13 +326,13 @@ export function AgendaPage({
                     viewMode === "year" ? addYears(s, 1) : addDays(s, viewMode === "day" ? 1 : viewMode === "week" ? 7 : 28)
                   )
                 }
-                className="cursor-pointer px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+                className="cursor-pointer whitespace-nowrap px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
                 aria-label="Siguiente"
               >
                 ›
               </button>
             </div>
-            <button onClick={() => setShowFreeTime((v) => !v)} className="cursor-pointer rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted">
+            <button onClick={() => setShowFreeTime((v) => !v)} className="cursor-pointer whitespace-nowrap rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted">
               {showFreeTime ? "Ocultar tiempo libre" : "⏱ Tiempo libre"}
             </button>
             <AgendaFileMenu onExport={() => setExportOpen(true)} onImported={reload} />
@@ -1147,7 +1147,7 @@ function AgendaFileMenu({ onExport, onImported }: { onExport: () => void; onImpo
       <div className="flex items-center overflow-hidden rounded-full border border-border">
         <button
           onClick={onExport}
-          className="cursor-pointer px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
+          className="cursor-pointer whitespace-nowrap px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
         >
           ⬇ Exportar
         </button>
@@ -1155,7 +1155,7 @@ function AgendaFileMenu({ onExport, onImported }: { onExport: () => void; onImpo
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
           title="Importar eventos desde un .ics"
-          className="cursor-pointer border-l border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          className="cursor-pointer whitespace-nowrap border-l border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
         >
           ⬆ Importar
         </button>
@@ -1270,7 +1270,7 @@ function GoogleCalendarMenu({ onSynced }: { onSynced: () => void }) {
         onClick={() => (connected ? setMenuOpen((v) => !v) : connect())}
         disabled={busy}
         title={connected ? `Conectado como ${status?.email}` : "Conectar Google Calendar"}
-        className={`cursor-pointer rounded-full border px-3 py-2 text-xs transition-colors disabled:opacity-50 ${
+        className={`cursor-pointer whitespace-nowrap rounded-full border px-3 py-2 text-xs transition-colors disabled:opacity-50 ${
           connected ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
         }`}
       >
