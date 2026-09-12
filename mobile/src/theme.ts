@@ -135,14 +135,20 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     primaryForeground: "#FFFFFF",
     secondary: "#E5E5EA",
     secondaryForeground: "#1C1C1E",
+    // destructive se queda en su rojo de siempre (peligro real: borrar, error) — igual criterio
+    // que en "espresso", ver el comentario de esa paleta más abajo.
     destructive: "#FF3B30",
     destructiveForeground: "#FFFFFF",
-    negative: "#FF3B30",
-    positive: "#34C759",
-    warning: "#FFCC00",
-    hobby: "#FF9500",
-    habit: "#5856D6",
-    cover: "#A2845E",
+    // Los 6 colores seleccionables (categorías, leyenda del calendario anual, placeholders de
+    // Galería, tapa de libretas/proyectos) pasan a una rampa de grises neutros — misma idea que
+    // la rampa de marrones de "espresso" — en vez del naranja/verde/rojo/amarillo/morado/cuero de
+    // siempre, que rompían la neutralidad del resto del tema.
+    negative: "#3C3C3C",
+    positive: "#969696",
+    warning: "#B4B4B4",
+    hobby: "#D2D2D2",
+    habit: "#787878",
+    cover: "#5A5A5A",
   }),
 
   // Contrapartida oscura de "Básico" — mismo acento azul, System Colors en su variante dark.
