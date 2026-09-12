@@ -26,7 +26,7 @@ import {
   REMINDER_PRESETS_MINUTES,
   REMINDER_PRESET_LABELS,
 } from "../types";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { HabitsCard } from "../components/HabitsCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
@@ -708,8 +708,8 @@ const managerStyles = StyleSheet.create({
   addButton: {
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(95, 113, 97, 0.3)",
-    backgroundColor: "rgba(95, 113, 97, 0.05)",
+    borderColor: withAlpha(colors.primary, 0.3),
+    backgroundColor: withAlpha(colors.primary, 0.05),
     borderRadius: radius.full,
     paddingHorizontal: 12,
     paddingVertical: 7,

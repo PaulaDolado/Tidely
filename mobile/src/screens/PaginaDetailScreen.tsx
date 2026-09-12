@@ -509,8 +509,8 @@ function GalleryItemForm({
 // no hay un "estado" al que atar cada color, solo su orden.
 const KANBAN_COLUMN_STYLES: { box: { borderColor: string; backgroundColor: string }; header: string }[] = [
   { box: { borderColor: colors.border, backgroundColor: colors.card }, header: colors.foreground },
-  { box: { borderColor: "rgba(200, 123, 0, 0.3)", backgroundColor: "rgba(200, 123, 0, 0.1)" }, header: colors.warning },
-  { box: { borderColor: "rgba(95, 113, 97, 0.3)", backgroundColor: "rgba(95, 113, 97, 0.1)" }, header: colors.positive },
+  { box: { borderColor: withAlpha(colors.warning, 0.3), backgroundColor: withAlpha(colors.warning, 0.1) }, header: colors.warning },
+  { box: { borderColor: withAlpha(colors.positive, 0.3), backgroundColor: withAlpha(colors.positive, 0.1) }, header: colors.positive },
 ];
 
 // Mismas etiquetas que FIELD_TYPE_LABELS en dashboard/src/pages/CustomPagePage.tsx (y en
@@ -1577,7 +1577,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderStyle: "dashed",
-    borderColor: "rgba(95, 113, 97, 0.3)",
+    borderColor: withAlpha(colors.primary, 0.3),
     backgroundColor: colors.card,
     alignItems: "center",
     justifyContent: "center",
@@ -1691,8 +1691,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(95, 113, 97, 0.3)",
-    backgroundColor: "rgba(95, 113, 97, 0.05)",
+    borderColor: withAlpha(colors.primary, 0.3),
+    backgroundColor: withAlpha(colors.primary, 0.05),
     borderRadius: radius.card,
     paddingVertical: 12,
   },

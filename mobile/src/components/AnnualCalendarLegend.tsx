@@ -12,7 +12,7 @@ import {
 } from "../api/calendarLegend";
 import { CalendarColor, CalendarLegendCategory } from "../types";
 import { CALENDAR_COLOR_CLASSES, CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, withAlpha } from "../theme";
 
 const MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -472,8 +472,8 @@ const styles = StyleSheet.create({
   addCategoryButton: {
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(95, 113, 97, 0.3)",
-    backgroundColor: "rgba(95, 113, 97, 0.05)",
+    borderColor: withAlpha(colors.primary, 0.3),
+    backgroundColor: withAlpha(colors.primary, 0.05),
     borderRadius: radius.full,
     paddingHorizontal: 14,
     paddingVertical: 8,

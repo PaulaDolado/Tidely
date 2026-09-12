@@ -13,7 +13,7 @@ import { EventOccurrence } from "../utils/recurrence";
 import { listEventCategories } from "../api/eventCategories";
 import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
 import { EventCategory, LocalHabit, LocalNote, LocalTask } from "../types";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { QuickAccessCard } from "../components/QuickAccessCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
@@ -32,16 +32,16 @@ function getSectionStyle(type: SectionType) {
     case "habits":
       // En web: border-habit/30 bg-habit/10 text-habit
       return {
-        backgroundColor: "rgba(51, 131, 173, 0.1)", // habit 10%
-        borderColor: "rgba(51, 131, 173, 0.3)", // habit 30%
+        backgroundColor: withAlpha(colors.habit, 0.1),
+        borderColor: withAlpha(colors.habit, 0.3),
         borderWidth: 1.5,
         titleColor: colors.habit,
       };
-    case "notes": 
+    case "notes":
       // En web: border-warning/30 bg-warning/10 text-warning
       return {
-        backgroundColor: "rgba(200, 123, 0, 0.1)", // warning 10%
-        borderColor: "rgba(200, 123, 0, 0.3)", // warning 30%
+        backgroundColor: withAlpha(colors.warning, 0.1),
+        borderColor: withAlpha(colors.warning, 0.3),
         borderWidth: 1.5,
         titleColor: colors.warning,
       };
@@ -785,7 +785,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     // El renglón de una hoja de libreta, igual que border-b border-warning/30 en QuickNotesCard.
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(200, 123, 0, 0.3)",
+    borderBottomColor: withAlpha(colors.warning, 0.3),
   },
   noteContent: {
     flexDirection: "row",

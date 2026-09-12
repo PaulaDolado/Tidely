@@ -13,7 +13,7 @@ import {
   customLinkToApp,
   openQuickAccessApp,
 } from "../utils/quickAccessApps";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, withAlpha } from "../theme";
 
 // Puerto de dashboard/src/components/QuickAccessCard.tsx — mismo catálogo, misma idea (elegir qué
 // apps mostrar + enlaces propios), pero con estado cargado de forma asíncrona (SecureStore, ver
@@ -244,8 +244,8 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: radius.card,
     borderWidth: 1.5,
-    borderColor: "rgba(95, 113, 97, 0.3)", // primary 30%
-    backgroundColor: "rgba(95, 113, 97, 0.1)", // primary 10%
+    borderColor: withAlpha(colors.primary, 0.3),
+    backgroundColor: withAlpha(colors.primary, 0.1),
     padding: 24,
   },
   header: {
@@ -398,8 +398,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.input,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(95, 113, 97, 0.3)",
-    backgroundColor: "rgba(95, 113, 97, 0.05)",
+    borderColor: withAlpha(colors.primary, 0.3),
+    backgroundColor: withAlpha(colors.primary, 0.05),
     padding: 12,
   },
   addFormRow: {

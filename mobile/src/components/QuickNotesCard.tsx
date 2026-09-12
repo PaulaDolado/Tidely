@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import { runSync } from "../sync";
 import { listNotes, createNoteLocal, toggleNoteChecked, deleteNoteLocal } from "../db/notesRepo";
 import { LocalNote } from "../types";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, withAlpha } from "../theme";
 
 /**
  * Puerto de dashboard/src/components/QuickNotesCard.tsx — mismo estilo (bg-warning/10,
@@ -93,8 +93,8 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: radius.card,
     borderWidth: 1.5,
-    borderColor: "rgba(200, 123, 0, 0.3)", // warning 30%
-    backgroundColor: "rgba(200, 123, 0, 0.1)", // warning 10%
+    borderColor: withAlpha(colors.warning, 0.3),
+    backgroundColor: withAlpha(colors.warning, 0.1),
     padding: 24,
   },
   title: {
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(200, 123, 0, 0.3)",
+    borderBottomColor: withAlpha(colors.warning, 0.3),
   },
   rowContent: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
   noteText: { flex: 1, fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },

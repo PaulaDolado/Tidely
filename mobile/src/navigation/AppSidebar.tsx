@@ -9,7 +9,7 @@ import { ApiError } from "../api/client";
 import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
 import { NewPageForm } from "../components/NewPageForm";
 import { AppearanceSettings } from "../components/AppearanceSettings";
-import { ColorPalette, fonts, radius } from "../theme";
+import { ColorPalette, fonts, radius, withAlpha } from "../theme";
 
 // Sidebar lateral para móvil — reemplaza la barra de pestañas inferior (bottom-tabs) por un menú
 // lateral colapsable, puerto de dashboard/src/components/AppShell.tsx (<aside> de escritorio) en
@@ -573,8 +573,8 @@ function createStyles(colors: ColorPalette) {
     borderRadius: radius.input,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(95, 113, 97, 0.3)",
-    backgroundColor: "rgba(95, 113, 97, 0.05)",
+    borderColor: withAlpha(colors.primary, 0.3),
+    backgroundColor: withAlpha(colors.primary, 0.05),
     paddingHorizontal: 12,
     paddingVertical: 10,
   },

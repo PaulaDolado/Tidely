@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { runSync } from "../sync";
 import { listHabits, listHabitLogsForHabit, toggleHabitToday } from "../db/habitsRepo";
 import { LocalHabit } from "../types";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, withAlpha } from "../theme";
 
 const DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 
@@ -108,8 +108,8 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: radius.card,
     borderWidth: 1.5,
-    borderColor: "rgba(51, 131, 173, 0.3)", // habit 30%
-    backgroundColor: "rgba(51, 131, 173, 0.1)", // habit 10%
+    borderColor: withAlpha(colors.habit, 0.3),
+    backgroundColor: withAlpha(colors.habit, 0.1),
     padding: 24,
   },
   title: {
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   column: { minWidth: 104, gap: 6 },
   columnBorder: {
     borderLeftWidth: 1,
-    borderLeftColor: "rgba(51, 131, 173, 0.25)",
+    borderLeftColor: withAlpha(colors.habit, 0.25),
     paddingLeft: 16,
   },
   habitTitle: {
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   dayLetter: { fontFamily: fonts.sans, fontSize: 9, color: colors.mutedForeground },
   dayLetterToday: { fontFamily: fonts.sansBold, color: colors.habit },
   dot: { width: 14, height: 14, borderRadius: 7 },
-  dotEmpty: { backgroundColor: "rgba(51, 131, 173, 0.15)" },
+  dotEmpty: { backgroundColor: withAlpha(colors.habit, 0.15) },
   dotCompleted: { backgroundColor: colors.habit },
   dotToday: { borderWidth: 2, borderColor: colors.habit },
 });

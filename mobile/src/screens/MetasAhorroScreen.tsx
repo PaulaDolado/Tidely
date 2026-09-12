@@ -12,7 +12,7 @@ import {
   SavingsGoal,
   SavingsGoalType,
 } from "../api/finance";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
 // Puerto directo de dashboard/src/pages/MetasAhorroPage.tsx + dashboard/src/components/
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   boxFilled: { backgroundColor: colors.primary, borderColor: colors.primary },
   // border-primary/40 bg-primary/15 font-bold de la web — antes solo engordaba el borde
   // (borderWidth:2) sin tinte, así que una casilla milestone casi no se distinguía de una vacía.
-  boxMilestone: { borderColor: "rgba(95, 113, 97, 0.4)", backgroundColor: colors.primaryTint },
+  boxMilestone: { borderColor: withAlpha(colors.primary, 0.4), backgroundColor: colors.primaryTint },
   boxText: { fontFamily: fonts.sansMedium, fontSize: 10, color: colors.mutedForeground },
   boxTextFilled: { color: colors.primaryForeground },
   boxTextStrike: { textDecorationLine: "line-through" },

@@ -11,7 +11,7 @@ import { runSync } from "../sync";
 import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, deleteTaskLocal, parseTaskTags } from "../db/tasksRepo";
 import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal } from "../db/subtasksRepo";
 import { LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
-import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow } from "../theme";
+import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
 // Puerto de dashboard/src/pages/PlanificadorPage.tsx: el usuario puede tener varios tableros de
@@ -51,14 +51,14 @@ type PlannerViewMode = "flechas" | "apilado";
 // Estilos de columnas por estado (igual que web)
 const COLUMN_BG_COLORS: Record<TaskStatus, string> = {
   todo: colors.card,
-  in_progress: "rgba(200,123,0,0.1)", // warning 10%
-  done: "rgba(95,113,97,0.1)", // positive 10%
+  in_progress: withAlpha(colors.warning, 0.1),
+  done: withAlpha(colors.positive, 0.1),
 };
 
 const COLUMN_BORDER_COLORS: Record<TaskStatus, string> = {
   todo: colors.border,
-  in_progress: "rgba(200,123,0,0.3)", // warning 30%
-  done: "rgba(95,113,97,0.3)", // positive 30%
+  in_progress: withAlpha(colors.warning, 0.3),
+  done: withAlpha(colors.positive, 0.3),
 };
 
 const COLUMN_HEADERS: Record<TaskStatus, string> = {
