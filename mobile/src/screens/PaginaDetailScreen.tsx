@@ -31,7 +31,7 @@ import {
   updateCustomPage,
 } from "../api/customPages";
 import { htmlToPlainText, plainTextToHtml } from "../utils/htmlText";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { PaginasStackParamList } from "./PaginasScreen";
 
 // Detalle de una página personalizada — puerto de dashboard/src/pages/CustomPagePage.tsx. Título/
@@ -324,19 +324,19 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   );
 }
 
-// Puerto exacto de dashboard/src/utils/galleryPalette.ts — mismo hash determinista por id (dos
-// sufijos distintos para color y altura, "para que el color y la altura no varíen siempre a la
-// vez") y los mismos 7 tonos del tema, traducidos a rgba porque RN no tiene el `bg-x/10` de
-// Tailwind. Determinista por id (no por posición): el aspecto de una entrada no cambia al añadir
-// o borrar otra.
+// Puerto de dashboard/src/utils/galleryPalette.ts — mismo hash determinista por id (dos sufijos
+// distintos para color y altura, "para que el color y la altura no varíen siempre a la vez") y
+// los mismos 7 tonos del tema. Calculados con `withAlpha` sobre el color sólido de `colors` (en
+// vez de rgba() fijos en los tonos de la paleta "sistema") para que sigan al tema activo — por
+// ejemplo en "espresso" salen en tonos marrones, no en el verde/naranja/azul de siempre.
 const PLACEHOLDER_COLORS = [
-  "rgba(95, 113, 97, 0.1)", // bg-primary/10
-  "rgba(251, 146, 60, 0.15)", // bg-hobby/15
-  "rgba(200, 123, 0, 0.1)", // bg-warning/10
-  "rgba(95, 113, 97, 0.1)", // bg-positive/10 (positive = primary, mismo tono en la propia web)
-  "rgba(51, 131, 173, 0.1)", // bg-habit/10
-  "rgba(222, 208, 182, 0.5)", // bg-secondary/50
-  "rgba(77, 63, 53, 0.1)", // bg-cover/10
+  withAlpha(colors.primary, 0.1), // bg-primary/10
+  withAlpha(colors.hobby, 0.15), // bg-hobby/15
+  withAlpha(colors.warning, 0.1), // bg-warning/10
+  withAlpha(colors.positive, 0.1), // bg-positive/10
+  withAlpha(colors.habit, 0.1), // bg-habit/10
+  withAlpha(colors.secondary, 0.5), // bg-secondary/50
+  withAlpha(colors.cover, 0.1), // bg-cover/10
 ];
 // h-40, h-64, h-52, h-72, h-44, h-60, h-48, h-56 de Tailwind, en px.
 const FRAME_HEIGHTS = [160, 256, 208, 288, 176, 240, 192, 224];

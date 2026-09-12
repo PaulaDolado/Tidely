@@ -44,6 +44,12 @@ export interface ColorPalette {
   destructive: string;
   destructiveForeground: string;
   destructiveTint: string;
+  // Distinto de `destructive` a propósito: `destructive` es la señal real de peligro (botones de
+  // borrar, errores); `negative` es solo una opción más del selector de color de categorías/
+  // leyenda anual ("Rojo" en CALENDAR_COLOR_OPTIONS) — en todos los temas valen lo mismo salvo en
+  // "espresso", donde `negative` se vuelve marrón para no desentonar con el resto de opciones.
+  negative: string;
+  negativeTint: string;
   positive: string;
   positiveTint: string;
   warning: string;
@@ -56,7 +62,7 @@ export interface ColorPalette {
   coverTint: string;
 }
 
-function withAlpha(hex: string, alpha: number): string {
+export function withAlpha(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -67,7 +73,14 @@ function withAlpha(hex: string, alpha: number): string {
 // calcula aquí en vez de escribirla a mano en cada paleta (menos sitio donde equivocarse el rgba).
 type PaletteBase = Omit<
   ColorPalette,
-  "primaryTint" | "destructiveTint" | "positiveTint" | "warningTint" | "hobbyTint" | "habitTint" | "coverTint"
+  | "primaryTint"
+  | "destructiveTint"
+  | "negativeTint"
+  | "positiveTint"
+  | "warningTint"
+  | "hobbyTint"
+  | "habitTint"
+  | "coverTint"
 >;
 
 function buildPalette(base: PaletteBase): ColorPalette {
@@ -75,6 +88,7 @@ function buildPalette(base: PaletteBase): ColorPalette {
     ...base,
     primaryTint: withAlpha(base.primary, 0.15),
     destructiveTint: withAlpha(base.destructive, 0.15),
+    negativeTint: withAlpha(base.negative, 0.15),
     positiveTint: withAlpha(base.positive, 0.15),
     warningTint: withAlpha(base.warning, 0.15),
     hobbyTint: withAlpha(base.hobby, 0.15),
@@ -100,6 +114,7 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     secondaryForeground: "#2D2926",
     destructive: "#BD4334",
     destructiveForeground: "#FBFAF7",
+    negative: "#BD4334",
     positive: "#5F7161",
     warning: "#C87B00",
     hobby: "#FB923C",
@@ -122,6 +137,7 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     secondaryForeground: "#1C1C1E",
     destructive: "#FF3B30",
     destructiveForeground: "#FFFFFF",
+    negative: "#FF3B30",
     positive: "#34C759",
     warning: "#FFCC00",
     hobby: "#FF9500",
@@ -144,6 +160,7 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     secondaryForeground: "#F2F2F7",
     destructive: "#FF453A",
     destructiveForeground: "#FFFFFF",
+    negative: "#FF453A",
     positive: "#30D158",
     warning: "#FFD60A",
     hobby: "#FF9F0A",
@@ -166,6 +183,7 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     secondaryForeground: "#322D1C",
     destructive: "#C06B69",
     destructiveForeground: "#FFFBF3",
+    negative: "#C06B69",
     positive: "#6B6E35",
     warning: "#C9A227",
     hobby: "#DB918F",
@@ -188,12 +206,18 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     primaryForeground: "#2A1B10",
     secondary: "#91664A",
     secondaryForeground: "#F3E4D3",
+    // destructive se queda en su rojo-teja de siempre (peligro real: borrar, error) — ver el
+    // comentario de `negative` en la interfaz ColorPalette más arriba.
     destructive: "#C1503B",
     destructiveForeground: "#F3E4D3",
-    positive: "#7C8A5A",
-    warning: "#D9A441",
-    hobby: "#C89674",
-    habit: "#6E88A3",
+    // Los 7 colores seleccionables (categorías, leyenda del calendario anual, placeholders de
+    // Galería, tapa de libretas/proyectos) pasan a una única rampa de marrones — como la paleta
+    // de referencia (caramelo → moca → corteza) — en vez del naranja/verde/azul/dorado de siempre.
+    negative: "#6E4E3B",
+    positive: "#805D46",
+    warning: "#A4795D",
+    hobby: "#B68868",
+    habit: "#926B52",
     cover: "#91664A",
   }),
 };
