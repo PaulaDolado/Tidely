@@ -14,6 +14,18 @@ export async function getMonthlyBalance(req: AuthRequest, res: Response, next: N
   }
 }
 
+export async function getAvailableSurplus(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const month = parseInt(req.params.month, 10);
+    const year = parseInt(req.params.year, 10);
+    const result = await financeService.getAvailableSurplus(userId, month, year);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getAnnualBalance(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId as number;

@@ -118,6 +118,32 @@ Railway/Render crean por defecto.
 | `NODE_ENV=production` | Sí | Activa `trust proxy`, logs en JSON, oculta detalles de error 500 |
 | `CORS_ORIGIN` | Recomendada | Dominio exacto del dashboard en vez de `*` una vez lo tengas desplegado |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `RATE_LIMIT_*` | No | Tienen defaults razonables en `src/config/environment.ts` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | No (solo si quieres sincronizar Google Calendar) | Sin ellas, "Conectar Google Calendar" en el dashboard falla con "La integración con Google Calendar no está configurada en el servidor" — ver [Conectar Google Calendar](#conectar-google-calendar-opcional) |
+
+### Conectar Google Calendar (opcional)
+
+Sin `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` en el backend desplegado, el botón "Conectar Google
+Calendar" del dashboard (`AgendaPage` → `GoogleCalendarMenu`) siempre falla con ese mismo error —
+`environment.ts` los deja vacíos por defecto en vez de exigirlos al arrancar (a diferencia de
+`JWT_SECRET`/`DATABASE_URL`), así que el servidor arranca bien pero la integración queda apagada
+hasta que los añadas:
+
+1. En [Google Cloud Console](https://console.cloud.google.com/apis/credentials), en el proyecto
+   donde ya tengas (o crees) un **ID de cliente de OAuth 2.0** de tipo "Aplicación web": añade tu
+   backend de producción a **"Authorized redirect URIs"** — exactamente
+   `https://<tu-backend>/integrations/google/callback` (debe coincidir carácter a carácter con
+   `GOOGLE_REDIRECT_URI` de abajo, incluido el `https://` y sin barra final). Si ya usas esta
+   integración en local, es el MISMO cliente OAuth que `.env` — solo hace falta añadirle esta URL
+   adicional a la lista de redirects autorizados, no crear uno nuevo.
+2. Copia el **Client ID** y el **Client secret** de ese mismo cliente OAuth.
+3. En el panel del proveedor (Render: el servicio → **Environment**), añade:
+   - `GOOGLE_CLIENT_ID` = el Client ID del paso 2
+   - `GOOGLE_CLIENT_SECRET` = el Client secret del paso 2
+   - `GOOGLE_REDIRECT_URI` = `https://<tu-backend>/integrations/google/callback` (la misma URL exacta del paso 1)
+4. Redeploy (Render lo hace solo al guardar variables de entorno nuevas).
+
+Las credenciales de Google de un usuario nunca se copian en el seed/export de la cuenta demo (ver
+el comentario de `prisma/exportDemoUser.ts`) — cada entorno necesita su propia conexión.
 
 ## Desplegar el dashboard (web)
 

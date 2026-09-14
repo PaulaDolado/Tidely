@@ -245,6 +245,17 @@ export interface FinanceAnalytics {
   };
 }
 
+// Ver GET /finance/surplus/:month/:year — dinero acumulado en meses ANTERIORES al indicado (el
+// mes en curso queda fuera, ver financeService.getAvailableSurplus) que todavía no está
+// comprometido en ninguna meta de ahorro.
+export interface AvailableSurplus {
+  month: number;
+  year: number;
+  totalBalance: number;
+  committedToGoals: number;
+  availableSurplus: number;
+}
+
 export interface SavingsGoal {
   id: number;
   name: string;

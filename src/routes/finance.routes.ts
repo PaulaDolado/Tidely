@@ -38,6 +38,23 @@ router.get(
 
 /**
  * @openapi
+ * /finance/surplus/{month}/{year}:
+ *   get:
+ *     tags: [Finance]
+ *     summary: Sobrante disponible acumulado en meses anteriores al indicado, sin contar lo ya comprometido en metas de ahorro
+ *     description: Para el dashboard de ahorro — "si quedan ingresos de meses anteriores tras quitar los gastos de ese mismo mes". El mes/año de la URL queda FUERA del cálculo (normalmente se pasa el mes en curso, que aún puede sumar gastos).
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "{ month, year, totalBalance, committedToGoals, availableSurplus }" }
+ */
+router.get(
+  "/surplus/:month/:year",
+  validate(monthYearParamSchema, "params"),
+  financeController.getAvailableSurplus
+);
+
+/**
+ * @openapi
  * /finance/balance/year/{year}:
  *   get:
  *     tags: [Finance]

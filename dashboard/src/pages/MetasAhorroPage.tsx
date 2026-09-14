@@ -4,7 +4,13 @@ import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
 import { Loading, ErrorMessage, EmptyState } from "../components/Feedback";
 import { SavingsGoalCard, NewSavingsGoalForm, SAVINGS_GOAL_TYPES, SAVINGS_GOAL_TYPE_LABELS } from "../components/SavingsGoals";
-import { SavingsGoal } from "../types";
+import { AvailableSurplus, SavingsGoal } from "../types";
+
+// Mismo formateador que FinanzasPage.tsx (`eur`) — nombre distinto porque no hay un util
+// compartido entre páginas de Finanzas todavía (cada una define el suyo, ver CustomPagePage.tsx).
+function eur(n: number): string {
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
+}
 
 type FilterTab = "all" | SavingsGoal["type"];
 const TABS: { value: FilterTab; label: string }[] = [
@@ -49,9 +55,18 @@ export function MetasAhorroPage() {
     []
   );
 
+  // "Si quedan ingresos de meses anteriores tras quitar los gastos de ese mismo mes" — ver
+  // financeService.getAvailableSurplus. Se pide con el mes EN CURSO (queda fuera del cálculo, ver
+  // el comentario del backend), así que solo cuenta lo que ya quedó cerrado en meses pasados.
+  const { data: surplusData, reload: reloadSurplus } = useFetch(() => {
+    const now = new Date();
+    return api.get<AvailableSurplus>(`/finance/surplus/${now.getMonth() + 1}/${now.getFullYear()}`);
+  }, []);
+
   const reloadBoth = () => {
     reload();
     reloadAll();
+    reloadSurplus();
   };
 
   return (
@@ -65,6 +80,8 @@ export function MetasAhorroPage() {
           </button>
         }
       />
+
+      {surplusData && surplusData.availableSurplus > 0 && <AvailableSurplusCard surplus={surplusData} />}
 
       <SavingsProgressOverviewPanel goals={allData?.savingsGoals ?? []} />
 
@@ -109,6 +126,31 @@ export function MetasAhorroPage() {
         </div>
       )}
     </>
+  );
+}
+
+// Solo se renderiza si availableSurplus > 0 (ver el `&&` en MetasAhorroPage) — si no queda nada
+// libre de meses anteriores, no tiene sentido ocupar espacio con un "0 €" que no aporta nada.
+function AvailableSurplusCard({ surplus }: { surplus: AvailableSurplus }) {
+  return (
+    <section className="mb-8 rounded-3xl border border-primary/30 bg-primary/5 p-6 shadow-[var(--shadow-soft)]">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Sobrante disponible</h2>
+          <p className="mt-1 font-serif text-3xl text-primary">{eur(surplus.availableSurplus)}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ingresos de meses anteriores que quedaron libres tras sus propios gastos y que todavía no has asignado a
+            ninguna meta — asígnalos abajo tocando las casillas de la meta que quieras reforzar.
+          </p>
+        </div>
+        {surplus.committedToGoals > 0 && (
+          <p className="shrink-0 text-xs text-muted-foreground">
+            (de un total acumulado de {eur(surplus.totalBalance)}; {eur(surplus.committedToGoals)} ya están en tus
+            metas)
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 

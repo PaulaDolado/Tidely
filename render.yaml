@@ -38,3 +38,16 @@ services:
         value: "900000"
       - key: RATE_LIMIT_MAX
         value: "100"
+      # Opcionales — sin ellas, "Conectar Google Calendar" en el dashboard falla con "La
+      # integración con Google Calendar no está configurada en el servidor" (ver assertConfigured
+      # en src/services/googleCalendarService.ts: el servidor arranca igual, solo esa integración
+      # queda apagada). `sync: false` porque son secretos del cliente OAuth de Google Cloud
+      # Console, no van en este fichero versionado — ver DEPLOYMENT.md#conectar-google-calendar-opcional.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Debe coincidir EXACTAMENTE con un "Authorized redirect URI" del cliente OAuth en Google
+      # Cloud Console: https://<este-servicio>.onrender.com/integrations/google/callback
+      - key: GOOGLE_REDIRECT_URI
+        sync: false

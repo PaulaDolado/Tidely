@@ -31,6 +31,61 @@ export async function getMonthlyBalance(userId: number, month: number, year: num
   return { month, year, ...totals };
 }
 
+// "Sobrante disponible" del dashboard de ahorro: dinero que ya quedó acumulado en meses ANTERIORES
+// al de referencia (ingresos - gastos de todo lo previo, sin límite inferior — no `date` de alta
+// de cuenta que acotar) y que todavía no está comprometido en ninguna meta de ahorro. El mes de
+// referencia (normalmente el actual) se deja fuera a propósito: sus gastos aún pueden seguir
+// llegando, así que no cuenta como "sobrante" hasta que se cierre y pase a ser un mes anterior.
+//
+// Lo comprometido en metas se resta para no enseñar dos veces el mismo dinero: aportar a una meta
+// (ver contributeToSavingsGoal) crea una transacción de `income` más, así que sin esta resta ese
+// importe aparecería a la vez como progreso de la meta Y como "sobrante libre" en esta misma
+// pantalla. Se calcula con el mismo criterio que listSavingsGoals/computeSavingsProgress (income -
+// expense de la categoría de cada meta, todo el histórico, sin acotar por `monthStart` — mismo
+// "todo lo aportado hasta hoy" que ya usa el resto del dashboard de ahorro para el progreso).
+export async function getAvailableSurplus(userId: number, month: number, year: number) {
+  const monthStart = startOfMonth(new Date(year, month - 1, 1));
+
+  const [incomeAgg, expenseAgg, goals] = await Promise.all([
+    prisma.transaction.aggregate({
+      where: { userId, type: "income", date: { lt: monthStart } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { userId, type: "expense", date: { lt: monthStart } },
+      _sum: { amount: true },
+    }),
+    prisma.savingsGoal.findMany({ where: { userId }, select: { category: true } }),
+  ]);
+
+  const totalBalance = toNumber(incomeAgg._sum.amount) - toNumber(expenseAgg._sum.amount);
+
+  let committedToGoals = 0;
+  const goalCategories = [...new Set(goals.map((g) => g.category))];
+  if (goalCategories.length > 0) {
+    const grouped = await prisma.transaction.groupBy({
+      by: ["category", "type"],
+      where: { userId, category: { in: goalCategories } },
+      _sum: { amount: true },
+    });
+    const netByCategory = new Map<string, number>();
+    for (const g of grouped) {
+      const amount = toNumber(g._sum.amount);
+      const current = netByCategory.get(g.category) ?? 0;
+      netByCategory.set(g.category, current + (g.type === "income" ? amount : -amount));
+    }
+    for (const net of netByCategory.values()) committedToGoals += Math.max(0, net);
+  }
+
+  return {
+    month,
+    year,
+    totalBalance,
+    committedToGoals,
+    availableSurplus: Math.max(0, totalBalance - committedToGoals),
+  };
+}
+
 export async function getAnnualBalance(userId: number, year: number) {
   const reference = new Date(year, 0, 1);
   const start = startOfYear(reference);
