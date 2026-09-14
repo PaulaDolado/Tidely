@@ -2,9 +2,12 @@
 // (dashboard/src/styles.css: bloque `:root` y los `[data-theme="..."]`) a valores RGB/hex que
 // React Native entiende. Ahora hay 5 temas (Ajustes > General > Apariencia, ver
 // ThemeContext.tsx): "sistema" son los valores de siempre (sin cambios, sigue el claro/oscuro del
-// dispositivo), "basico"/"oscuro" son la paleta neutra estilo Apple (par claro/oscuro) y
-// "salvia"/"espresso" son las dos paletas de marca (verde/crema y marrón café). Mismos hex que sus
-// equivalentes `[data-theme]` en styles.css — si cambian ahí, cambian aquí también.
+// dispositivo), "basico" es la paleta neutra en tonalidades de grises (fondo claro estilo Apple,
+// pero SIN ningún acento de color — ver el comentario de PALETTES.basico más abajo), "oscuro" es
+// su contrapartida oscura (esa sí conserva el azul de acento y los System Colors vivos de Apple,
+// no se le pidió lo mismo que a "basico") y "salvia"/"espresso" son las dos paletas de marca
+// (verde/crema y marrón café). Mismos hex que sus equivalentes `[data-theme]` en styles.css — si
+// cambian ahí, cambian aquí también.
 //
 // `colors` sigue siendo el MISMO objeto de siempre en cuanto a forma de uso (`import { colors }
 // from "../theme"; colors.background`) — las ~26 pantallas/componentes que ya lo importan así no
@@ -122,7 +125,15 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     cover: "#4D3F35",
   }),
 
-  // Neutra estilo Apple (System Colors de iOS/macOS: azul de acento, grises neutros).
+  // Neutra: TODO en tonalidades de grises — ver el mismo comentario en el bloque
+  // [data-theme="basico"] de dashboard/src/styles.css (mismos hex ahí y aquí). Antes se quedaban
+  // `primary`/`secondary` en azul de acento estilo Apple ("System Colors") mientras los otros 6
+  // ya eran grises — dos colados que rompían la neutralidad que este tema pide por nombre, y
+  // además `secondary` coincidía exactamente con `muted` (#E5E5EA los dos), así que esa opción
+  // del selector de categorías no se distinguía de "Gris". Ahora los 8 colores seleccionables
+  // (categorías, leyenda del calendario anual, placeholders de Galería, tapa de libretas/
+  // proyectos) son una única rampa de grises en pasos de 30 (F0 > D2 > B4 > 96 > 78 > 5A > 3C >
+  // 1E) — la misma idea que la rampa de marrones de "espresso", pero neutra de verdad.
   basico: buildPalette({
     background: "#F2F2F7",
     card: "#FFFFFF",
@@ -131,18 +142,14 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     muted: "#E5E5EA",
     border: "rgba(0,0,0,0.1)",
     inputBorder: "rgba(0,0,0,0.12)",
-    primary: "#007AFF",
+    primary: "#1E1E1E",
     primaryForeground: "#FFFFFF",
-    secondary: "#E5E5EA",
+    secondary: "#F0F0F0",
     secondaryForeground: "#1C1C1E",
     // destructive se queda en su rojo de siempre (peligro real: borrar, error) — igual criterio
     // que en "espresso", ver el comentario de esa paleta más abajo.
     destructive: "#FF3B30",
     destructiveForeground: "#FFFFFF",
-    // Los 6 colores seleccionables (categorías, leyenda del calendario anual, placeholders de
-    // Galería, tapa de libretas/proyectos) pasan a una rampa de grises neutros — misma idea que
-    // la rampa de marrones de "espresso" — en vez del naranja/verde/rojo/amarillo/morado/cuero de
-    // siempre, que rompían la neutralidad del resto del tema.
     negative: "#3C3C3C",
     positive: "#969696",
     warning: "#B4B4B4",

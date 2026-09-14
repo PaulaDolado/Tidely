@@ -120,16 +120,23 @@
   }
 }
 
-/* Básico — paleta neutra estilo "Apple" (System Colors de iOS/macOS: azul de acento, grises
-   neutros, sin el tinte cálido de la paleta por defecto). */
+/* Básico — paleta neutra: TODO en tonalidades de grises (fondo/tarjeta/texto aparte, ver arriba
+   — esto son los 8 colores seleccionables de categorías/eventos/libretas de proyecto/leyenda del
+   calendario anual, ver utils/calendarColors.ts y ProyectosPage.tsx). Antes era "System Colors de
+   iOS/macOS" con azul de acento (--primary/--secondary) y el resto de acentos en sus colores
+   vivos de siempre (naranja/verde/rojo/amarillo/morado/tan) — se sustituyeron TODOS por una única
+   rampa de 8 grises en pasos de 30 (F0 > D2 > B4 > 96 > 78 > 5A > 3C > 1E), para que ningún color
+   se cuele en un tema que se pide explícitamente neutro. Mismos hex que PALETTES.basico en
+   mobile/src/theme.ts — si cambian aquí, cambian ahí también. `--destructive` se queda en rojo a
+   propósito (peligro real: borrar, error) — no es una de las 8 opciones de categoría. */
 [data-theme="basico"] {
   --background: #f2f2f7;
   --foreground: #1c1c1e;
   --card: #ffffff;
   --card-foreground: #1c1c1e;
-  --primary: #007aff;
+  --primary: #1e1e1e;
   --primary-foreground: #ffffff;
-  --secondary: #e5e5ea;
+  --secondary: #f0f0f0;
   --secondary-foreground: #1c1c1e;
   --muted: #e5e5ea;
   --muted-foreground: #6e6e73;
@@ -137,13 +144,13 @@
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
   --input: rgba(0, 0, 0, 0.12);
-  --ring: #007aff;
-  --hobby: #ff9500;
-  --positive: #34c759;
-  --negative: #ff3b30;
-  --warning: #ffcc00;
-  --habit: #5856d6;
-  --cover: #a2845e;
+  --ring: #1e1e1e;
+  --hobby: #d2d2d2;
+  --positive: #969696;
+  --negative: #3c3c3c;
+  --warning: #b4b4b4;
+  --habit: #787878;
+  --cover: #5a5a5a;
 }
 
 /* Oscuro — contrapartida oscura de "Básico" (mismo acento azul, System Colors en su variante
