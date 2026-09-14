@@ -911,9 +911,14 @@ function KanbanColumn({
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            // Igual guarda que CustomPagePage.tsx (submitCard): sin esto, enviar el formulario
+            // vacío colapsaba el diálogo sin haber añadido nada (addTask ya ignora el título
+            // vacío, pero antes de este `if` seguíamos cerrando el formulario igual).
+            if (!title.trim()) return;
             onAdd(title, description);
             setTitle("");
             setDescription("");
+            setAdding(false);
           }}
           className="mt-3 space-y-2"
         >
