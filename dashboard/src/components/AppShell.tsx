@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
 import { api, ApiError } from "../api/client";
 import { SettingsDialog } from "./SettingsDialog";
-import { AgendaResponse, CustomPageSummary, CustomPageTemplate, Notification, SearchResults } from "../types";
+import { AgendaResponse, CustomPageSummary, CustomPageTemplate, EnabledSection, ENABLED_SECTIONS, Notification, SearchResults } from "../types";
 import { CUSTOM_PAGE_TEMPLATES } from "../utils/customPageTemplates";
 import clipClosedUrl from "../assets/clipClosed.png";
 import clipOpenUrl from "../assets/clipOpen.png";
@@ -47,6 +47,9 @@ interface NavItem {
   key: Tab;
   label: string;
   children?: NavItem[];
+  // Qué apartado de User.enabledSections activa este item (ver OnboardingWizard) — sin esto
+  // (Hoy, Agenda) el item nunca se filtra, no es opcional. Ver filterNav más abajo.
+  section?: EnabledSection;
 }
 
 const NAV: NavItem[] = [
@@ -55,21 +58,34 @@ const NAV: NavItem[] = [
     key: "agenda",
     label: "Agenda",
     children: [
-      { key: "planificador", label: "Planificador" },
-      { key: "horario", label: "Horario" },
+      { key: "planificador", label: "Planificador", section: "planificador" },
+      { key: "horario", label: "Horario", section: "horario" },
     ],
   },
-  { key: "metas", label: "Objetivos" },
+  { key: "metas", label: "Objetivos", section: "objetivos" },
   {
     key: "finanzas",
     label: "Finanzas",
-    children: [{ key: "finanzas-ahorro", label: "Metas de ahorro" }],
+    section: "finanzas",
+    children: [{ key: "finanzas-ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
   },
-  { key: "proyectos", label: "Proyectos" },
+  { key: "proyectos", label: "Proyectos", section: "proyectos" },
 ];
 
-// Nav aplanado — para el menú horizontal en móvil, donde anidar no tiene mucho sitio.
-const FLAT_NAV: NavItem[] = NAV.flatMap((item) => [item, ...(item.children ?? [])]);
+// Poda NAV según los apartados que el usuario activó en el asistente de bienvenida (o en Ajustes
+// → General después, ver SettingsDialog) — un item SIN `section` (Hoy, Agenda) nunca se filtra;
+// uno CON `section` desaparece si no está en `enabledSections`, y sus `children` se filtran
+// igual (recursivo, aunque hoy solo hay un nivel de anidación). Si tras filtrar un item se queda
+// sin hijos, `children` pasa a `undefined` (no `[]`) — el resto del render usa `item.children &&`
+// para decidir si pintar la flecha de plegar/desplegar, y un array vacío sigue siendo "truthy".
+function filterNav(nav: NavItem[], enabledSections: Set<string>): NavItem[] {
+  return nav
+    .filter((item) => !item.section || enabledSections.has(item.section))
+    .map((item) => {
+      const children = item.children ? filterNav(item.children, enabledSections) : undefined;
+      return { ...item, children: children && children.length > 0 ? children : undefined };
+    });
+}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -129,6 +145,14 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const { user, logout } = useAuth();
+  // Antes de completar el asistente de bienvenida (o para cuentas creadas antes de que existiera,
+  // ver default en schema.prisma) `user.enabledSections` siempre viene relleno con los 7 — este
+  // `?? ENABLED_SECTIONS` es solo para el instante inicial en el que `user` puede no haber
+  // llegado todavía de /auth/me (ver AuthContext), no para un caso de negocio real.
+  const enabledSections = new Set<string>(user?.enabledSections ?? ENABLED_SECTIONS);
+  const visibleNav = filterNav(NAV, enabledSections);
+  const visibleFlatNav = visibleNav.flatMap((item) => [item, ...(item.children ?? [])]);
+  const showGallery = enabledSections.has("galeria");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [renamingPageId, setRenamingPageId] = useState<number | null>(null);
@@ -247,7 +271,7 @@ export function AppShell({
       {/* Clon invisible del nav, sin ancho forzado, solo para medir cuánto ocupa el apartado
           más largo sin cortarse (measureRef.current.scrollWidth en el efecto de arriba). */}
       <div ref={measureRef} aria-hidden className="invisible fixed left-0 top-0 -z-10 flex w-max flex-col items-start gap-1">
-        {NAV.map((item) => (
+        {visibleNav.map((item) => (
           <div key={item.key} className="flex w-full flex-col items-start gap-1">
             <span className="whitespace-nowrap rounded-lg px-3 py-2 text-left font-medium">{item.label}</span>
             {item.children && (
@@ -287,7 +311,7 @@ export function AppShell({
 
               <div className="capsule-scrollbar min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6">
               <nav className="flex flex-col gap-1">
-                {NAV.map((item) => {
+                {visibleNav.map((item) => {
                   const sectionCollapsed = collapsedSections.has(item.key);
                   return (
                     <div key={item.key}>
@@ -343,16 +367,18 @@ export function AppShell({
                 {/* Apartado del menú principal, no una página personalizada más de "Tus páginas"
                     — por debajo sigue siendo una (plantilla "galeria"), pero el usuario no ve ese
                     paso intermedio: onOpenGallery busca la existente o crea la primera. */}
-                <button
-                  onClick={onOpenGallery}
-                  className={`w-full min-w-0 truncate rounded-lg px-3 py-2 text-left transition-colors ${
-                    galleryTab && activeTab === galleryTab
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-muted-foreground hover:bg-foreground/5"
-                  }`}
-                >
-                  Galería
-                </button>
+                {showGallery && (
+                  <button
+                    onClick={onOpenGallery}
+                    className={`w-full min-w-0 truncate rounded-lg px-3 py-2 text-left transition-colors ${
+                      galleryTab && activeTab === galleryTab
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-foreground/5"
+                    }`}
+                  >
+                    Galería
+                  </button>
+                )}
               </nav>
 
               <div className="flex flex-col gap-1">
@@ -576,7 +602,7 @@ export function AppShell({
           horizontal queda contenido donde corresponde. */}
       <div className="min-w-0 flex-1">
         <nav className="capsule-scrollbar flex gap-1 overflow-x-auto border-b border-border px-6 py-4 lg:hidden">
-          {FLAT_NAV.map((item) => (
+          {visibleFlatNav.map((item) => (
             <button
               key={item.key}
               onClick={() => onTabChange(item.key)}
@@ -587,14 +613,16 @@ export function AppShell({
               {item.label}
             </button>
           ))}
-          <button
-            onClick={onOpenGallery}
-            className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm ${
-              galleryTab && activeTab === galleryTab ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground"
-            }`}
-          >
-            Galería
-          </button>
+          {showGallery && (
+            <button
+              onClick={onOpenGallery}
+              className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm ${
+                galleryTab && activeTab === galleryTab ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground"
+              }`}
+            >
+              Galería
+            </button>
+          )}
           {otherPages.map((page) => {
             const tab = customPageTab(page.id);
             return (

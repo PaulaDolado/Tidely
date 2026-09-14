@@ -2,7 +2,7 @@ import { FormEvent, ReactNode, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Theme, THEME_OPTIONS, useTheme } from "../context/ThemeContext";
 import { api, ApiError } from "../api/client";
-import { User } from "../types";
+import { EnabledSection, ENABLED_SECTIONS, SECTION_DESCRIPTIONS, SECTION_LABELS, User } from "../types";
 
 // Diálogo de ajustes: se abre al hacer click en el nombre del usuario en la barra lateral (ver
 // AppShell). Antes esto era "ProfileDialog" — un único formulario de cuenta — ahora es un panel
@@ -91,41 +91,138 @@ const THEME_PREVIEWS: Record<Theme, { background: string; card: string; primary:
   espresso: { background: "#160c06", card: "#332116", primary: "#c89674" },
 };
 
-function GeneralSection() {
+// Extraído aparte (no solo dentro de GeneralSection) porque OnboardingWizard reutiliza el mismo
+// grid de 5 tarjetas tal cual en su paso "Apariencia" — mismo componente, mismo comportamiento
+// (clicar aplica el tema al instante vía useTheme, no hace falta "guardar" aparte).
+export function ThemePicker() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {THEME_OPTIONS.map((option) => {
+        const preview = THEME_PREVIEWS[option.value];
+        const selected = theme === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setTheme(option.value)}
+            className={`cursor-pointer rounded-2xl border p-2 text-left transition-colors ${
+              selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/30"
+            }`}
+          >
+            <span
+              className="mb-2 flex h-14 items-end gap-1 overflow-hidden rounded-xl p-1.5"
+              style={{ backgroundColor: preview.background }}
+            >
+              <span className="h-full flex-1 rounded-md" style={{ backgroundColor: preview.card }} />
+              <span className="size-3.5 shrink-0 rounded-full" style={{ backgroundColor: preview.primary }} />
+            </span>
+            <span className={`block text-xs font-medium ${selected ? "text-primary" : "text-foreground"}`}>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Mismo checklist que el paso 1 de OnboardingWizard (ver types.ts: SECTION_LABELS/
+// SECTION_DESCRIPTIONS compartidas), pero aquí cambia algo YA elegido en vez de elegirlo por
+// primera vez — por eso lleva su propio botón "Guardar" (el asistente aplica al terminar el
+// paso 2, aquí no hay "paso 2" al que esperar) en vez de aplicar cada clic al instante.
+function SectionsPicker() {
+  const { user, updateUser } = useAuth();
+  const [selected, setSelected] = useState<Set<EnabledSection>>(
+    () => new Set(user?.enabledSections ?? ENABLED_SECTIONS)
+  );
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = (section: EnabledSection) => {
+    setSaved(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const enabledSections = ENABLED_SECTIONS.filter((s) => selected.has(s));
+      const profile = await api.put<{ enabledSections: EnabledSection[] }>("/auth/me/onboarding", { enabledSections });
+      updateUser({ enabledSections: profile.enabledSections });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudieron guardar los apartados.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="mb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Apartados del menú</p>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Qué apartados quieres ver en el menú lateral — los mismos que elegiste al registrarte, puedes cambiarlos cuando quieras.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {ENABLED_SECTIONS.map((section) => {
+          const checked = selected.has(section);
+          return (
+            <button
+              key={section}
+              type="button"
+              onClick={() => toggle(section)}
+              aria-pressed={checked}
+              className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-left transition-colors ${
+                checked ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/30"
+              }`}
+            >
+              <span
+                className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                  checked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent"
+                }`}
+                aria-hidden="true"
+              >
+                ✓
+              </span>
+              <span>
+                <span className="block text-sm font-medium">{SECTION_LABELS[section]}</span>
+                <span className="block text-xs text-muted-foreground">{SECTION_DESCRIPTIONS[section]}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">⚠️ {error}</p>
+      )}
+      {saved && <p className="mt-3 text-xs text-primary">Apartados actualizados.</p>}
+
+      <button type="button" onClick={save} disabled={saving} className="btn-primary mt-4">
+        {saving ? "Guardando..." : "Guardar apartados"}
+      </button>
+    </div>
+  );
+}
+
+function GeneralSection() {
+  return (
+    <div className="space-y-8">
+      <SectionsPicker />
+
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Apariencia</p>
         <p className="mb-4 text-sm text-muted-foreground">
           Elige cómo se ve Tidely. "Sistema" mantiene el aspecto actual y sigue el modo claro/oscuro de tu dispositivo.
         </p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {THEME_OPTIONS.map((option) => {
-            const preview = THEME_PREVIEWS[option.value];
-            const selected = theme === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setTheme(option.value)}
-                className={`cursor-pointer rounded-2xl border p-2 text-left transition-colors ${
-                  selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/30"
-                }`}
-              >
-                <span
-                  className="mb-2 flex h-14 items-end gap-1 overflow-hidden rounded-xl p-1.5"
-                  style={{ backgroundColor: preview.background }}
-                >
-                  <span className="h-full flex-1 rounded-md" style={{ backgroundColor: preview.card }} />
-                  <span className="size-3.5 shrink-0 rounded-full" style={{ backgroundColor: preview.primary }} />
-                </span>
-                <span className={`block text-xs font-medium ${selected ? "text-primary" : "text-foreground"}`}>{option.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <ThemePicker />
       </div>
     </div>
   );

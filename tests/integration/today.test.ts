@@ -50,7 +50,7 @@ describe("Today Endpoint", () => {
       .set(authed())
       .send({
         title: "Reunión",
-        type: "meeting",
+        categoryId: categoryIds["Reunión"],
         startTime: `${todayIso()}T10:00:00.000Z`,
         endTime: `${todayIso()}T11:00:00.000Z`,
       });

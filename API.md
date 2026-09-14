@@ -21,9 +21,10 @@ Todos los listados (`/goals`, `/projects`, `/agenda/day`, `/agenda/week`, `/fina
 | POST | `/auth/refresh` | - | Nuevo `token`+`refreshToken` a partir de un `refreshToken` válido |
 | POST | `/auth/verify-email` | - | Body: `token` (el de la URL del email). Marca el email como verificado; 400 si el token no existe o caducó (24h) |
 | POST | `/auth/resend-verification` | JWT | Manda un email de verificación nuevo; no-op silencioso si ya estaba verificado |
-| GET | `/auth/me` | JWT | Perfil: `{ id, email, username, name, lastName, timezone, emailVerified, nextUsernameChangeAllowedAt }` |
+| GET | `/auth/me` | JWT | Perfil: `{ id, email, username, name, lastName, timezone, emailVerified, nextUsernameChangeAllowedAt, enabledSections, onboardingCompleted }` |
 | PUT | `/auth/me` | JWT | Actualiza `name`, `lastName` (`null` para vaciarlo), `username` (409 si ya lo usa otra cuenta, **429** si ya se cambió hace menos de 15 días), `email` (409 si ya lo usa otra cuenta; sin cooldown propio, pero resetea `emailVerified` a `false` y manda un email de verificación nuevo) y/o `timezone` |
 | PUT | `/auth/me/password` | JWT | Cambia la contraseña. Body: `currentPassword`, `newPassword` (min 8) |
+| PUT | `/auth/me/onboarding` | JWT | Guarda los apartados elegidos en el asistente de bienvenida y pone `onboardingCompleted=true`. Body: `enabledSections` (array, puede ir vacío o repetir todos los valores de `planificador`\|`horario`\|`objetivos`\|`galeria`\|`finanzas`\|`metasAhorro`\|`proyectos`, sin duplicados) — `onboardingCompleted` empieza en `false` solo para cuentas nuevas (`POST /auth/register`); las ya existentes lo tienen en `true` |
 
 `nextUsernameChangeAllowedAt` (`User.usernameChangedAt` + 15 días) viene en `null` si el usuario nunca cambió el username o si el cooldown ya pasó — el frontend lo usa para deshabilitar el campo y mostrar cuándo podrá volver a cambiarlo, sin tener que duplicar los "15 días" en el cliente. El cooldown solo aplica al `username`, no al `email` (que en cambio exige reverificación cada vez que cambia). Ni cambiar el username ni el email invalidan los tokens ya emitidos (el JWT solo se valida por `userId`).
 

@@ -110,7 +110,7 @@ router.post("/verify-email", validate(verifyEmailSchema), authController.verifyE
  *     summary: Perfil del usuario autenticado
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: "{ id, email, username, name, lastName, timezone, emailVerified, nextUsernameChangeAllowedAt }" }
+ *       200: { description: "{ id, email, username, name, lastName, timezone, emailVerified, nextUsernameChangeAllowedAt, enabledSections, onboardingCompleted }" }
  *   put:
  *     tags: [Auth]
  *     summary: Actualizar nombre, apellido, username, email y/o timezone

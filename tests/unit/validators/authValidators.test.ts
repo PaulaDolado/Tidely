@@ -5,6 +5,7 @@ import {
   updateProfileSchema,
   changePasswordSchema,
   verifyEmailSchema,
+  completeOnboardingSchema,
 } from "../../../src/validators/authValidators";
 
 describe("authValidators", () => {
@@ -192,6 +193,33 @@ describe("authValidators", () => {
 
     it("rechaza si falta el token", () => {
       expect(verifyEmailSchema.validate({}).error).toBeDefined();
+    });
+  });
+
+  describe("completeOnboardingSchema", () => {
+    it("acepta la lista completa de apartados", () => {
+      const { error } = completeOnboardingSchema.validate({
+        enabledSections: ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"],
+      });
+      expect(error).toBeUndefined();
+    });
+
+    it("acepta una lista vacía (ningún apartado opcional)", () => {
+      expect(completeOnboardingSchema.validate({ enabledSections: [] }).error).toBeUndefined();
+    });
+
+    it("rechaza un apartado que no existe", () => {
+      const { error } = completeOnboardingSchema.validate({ enabledSections: ["inventado"] });
+      expect(error).toBeDefined();
+    });
+
+    it("rechaza apartados repetidos", () => {
+      const { error } = completeOnboardingSchema.validate({ enabledSections: ["finanzas", "finanzas"] });
+      expect(error).toBeDefined();
+    });
+
+    it("rechaza si falta enabledSections", () => {
+      expect(completeOnboardingSchema.validate({}).error).toBeDefined();
     });
   });
 });

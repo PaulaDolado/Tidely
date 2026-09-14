@@ -19,7 +19,44 @@ export interface User {
   // Fecha (ISO) a partir de la cual se puede volver a cambiar el username — null si nunca se
   // cambió o si el cooldown de 15 días ya pasó. Ver SettingsDialog.
   nextUsernameChangeAllowedAt?: string | null;
+  // Elegidos en el asistente de bienvenida tras registrarse (ver OnboardingWizard) — controla
+  // qué apartados opcionales aparecen en el menú lateral (ver AppShell.tsx). Opcional en el tipo
+  // porque `updateUser()` en AuthContext hace parches parciales; en la práctica /auth/me siempre
+  // lo manda.
+  enabledSections?: EnabledSection[];
+  // Si ya completó el asistente de bienvenida — false solo justo tras registrarse una cuenta
+  // nueva (ver DashboardPage: mientras sea false, se muestra el asistente en vez de la app).
+  onboardingCompleted?: boolean;
 }
+
+// Mismos 7 valores que ENABLED_SECTIONS en src/validators/authValidators.ts (backend) — "Hoy" y
+// "Agenda" no son opcionales, así que no están aquí.
+export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"] as const;
+export type EnabledSection = (typeof ENABLED_SECTIONS)[number];
+
+// Compartidas entre OnboardingWizard (elegirlos la primera vez, tras registrarse) y SettingsDialog
+// (cambiarlos luego desde Ajustes → General) — mismo concepto en dos sitios, una sola fuente para
+// no duplicar texto. La etiqueta de "proyectos" dice "Libreta" a propósito, aunque el apartado del
+// menú lateral se siga llamando "Proyectos" (ver AppShell.NAV) — el propio README ya llama
+// "cuaderno"/"libreta" a esa sección.
+export const SECTION_LABELS: Record<EnabledSection, string> = {
+  planificador: "Planificador",
+  horario: "Horario",
+  objetivos: "Objetivos",
+  galeria: "Galería",
+  finanzas: "Finanzas",
+  metasAhorro: "Metas de ahorro",
+  proyectos: "Libreta",
+};
+export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
+  planificador: "Tableros de tareas kanban, con propiedades personalizadas.",
+  horario: "Horario semanal por franjas y calendario anual.",
+  objetivos: "Metas semanales, mensuales o anuales con progreso.",
+  galeria: "Fotos y notas en collage, como una pared de marcos.",
+  finanzas: "Ingresos, gastos y balance del mes.",
+  metasAhorro: "Ahorro e inversión como casillas de progreso.",
+  proyectos: "Cuaderno con notas enriquecidas por proyecto.",
+};
 
 export interface AuthResponse {
   token: string;

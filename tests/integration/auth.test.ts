@@ -467,6 +467,99 @@ describe("Auth Endpoints", () => {
     });
   });
 
+  describe("PUT /auth/me/onboarding", () => {
+    it("una cuenta recién registrada empieza con onboardingCompleted=false y los 7 apartados activados", async () => {
+      const register = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+
+      expect(register.body.user.onboardingCompleted).toBe(false);
+      expect(register.body.user.enabledSections.sort()).toEqual(
+        ["finanzas", "galeria", "horario", "metasAhorro", "objetivos", "planificador", "proyectos"].sort()
+      );
+    });
+
+    it("guarda la selección elegida y marca onboardingCompleted=true", async () => {
+      const register = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+      const auth = { Authorization: `Bearer ${register.body.token}` };
+
+      const response = await request(app)
+        .put("/auth/me/onboarding")
+        .set(auth)
+        .send({ enabledSections: ["planificador", "finanzas"] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.onboardingCompleted).toBe(true);
+      expect(response.body.enabledSections).toEqual(["planificador", "finanzas"]);
+
+      const profile = await request(app).get("/auth/me").set(auth);
+      expect(profile.body.onboardingCompleted).toBe(true);
+      expect(profile.body.enabledSections).toEqual(["planificador", "finanzas"]);
+    });
+
+    it("acepta una lista vacía (el usuario no quiere ningún apartado opcional)", async () => {
+      const register = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+
+      const response = await request(app)
+        .put("/auth/me/onboarding")
+        .set({ Authorization: `Bearer ${register.body.token}` })
+        .send({ enabledSections: [] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.enabledSections).toEqual([]);
+    });
+
+    it("debería rechazar un apartado que no existe", async () => {
+      const register = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+
+      const response = await request(app)
+        .put("/auth/me/onboarding")
+        .set({ Authorization: `Bearer ${register.body.token}` })
+        .send({ enabledSections: ["inventado"] });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("debería rechazar la petición sin enabledSections", async () => {
+      const register = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+
+      const response = await request(app)
+        .put("/auth/me/onboarding")
+        .set({ Authorization: `Bearer ${register.body.token}` })
+        .send({});
+
+      expect(response.status).toBe(400);
+    });
+
+    it("debería rechazar la petición sin token", async () => {
+      const response = await request(app).put("/auth/me/onboarding").send({ enabledSections: [] });
+      expect(response.status).toBe(401);
+    });
+  });
+
   describe("POST /auth/verify-email", () => {
     it("debería verificar el email con el token recibido al registrarse", async () => {
       const register = await request(app).post("/auth/register").send({
