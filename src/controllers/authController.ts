@@ -49,6 +49,16 @@ export async function updateProfile(req: AuthRequest, res: Response, next: NextF
   }
 }
 
+export async function completeOnboarding(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const profile = await authService.completeOnboarding(userId, req.body.enabledSections);
+    res.json(profile);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function changePassword(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId as number;

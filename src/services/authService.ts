@@ -48,11 +48,18 @@ function toProfile(user: {
   usernameChangedAt: Date | null;
   emailVerifiedAt: Date | null;
   timezone: string;
+  enabledSections: string[];
+  onboardingCompleted: boolean;
 }) {
   return {
     id: user.id,
     email: user.email,
     username: user.username,
+    enabledSections: user.enabledSections,
+    // El frontend lo usa para decidir si mostrar el asistente de bienvenida al entrar (ver
+    // dashboard/src/pages/DashboardPage.tsx) — una vez completado (o si la cuenta ya existía
+    // antes de este campo, ver default en schema.prisma) no se vuelve a mostrar solo.
+    onboardingCompleted: user.onboardingCompleted,
     name: user.name,
     lastName: user.lastName,
     timezone: user.timezone,
@@ -100,6 +107,10 @@ export async function register(input: RegisterInput) {
       password: hashedPassword,
       name: input.name,
       ...(input.timezone ? { timezone: input.timezone } : {}),
+      // El default de la columna es `true` (para no afectar a cuentas ya existentes, ver
+      // schema.prisma) — una cuenta que se acaba de crear aquí sí debe ver el asistente de
+      // bienvenida, así que se pisa explícitamente a `false` solo en este alta.
+      onboardingCompleted: false,
     },
   });
 
@@ -208,6 +219,19 @@ export async function updateProfile(userId: number, input: UpdateProfileInput) {
     await issueAndSendVerification(user.id, user.email);
   }
 
+  return toProfile(user);
+}
+
+// Guarda la elección del asistente de bienvenida (ver PUT /auth/me/onboarding) y marca la cuenta
+// como ya pasada por él — de un solo golpe, a diferencia de `updateProfile`, porque aquí no hay
+// campos opcionales sueltos: el asistente siempre manda la lista completa de apartados elegidos
+// (incluso si es la lista entera, "seleccionar todos" es una elección válida como otra
+// cualquiera, no un "no tocar nada").
+export async function completeOnboarding(userId: number, enabledSections: string[]) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { enabledSections, onboardingCompleted: true },
+  });
   return toProfile(user);
 }
 

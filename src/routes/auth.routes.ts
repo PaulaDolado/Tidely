@@ -9,6 +9,7 @@ import {
   updateProfileSchema,
   changePasswordSchema,
   verifyEmailSchema,
+  completeOnboardingSchema,
 } from "../validators/authValidators";
 
 const router = Router();
@@ -119,6 +120,23 @@ router.post("/verify-email", validate(verifyEmailSchema), authController.verifyE
  */
 router.get("/me", authMiddleware, authController.getProfile);
 router.put("/me", authMiddleware, validate(updateProfileSchema), authController.updateProfile);
+
+/**
+ * @openapi
+ * /auth/me/onboarding:
+ *   put:
+ *     tags: [Auth]
+ *     summary: Guarda los apartados elegidos en el asistente de bienvenida y marca la cuenta como ya pasada por él
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Perfil actualizado, con onboardingCompleted=true }
+ */
+router.put(
+  "/me/onboarding",
+  authMiddleware,
+  validate(completeOnboardingSchema),
+  authController.completeOnboarding
+);
 
 /**
  * @openapi

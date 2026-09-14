@@ -458,20 +458,45 @@ function MovementForm({
           setSaving(false);
         }
       }}
-      className={dialog ? "grid gap-4 @sm:grid-cols-2" : "grid gap-4 card-soft @sm:grid-cols-2 @xl:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]"}
+      className={
+        dialog
+          ? "grid gap-4 @sm:grid-cols-2"
+          : // `minmax(0,Nfr)` en vez de `Nfr` a secas: sin el `minmax(0,...)`, una columna `1fr`
+            // no puede encogerse por debajo del ancho mínimo de contenido de lo que lleve dentro
+            // (para un <input>/<select>, ese mínimo del navegador es bastante mayor que el hueco
+            // real disponible en un contenedor estrecho de portátil) — el grid se desborda hacia
+            // la derecha y las dos últimas columnas (fecha, "Registrar") acaban solapándose en
+            // vez de encogerse. `minmax(0,...)` deja que la columna se achique todo lo que haga
+            // falta (el propio contenido interno sigue siendo responsable de no desbordar, ver
+            // CompactDateField más abajo).
+            "grid gap-4 card-soft @sm:grid-cols-2 @xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+      }
     >
       <input
         value={concept}
         onChange={(e) => setConcept(e.target.value)}
         placeholder="Concepto"
-        className={dialog ? "field-input @sm:col-span-2" : "field-input @sm:col-span-2 @xl:col-span-1"}
+        className={dialog ? "field-input @sm:col-span-2" : "field-input min-w-0 @sm:col-span-2 @xl:col-span-1"}
       />
-      <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" min="0" step="0.01" placeholder="Importe" className="field-input" />
-      <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className="field-input">
+      <input
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        type="number"
+        min="0"
+        step="0.01"
+        placeholder="Importe"
+        className="field-input min-w-0"
+      />
+      <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className="field-input min-w-0">
         <option value="gasto">Gasto</option>
         <option value="ingreso">Ingreso</option>
       </select>
-      <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Categoría" className="field-input" />
+      <input
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        placeholder="Categoría"
+        className="field-input min-w-0"
+      />
       {/* En el diálogo (2 columnas, de sobra de sitio) el campo de fecha se queda como un
           `<input type="date">` normal — el problema solo aparece en la fila compacta de crear
           (6 columnas en pantallas @xl, ver el grid de más arriba): un date input nativo no puede
