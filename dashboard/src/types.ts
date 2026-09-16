@@ -98,6 +98,37 @@ export interface Event {
   // resto. Editar/mover uno de estos desde Tidely no se refleja en Google, y la próxima
   // sincronización lo sobrescribe con la versión de Google.
   source?: "tidely" | "google";
+  // Distintivo de "compartido" (ver EventInvitation) — `null` en el caso normal (evento sin
+  // compartir con nadie). Si lo ves porque ACEPTASTE una invitación de otra persona (role
+  // "invitee"), el evento es de solo lectura para ti: no puedes editarlo ni borrarlo, solo
+  // aceptar/rechazar la invitación o quitártelo del calendario del todo (ver
+  // EventInvitationsSection en AgendaPage.tsx).
+  sharing?: EventSharing | null;
+}
+
+export interface PublicUserRef {
+  id: number;
+  name: string;
+  username: string;
+}
+
+export type EventSharing =
+  | { role: "owner"; with: PublicUserRef[] }
+  | { role: "invitee"; owner: PublicUserRef };
+
+export interface EventInvitation {
+  id: number;
+  eventId: number;
+  inviterId: number;
+  inviteeId: number;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+  updatedAt: string;
+  // Presente en GET /agenda/events/:id/invitations (vista del dueño del evento).
+  invitee?: PublicUserRef;
+  // Presentes en GET /agenda/invitations (vista de "lo que he recibido").
+  inviter?: PublicUserRef;
+  event?: { id: number; title: string; startTime: string; endTime: string; location: string | null; isRecurring: boolean };
 }
 
 export interface GoogleCalendarStatus {
