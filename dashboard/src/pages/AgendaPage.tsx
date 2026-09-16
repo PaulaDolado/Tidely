@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, SearchFocus, Tab } from "../components/AppShell";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
 import { Loading, ErrorMessage } from "../components/Feedback";
 import { GoalsDonutChart, GOALS_DONUT_PALETTE } from "../components/GoalsDonutChart";
@@ -24,6 +24,7 @@ import {
   CalendarColor,
   Event,
   EventCategory,
+  EventInvitation,
   FreeTimeResponse,
   Goal,
   GoogleCalendarStatus,
@@ -662,7 +663,13 @@ function EventCard({
   // tarjeta lleva el color de esa categoría (antes solo la etiqueta lo llevaba), así que sigue
   // siendo distinguible de un vistazo sin ocupar espacio con el nombre. El nombre no desaparece
   // del todo: queda como `title` (tooltip nativo al pasar el ratón) para no perder accesibilidad.
-  const title = event.source === "google" ? `Importado de Google Calendar` : eventCategoryLabel(categories, event);
+  const sharingTitle =
+    event.sharing?.role === "owner"
+      ? `Compartido con ${event.sharing.with.map((u) => u.name).join(", ")}`
+      : event.sharing?.role === "invitee"
+        ? `Compartido por ${event.sharing.owner.name}`
+        : null;
+  const title = event.source === "google" ? `Importado de Google Calendar` : sharingTitle ?? eventCategoryLabel(categories, event);
   return (
     <button
       draggable
@@ -677,6 +684,7 @@ function EventCard({
     >
       <p className={`truncate font-medium ${compact ? "text-[11px]" : "text-xs"}`}>
         {event.source === "google" && "📅 "}
+        {event.sharing && "🤝 "}
         {event.title}
         {event.isRecurring && " ↻"}
         {event.isException && " ✎"}
@@ -1478,6 +1486,92 @@ function GuestsEditor({ value, onChange }: { value: string[]; onChange: (guests:
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const INVITATION_STATUS_LABELS: Record<EventInvitation["status"], string> = {
+  pending: "Pendiente",
+  accepted: "Aceptada",
+  declined: "Rechazada",
+};
+
+// A diferencia de GuestsEditor (nombres/emails sueltos, sin cuenta) esto invita a OTRO USUARIO
+// DE VERDAD de Tidely — el evento le aparece en su propio calendario en cuanto acepta (ver
+// EventSharing en types.ts). Vive dentro de EventDialog (editar), no en NewEventForm: hace falta
+// el `id` real del evento, que todavía no existe mientras se está creando.
+function EventInvitationsEditor({ eventId }: { eventId: number }) {
+  const { data, reload } = useFetch(() => api.get<{ invitations: EventInvitation[] }>(`/agenda/events/${eventId}/invitations`), [eventId]);
+  const invitations = data?.invitations ?? [];
+  const [identifier, setIdentifier] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const invite = async () => {
+    const trimmed = identifier.trim();
+    if (!trimmed) return;
+    setSending(true);
+    setError(null);
+    try {
+      await api.post(`/agenda/events/${eventId}/invitations`, { identifier: trimmed });
+      setIdentifier("");
+      reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo invitar.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const revoke = async (invitationId: number) => {
+    await api.delete(`/agenda/invitations/${invitationId}`);
+    reload();
+  };
+
+  return (
+    <div>
+      <p className="mb-1.5 text-xs text-muted-foreground">Compartir con otro usuario de Tidely</p>
+      {invitations.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {invitations.map((inv) => (
+            <span key={inv.id} className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">
+              {inv.invitee?.name} · {INVITATION_STATUS_LABELS[inv.status]}
+              <button
+                type="button"
+                onClick={() => revoke(inv.id)}
+                className="cursor-pointer hover:text-destructive"
+                aria-label={`Quitar invitación a ${inv.invitee?.name}`}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {/* Div, no <form> — mismo motivo que en GuestsEditor: este editor vive DENTRO del <form>
+          del evento, un <form> anidado sería HTML inválido. */}
+      <div className="flex gap-1">
+        <input
+          value={identifier}
+          onChange={(e) => setIdentifier(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            invite();
+          }}
+          placeholder="Usuario o email de Tidely"
+          className="field-input w-44 text-xs"
+        />
+        <button
+          type="button"
+          onClick={invite}
+          disabled={sending}
+          className="cursor-pointer whitespace-nowrap rounded-full border border-border px-2 text-xs text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Invitar
+        </button>
+      </div>
+      {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
