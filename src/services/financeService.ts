@@ -6,19 +6,57 @@ function toNumber(value: unknown): number {
   return value === null || value === undefined ? 0 : Number(value);
 }
 
+// Categorías "reservadas" para aportar/retirar de una meta de ahorro (ver contributeToSavingsGoal
+// más abajo) — se excluyen de los Ingresos/Gastos "reales" del balance mensual/anual (aportar a
+// una meta no es ganar dinero nuevo, es apartar dinero que ya contaba como ingreso de otro mes o
+// de este mismo) y en su lugar se restan directamente del ingreso del periodo, ver
+// getGoalContributionsNet.
+async function getGoalCategories(userId: number): Promise<string[]> {
+  const goals = await prisma.savingsGoal.findMany({ where: { userId }, select: { category: true } });
+  return [...new Set(goals.map((g) => g.category))];
+}
+
+// Neto aportado (income) menos retirado/corregido (expense) a metas de ahorro dentro del rango de
+// fechas dado — mismo convenio que computeSavingsProgress/listSavingsGoals, pero acotado a un
+// periodo en vez de todo el histórico.
+async function getGoalContributionsNet(userId: number, goalCategories: string[], start: Date, end: Date): Promise<number> {
+  if (goalCategories.length === 0) return 0;
+
+  const grouped = await prisma.transaction.groupBy({
+    by: ["type"],
+    where: { userId, category: { in: goalCategories }, date: { gte: start, lte: end } },
+    _sum: { amount: true },
+  });
+
+  let net = 0;
+  for (const g of grouped) {
+    const amount = toNumber(g._sum.amount);
+    net += g.type === "income" ? amount : -amount;
+  }
+  return net;
+}
+
 async function sumByType(userId: number, start: Date, end: Date) {
-  const [incomeAgg, expenseAgg] = await Promise.all([
+  const goalCategories = await getGoalCategories(userId);
+  // notIn vacío ({ notIn: [] }) no filtra nada en Prisma, así que basta con omitir la condición.
+  const excludeGoalCategories = goalCategories.length > 0 ? { notIn: goalCategories } : undefined;
+
+  const [incomeAgg, expenseAgg, goalNet] = await Promise.all([
     prisma.transaction.aggregate({
-      where: { userId, type: "income", date: { gte: start, lte: end } },
+      where: { userId, type: "income", date: { gte: start, lte: end }, ...(excludeGoalCategories ? { category: excludeGoalCategories } : {}) },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { userId, type: "expense", date: { gte: start, lte: end } },
+      where: { userId, type: "expense", date: { gte: start, lte: end }, ...(excludeGoalCategories ? { category: excludeGoalCategories } : {}) },
       _sum: { amount: true },
     }),
+    getGoalContributionsNet(userId, goalCategories, start, end),
   ]);
 
-  const income = toNumber(incomeAgg._sum.amount);
+  // Lo aportado a metas de ahorro/inversión este periodo resta de Ingresos (y por tanto de
+  // Balance) en vez de sumar como si fuera dinero nuevo — sigue contando en Ahorro/Inversión vía
+  // listSavingsGoals, que no pasa por aquí.
+  const income = toNumber(incomeAgg._sum.amount) - goalNet;
   const expense = toNumber(expenseAgg._sum.amount);
   return { income, expense, balance: income - expense };
 }
@@ -90,12 +128,13 @@ export async function getAnnualBalance(userId: number, year: number) {
   const reference = new Date(year, 0, 1);
   const start = startOfYear(reference);
   const end = endOfYear(reference);
+  const goalCategories = await getGoalCategories(userId);
 
   // Una sola consulta para todo el año; el desglose mensual se calcula en memoria
   // en vez de lanzar 12 consultas (una por mes).
   const transactions = await prisma.transaction.findMany({
     where: { userId, date: { gte: start, lte: end } },
-    select: { type: true, amount: true, date: true },
+    select: { type: true, category: true, amount: true, date: true },
   });
 
   const monthlyBreakdown = Array.from({ length: 12 }, (_, i) => ({
@@ -105,12 +144,23 @@ export async function getAnnualBalance(userId: number, year: number) {
     expense: 0,
     balance: 0,
   }));
+  // Neto aportado a metas de ahorro/inversión por mes — se resta del income de ese mes en vez de
+  // sumar como si fuera dinero nuevo (mismo criterio que sumByType, ver el comentario de
+  // getGoalCategories más arriba).
+  const goalNetByMonth = Array.from({ length: 12 }, () => 0);
 
   let income = 0;
   let expense = 0;
   for (const t of transactions) {
     const amount = toNumber(t.amount);
-    const bucket = monthlyBreakdown[new Date(t.date).getMonth()];
+    const monthIndex = new Date(t.date).getMonth();
+
+    if (goalCategories.includes(t.category)) {
+      goalNetByMonth[monthIndex] += t.type === "income" ? amount : -amount;
+      continue;
+    }
+
+    const bucket = monthlyBreakdown[monthIndex];
     if (t.type === "income") {
       income += amount;
       bucket.income += amount;
@@ -119,9 +169,14 @@ export async function getAnnualBalance(userId: number, year: number) {
       bucket.expense += amount;
     }
   }
-  monthlyBreakdown.forEach((b) => {
+
+  let goalNetTotal = 0;
+  monthlyBreakdown.forEach((b, i) => {
+    b.income -= goalNetByMonth[i];
     b.balance = b.income - b.expense;
+    goalNetTotal += goalNetByMonth[i];
   });
+  income -= goalNetTotal;
 
   return { year, income, expense, balance: income - expense, monthlyBreakdown };
 }
@@ -350,6 +405,7 @@ export async function getAnalytics(userId: number, month?: number, year?: number
   const currentMonthStart = startOfMonth(reference);
   const currentMonthEnd = endOfMonth(reference);
   const rangeStart = startOfMonth(subMonths(reference, 5));
+  const goalCategories = await getGoalCategories(userId);
 
   // Una sola consulta cubre tanto el top de categorías del mes como la tendencia de 6 meses
   // (en vez de 1 groupBy + 6 llamadas a getMonthlyBalance, cada una con 2 aggregate).
@@ -360,20 +416,30 @@ export async function getAnalytics(userId: number, month?: number, year?: number
 
   const categoryTotals = new Map<string, number>();
   const monthBuckets = new Map<string, { month: number; year: number; income: number; expense: number }>();
+  const goalNetByBucket = new Map<string, number>();
   for (let i = 5; i >= 0; i -= 1) {
     const monthDate = subMonths(reference, i);
-    monthBuckets.set(`${monthDate.getFullYear()}-${monthDate.getMonth()}`, {
-      month: monthDate.getMonth() + 1,
-      year: monthDate.getFullYear(),
-      income: 0,
-      expense: 0,
-    });
+    const key = `${monthDate.getFullYear()}-${monthDate.getMonth()}`;
+    monthBuckets.set(key, { month: monthDate.getMonth() + 1, year: monthDate.getFullYear(), income: 0, expense: 0 });
+    goalNetByBucket.set(key, 0);
   }
 
   for (const t of transactions) {
     const amount = toNumber(t.amount);
     const date = new Date(t.date);
-    const bucket = monthBuckets.get(`${date.getFullYear()}-${date.getMonth()}`);
+    const key = `${date.getFullYear()}-${date.getMonth()}`;
+
+    // Aportar/retirar de una meta no es un ingreso/gasto "real" (ver el comentario de
+    // getGoalCategories): no cuenta ni para la tendencia de ingresos/gastos ni para el top de
+    // categorías — se resta del ingreso del mes correspondiente más abajo.
+    if (goalCategories.includes(t.category)) {
+      if (goalNetByBucket.has(key)) {
+        goalNetByBucket.set(key, goalNetByBucket.get(key)! + (t.type === "income" ? amount : -amount));
+      }
+      continue;
+    }
+
+    const bucket = monthBuckets.get(key);
     if (bucket) {
       if (t.type === "income") bucket.income += amount;
       else bucket.expense += amount;
@@ -382,6 +448,9 @@ export async function getAnalytics(userId: number, month?: number, year?: number
     if (t.type === "expense" && date >= currentMonthStart && date <= currentMonthEnd) {
       categoryTotals.set(t.category, (categoryTotals.get(t.category) ?? 0) + amount);
     }
+  }
+  for (const [key, bucket] of monthBuckets) {
+    bucket.income -= goalNetByBucket.get(key) ?? 0;
   }
 
   const topCategories = [...categoryTotals.entries()]

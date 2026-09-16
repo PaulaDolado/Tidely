@@ -35,6 +35,7 @@ describe("financeService", () => {
 
   describe("getMonthlyBalance", () => {
     it("calcula income, expense y balance a partir de los aggregate", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([]);
       prismaMock.transaction.aggregate
         .mockResolvedValueOnce({ _sum: { amount: 1000 } }) // income
         .mockResolvedValueOnce({ _sum: { amount: 300 } }); // expense
@@ -45,6 +46,7 @@ describe("financeService", () => {
     });
 
     it("trata _sum null (sin transacciones) como 0", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([]);
       prismaMock.transaction.aggregate
         .mockResolvedValueOnce({ _sum: { amount: null } })
         .mockResolvedValueOnce({ _sum: { amount: null } });
@@ -55,15 +57,47 @@ describe("financeService", () => {
       expect(result.expense).toBe(0);
       expect(result.balance).toBe(0);
     });
+
+    it("resta de Ingresos (y por tanto de Balance) lo aportado a metas de ahorro ese mes", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([{ category: "savings-kyoto" }]);
+      prismaMock.transaction.aggregate
+        .mockResolvedValueOnce({ _sum: { amount: 1000 } }) // income real (nómina), sin la categoría de la meta
+        .mockResolvedValueOnce({ _sum: { amount: 300 } }); // expense real
+      prismaMock.transaction.groupBy.mockResolvedValue([{ type: "income", _sum: { amount: 150 } }]); // aportado a la meta
+
+      const result = await financeService.getMonthlyBalance(1, 8, 2026);
+
+      expect(result.income).toBe(850); // 1000 - 150
+      expect(result.expense).toBe(300);
+      expect(result.balance).toBe(550);
+      // Ni el aggregate de income ni el de expense deben ver la categoría de la meta.
+      expect(prismaMock.transaction.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ category: { notIn: ["savings-kyoto"] } }) })
+      );
+    });
+
+    it("un retiro de una meta ese mes suma de vuelta a Ingresos/Balance", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([{ category: "savings-kyoto" }]);
+      prismaMock.transaction.aggregate
+        .mockResolvedValueOnce({ _sum: { amount: 1000 } })
+        .mockResolvedValueOnce({ _sum: { amount: 0 } });
+      prismaMock.transaction.groupBy.mockResolvedValue([{ type: "expense", _sum: { amount: 150 } }]); // retirado de la meta
+
+      const result = await financeService.getMonthlyBalance(1, 8, 2026);
+
+      expect(result.income).toBe(1150); // 1000 - (-150)
+      expect(result.balance).toBe(1150);
+    });
   });
 
   describe("getAnnualBalance", () => {
     it("agrupa las transacciones por mes en una sola consulta", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([]);
       prismaMock.transaction.findMany.mockResolvedValue([
-        { type: "income", amount: 1000, date: new Date(2026, 0, 15) },
-        { type: "expense", amount: 200, date: new Date(2026, 0, 20) },
-        { type: "income", amount: 1000, date: new Date(2026, 1, 15) },
-        { type: "expense", amount: 500, date: new Date(2026, 5, 1) },
+        { type: "income", amount: 1000, category: "salary", date: new Date(2026, 0, 15) },
+        { type: "expense", amount: 200, category: "food", date: new Date(2026, 0, 20) },
+        { type: "income", amount: 1000, category: "salary", date: new Date(2026, 1, 15) },
+        { type: "expense", amount: 500, category: "food", date: new Date(2026, 5, 1) },
       ]);
 
       const result = await financeService.getAnnualBalance(1, 2026);
@@ -77,6 +111,20 @@ describe("financeService", () => {
       expect(result.monthlyBreakdown[1].income).toBe(1000);
       expect(result.monthlyBreakdown[5].expense).toBe(500);
       expect(result.monthlyBreakdown[11].income).toBe(0);
+    });
+
+    it("resta de Ingresos lo aportado a metas de ahorro, mes a mes", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([{ category: "savings-kyoto" }]);
+      prismaMock.transaction.findMany.mockResolvedValue([
+        { type: "income", amount: 1000, category: "salary", date: new Date(2026, 0, 15) },
+        { type: "income", amount: 150, category: "savings-kyoto", date: new Date(2026, 0, 20) }, // aporte a la meta
+      ]);
+
+      const result = await financeService.getAnnualBalance(1, 2026);
+
+      expect(result.income).toBe(850);
+      expect(result.balance).toBe(850);
+      expect(result.monthlyBreakdown[0].income).toBe(850);
     });
   });
 
@@ -134,6 +182,10 @@ describe("financeService", () => {
   });
 
   describe("getAnalytics", () => {
+    beforeEach(() => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([]);
+    });
+
     it("calcula topCategories del mes actual y monthlyTrend de 6 meses con una sola consulta", async () => {
       const reference = new Date(2026, 7, 1); // agosto 2026
       prismaMock.transaction.findMany.mockResolvedValue([
@@ -176,6 +228,22 @@ describe("financeService", () => {
 
       expect(result.topCategories).toHaveLength(5);
       expect(result.topCategories[0]).toEqual({ category: "f", total: 60 });
+    });
+
+    it("resta de la tendencia de Ingresos lo aportado a metas de ahorro, y lo excluye del top de categorías", async () => {
+      prismaMock.savingsGoal.findMany.mockResolvedValue([{ category: "savings-kyoto" }]);
+      const reference = new Date(2026, 7, 1);
+      prismaMock.transaction.findMany.mockResolvedValue([
+        { type: "income", category: "salary", amount: 2000, date: new Date(2026, 7, 1) },
+        { type: "income", category: "savings-kyoto", amount: 150, date: new Date(2026, 7, 5) },
+        { type: "expense", category: "savings-kyoto", amount: 999, date: new Date(2026, 7, 6) }, // no debe colarse en topCategories
+      ]);
+
+      const result = await financeService.getAnalytics(1, reference.getMonth() + 1, reference.getFullYear());
+
+      const augustBucket = result.monthlyTrend.find((m) => m.month === 8 && m.year === 2026);
+      expect(augustBucket?.income).toBe(2849); // 2000 - (150 - 999)
+      expect(result.topCategories).toEqual([]);
     });
   });
 

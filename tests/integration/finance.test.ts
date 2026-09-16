@@ -74,6 +74,34 @@ describe("Finance Endpoints", () => {
       expect(response.body.expense).toBe(300);
       expect(response.body.balance).toBe(700);
     });
+
+    it("resta de Ingresos/Balance lo aportado a una meta ese mes, aunque haya nómina", async () => {
+      await request(app).post("/finance/savings-goals").set(authed()).send({
+        name: "Vacaciones",
+        targetAmount: 1000,
+        category: "savings-vacation",
+      });
+      await request(app).post("/finance/transactions").set(authed()).send({
+        type: "income",
+        amount: 1000,
+        category: "salary",
+      });
+
+      const goals = await request(app).get("/finance/savings-goals").set(authed());
+      await request(app)
+        .post(`/finance/savings-goals/${goals.body.savingsGoals[0].id}/contribute`)
+        .set(authed())
+        .send({ amount: 200 });
+
+      const response = await request(app).get(`/finance/balance/${month}/${year}`).set(authed());
+
+      expect(response.status).toBe(200);
+      expect(response.body.income).toBe(800); // 1000 de nómina - 200 aportados a la meta
+      expect(response.body.balance).toBe(800);
+
+      const savingsResponse = await request(app).get("/finance/savings-goals").set(authed());
+      expect(savingsResponse.body.savingsGoals[0].currentAmount).toBe(200); // sí cuenta en Ahorro
+    });
   });
 
   describe("GET /finance/transactions", () => {
