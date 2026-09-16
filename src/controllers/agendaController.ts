@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import * as agendaService from "../services/agendaService";
+import * as eventInvitationService from "../services/eventInvitationService";
 
 export async function getAgendaDay(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -155,6 +156,61 @@ export async function deleteEventException(req: AuthRequest, res: Response, next
     const { originalStartTime } = req.params;
     await agendaService.deleteEventException(userId, id, originalStartTime);
     res.json({ message: "Excepción eliminada" });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function inviteToEvent(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const eventId = parseInt(req.params.id, 10);
+    const invitation = await eventInvitationService.inviteToEvent(userId, eventId, req.body.identifier);
+    res.status(201).json(invitation);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listEventInvitations(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const eventId = parseInt(req.params.id, 10);
+    const result = await eventInvitationService.listEventInvitations(userId, eventId);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listReceivedInvitations(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const { status } = req.query as { status?: string };
+    const result = await eventInvitationService.listReceivedInvitations(userId, status);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function respondToInvitation(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const id = parseInt(req.params.id, 10);
+    const invitation = await eventInvitationService.respondToInvitation(userId, id, req.body.status);
+    res.json(invitation);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removeInvitation(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const id = parseInt(req.params.id, 10);
+    await eventInvitationService.removeInvitation(userId, id);
+    res.json({ message: "Invitación eliminada" });
   } catch (error) {
     next(error);
   }

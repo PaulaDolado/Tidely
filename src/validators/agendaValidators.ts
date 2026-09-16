@@ -95,6 +95,16 @@ export const importIcsSchema = Joi.object({
   ics: Joi.string().min(1).max(2_000_000).required(),
 }).options({ stripUnknown: true });
 
+// Igual que loginSchema (src/validators/authValidators.ts): quien invita puede escribir el
+// username O el email de la persona indistintamente, eventInvitationService decide con un OR.
+export const createInvitationSchema = Joi.object({
+  identifier: Joi.string().required(),
+}).options({ stripUnknown: true });
+
+export const respondInvitationSchema = Joi.object({
+  status: Joi.string().valid("accepted", "declined").required(),
+}).options({ stripUnknown: true });
+
 export const setExceptionSchema = Joi.object({
   originalStartTime: Joi.date().iso().required(),
   action: Joi.string()

@@ -74,6 +74,8 @@ model User {
   calendarDayMarks         CalendarDayMark[]
   eventCategories          EventCategory[]
   googleCalendarConnection GoogleCalendarConnection?
+  eventInvitationsSent     EventInvitation[] @relation("EventInvitationsSent")
+  eventInvitationsReceived EventInvitation[] @relation("EventInvitationsReceived")
 
   @@index([emailVerificationTokenHash])
 }
@@ -109,8 +111,10 @@ model Event {
   // recordatorio fijo de ~30 min que antes generaba `notificationService` para todos los eventos
   // por igual — cada evento configura los suyos, y puede tener varios o ninguno ([]).
   reminderMinutesBefore Int[] @default([30])
-  // Invitados: lista simple de nombres/emails sin flujo de invitación/aceptación (la app sigue
-  // siendo mono-usuario) — solo para llevar constancia de quién viene al evento.
+  // Invitados de fuera de Tidely: lista simple de nombres/emails sueltos, sin cuenta ni flujo de
+  // invitación — solo para llevar constancia de quién más viene. Para invitar a OTRO USUARIO de
+  // Tidely (que vea el evento en su propio calendario) está `EventInvitation`, aparte: son dos
+  // conceptos distintos a propósito, no se fusionan en esta misma lista.
   guests           String[] @default([])
   // Origen del evento: "tidely" (creado a mano, el caso normal) o "google" (importado por la
   // integración de solo lectura con Google Calendar, ver googleCalendarService). `googleEventId`
@@ -124,14 +128,51 @@ model Event {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category   EventCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  exceptions EventException[]
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    EventCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  exceptions  EventException[]
+  invitations EventInvitation[]
 
   @@index([userId])
   @@index([userId, startTime])
   @@index([userId, categoryId])
   @@unique([userId, googleEventId])
+}
+
+// Invitación de un usuario de Tidely a OTRO usuario de Tidely para un evento — a diferencia de
+// `Event.guests` (nombres/emails sueltos sin cuenta), esto sí da acceso real: mientras esté
+// "accepted", el evento aparece en el calendario del invitado (ver agendaService.findEventsInRange,
+// que junta "eventos propios" + "eventos con una invitación accepted"), con un distintivo para que
+// sepa que es compartido y quién lo creó. El invitado NUNCA puede editar el evento en sí (solo
+// quien lo creó) — lo único que puede hacer es aceptar/rechazar la invitación o borrarla del
+// todo (quitárselo de su calendario), ver eventInvitationService.ts.
+model EventInvitation {
+  id        Int      @id @default(autoincrement())
+  eventId   Int
+  // Quien invita — en la práctica siempre coincide con `Event.userId` (solo el dueño del evento
+  // puede invitar), pero se guarda aparte y no se deriva porque es más barato de leer (evita un
+  // JOIN a Event solo para saber el nombre de quien invitó) y deja la puerta abierta a que en el
+  // futuro alguien más que el dueño pueda invitar sin cambiar el modelo.
+  inviterId Int
+  inviteeId Int
+  // "pending" (recién invitado, a la espera) | "accepted" (ya sale en el calendario del
+  // invitado) | "declined" (el invitado dijo que no — se conserva la fila, no se borra, para no
+  // dejar que quien invita vuelva a invitar en bucle sin enterarse de que ya se rechazó una vez;
+  // ver eventInvitationService.inviteToEvent, que si encuentra una "declined" la reactiva a
+  // "pending" en vez de fallar con 409 como con una "pending"/"accepted" ya existente).
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  inviter User  @relation("EventInvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee User  @relation("EventInvitationsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  // Como mucho una invitación por (evento, invitado) — invitar dos veces a la misma persona
+  // reactiva/actualiza la fila existente en vez de duplicarla.
+  @@unique([eventId, inviteeId])
+  @@index([inviteeId, status])
+  @@index([eventId])
 }
 
 // Excepción a UNA ocurrencia concreta de una serie recurrente — mover o cancelar esa ocurrencia

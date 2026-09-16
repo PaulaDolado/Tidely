@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/database";
 import { parseDateParam, dayRange, weekRange, monthRange, yearRange, zonedDateKey, dayWorkWindow } from "../utils/dateHelpers";
 import { expandRecurringEvent, EventExceptionLike } from "../utils/recurrence";
@@ -30,23 +31,75 @@ interface EventFilters {
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
 
+// Selección mínima de quien creó el evento / de cada invitado aceptado — nunca el email ni nada
+// más de la cuenta ajena, solo lo justo para pintar el distintivo de "compartido" (ver
+// `computeSharing` más abajo). Mismo criterio que PUBLIC_USER_SELECT en eventInvitationService.ts.
+const SHARING_INCLUDE = {
+  user: { select: { id: true, name: true, username: true } },
+  invitations: {
+    where: { status: "accepted" as const },
+    include: { invitee: { select: { id: true, name: true, username: true } } },
+  },
+} satisfies Prisma.EventInclude;
+
+type EventWithSharingRaw = Prisma.EventGetPayload<{ include: typeof SHARING_INCLUDE }>;
+type PublicUser = { id: number; name: string; username: string };
+
+export interface EventSharing {
+  role: "owner" | "invitee";
+  // Presente solo cuando role === "owner": con quién(es) ya está compartido de verdad (invitación
+  // "accepted" — los "pending"/"declined" no cuentan para el distintivo, solo para gestionar la
+  // invitación en sí, ver GET /agenda/events/:id/invitations).
+  with?: PublicUser[];
+  // Presente solo cuando role === "invitee": quién creó el evento.
+  owner?: PublicUser;
+}
+
+/** `null` si el evento no está compartido con nadie (el caso normal) — si no, quién lo comparte
+ * con quién, desde el punto de vista de `userId` (ver EventSharing). */
+function computeSharing(event: EventWithSharingRaw, userId: number): EventSharing | null {
+  if (event.userId === userId) {
+    if (event.invitations.length === 0) return null;
+    return { role: "owner", with: event.invitations.map((i) => i.invitee) };
+  }
+  return { role: "invitee", owner: event.user };
+}
+
+// Quita las relaciones crudas (`user`/`invitations`) que solo se pidieron para calcular
+// `sharing` — sin esto, la respuesta de la API filtraría la lista de invitaciones enteras de
+// cada evento (con su `status`, ids...) en vez del resumen ya limpio que es `sharing`.
+function withSharing<T extends EventWithSharingRaw>(event: T, userId: number) {
+  const { user: _user, invitations: _invitations, ...rest } = event;
+  return { ...rest, sharing: computeSharing(event, userId) };
+}
+
 /**
- * Eventos dentro de [start, end]: los no recurrentes se consultan directo, y los
- * recurrentes se expanden en memoria a partir de la fila "plantilla" (ver utils/recurrence.ts),
- * aplicando las excepciones (mover/cancelar una ocurrencia suelta) que tenga cada plantilla.
- * No hay límite natural de fila-por-fila en BD para los recurrentes porque no se
- * materializan — por eso la paginación se aplica en memoria, después de mezclar y ordenar
- * ambos conjuntos.
+ * Eventos dentro de [start, end] VISIBLES para `userId`: los suyos propios + los ajenos a los
+ * que tenga una invitación "accepted" (ver EventInvitation) — estos últimos nunca se editan
+ * desde aquí, solo se ven (con el distintivo `sharing`, ver `withSharing`). Los no recurrentes se
+ * consultan directo, y los recurrentes se expanden en memoria a partir de la fila "plantilla"
+ * (ver utils/recurrence.ts), aplicando las excepciones (mover/cancelar una ocurrencia suelta) que
+ * tenga cada plantilla — las excepciones las puso quien creó el evento, pero valen igual para
+ * todo el mundo que lo vea, compartido o no. No hay límite natural de fila-por-fila en BD para
+ * los recurrentes porque no se materializan — por eso la paginación se aplica en memoria,
+ * después de mezclar y ordenar ambos conjuntos.
  */
 async function findEventsInRange(userId: number, start: Date, end: Date, filters: EventFilters) {
-  const categoryFilter = filters.categoryId ? { categoryId: filters.categoryId } : {};
+  // El filtro de categoría es propio de CADA usuario (ver EventCategory) — no tiene sentido
+  // aplicarlo a un evento ajeno compartido conmigo (su categoryId apunta a una categoría de
+  // QUIEN LO CREÓ, no a las mías), así que solo se combina con la condición de "eventos propios".
+  const ownWhere: Prisma.EventWhereInput = filters.categoryId ? { userId, categoryId: filters.categoryId } : { userId };
+  const sharedWhere: Prisma.EventWhereInput = { invitations: { some: { inviteeId: userId, status: "accepted" } } };
+  const visibleWhere: Prisma.EventWhereInput = { OR: [ownWhere, sharedWhere] };
 
   const [nonRecurring, recurringTemplates] = await Promise.all([
     prisma.event.findMany({
-      where: { userId, isRecurring: false, startTime: { gte: start }, endTime: { lte: end }, ...categoryFilter },
+      where: { ...visibleWhere, isRecurring: false, startTime: { gte: start }, endTime: { lte: end } },
+      include: SHARING_INCLUDE,
     }),
     prisma.event.findMany({
-      where: { userId, isRecurring: true, startTime: { lte: end }, ...categoryFilter },
+      where: { ...visibleWhere, isRecurring: true, startTime: { lte: end } },
+      include: SHARING_INCLUDE,
     }),
   ]);
 
@@ -62,9 +115,15 @@ async function findEventsInRange(userId: number, start: Date, end: Date, filters
     }
   }
 
+  // `sharing` se calcula UNA vez por plantilla, antes de expandir — cada ocurrencia virtual
+  // hereda el mismo distintivo vía el spread de abajo, no hace falta repetir el cálculo por
+  // ocurrencia (el compartido lo es la serie entera, no una fecha suelta).
+  const annotatedTemplates = recurringTemplates.map((t) => withSharing(t, userId));
+  const templateById = new Map(annotatedTemplates.map((t) => [t.id, t]));
+
   const virtualOccurrences = recurringTemplates.flatMap((template) =>
     expandRecurringEvent(template, start, end, exceptionsByEventId.get(template.id) ?? []).map((occurrence) => ({
-      ...template,
+      ...(templateById.get(template.id) as (typeof annotatedTemplates)[number]),
       startTime: occurrence.startTime,
       endTime: occurrence.endTime,
       isRecurringInstance: true,
@@ -74,7 +133,7 @@ async function findEventsInRange(userId: number, start: Date, end: Date, filters
   );
 
   const allEvents = [
-    ...nonRecurring.map((e) => ({ ...e, isRecurringInstance: false as const })),
+    ...nonRecurring.map((e) => ({ ...withSharing(e, userId), isRecurringInstance: false as const })),
     ...virtualOccurrences,
   ];
   allEvents.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());

@@ -12,6 +12,8 @@ import {
   setExceptionSchema,
   importIcsSchema,
   exportScopeParamSchema,
+  createInvitationSchema,
+  respondInvitationSchema,
 } from "../validators/agendaValidators";
 
 const router = Router();
@@ -250,5 +252,72 @@ router.delete(
   validate(exceptionParamSchema, "params"),
   agendaController.deleteEventException
 );
+
+/**
+ * @openapi
+ * /agenda/events/{id}/invitations:
+ *   post:
+ *     tags: [Agenda]
+ *     summary: Invitar a otro usuario de Tidely a un evento (por username o email) — solo quien lo creó puede invitar
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       201: { description: Invitación creada (o reactivada, si el invitado la había rechazado antes) }
+ *       403: { description: No autorizado (no eres quien creó el evento) }
+ *       404: { description: Evento no encontrado, o no existe ningún usuario con ese username/email }
+ *       409: { description: Ese usuario ya tiene una invitación pendiente o aceptada a este evento }
+ *   get:
+ *     tags: [Agenda]
+ *     summary: Lista todas las invitaciones de un evento (cualquier estado) — solo quien lo creó
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "{ invitations: [...] }" }
+ */
+router.post(
+  "/events/:id/invitations",
+  validate(idParamSchema, "params"),
+  validate(createInvitationSchema),
+  agendaController.inviteToEvent
+);
+router.get("/events/:id/invitations", validate(idParamSchema, "params"), agendaController.listEventInvitations);
+
+/**
+ * @openapi
+ * /agenda/invitations:
+ *   get:
+ *     tags: [Agenda]
+ *     summary: Invitaciones que ha recibido el usuario autenticado (?status=pending por defecto en el frontend, pero aquí sin filtro trae todas)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [pending, accepted, declined] }
+ *     responses:
+ *       200: { description: "{ invitations: [...] }" }
+ */
+router.get("/invitations", agendaController.listReceivedInvitations);
+
+/**
+ * @openapi
+ * /agenda/invitations/{id}:
+ *   put:
+ *     tags: [Agenda]
+ *     summary: Aceptar o rechazar una invitación recibida — solo el propio invitado
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Invitación actualizada }
+ *   delete:
+ *     tags: [Agenda]
+ *     summary: Eliminar la invitación del todo — el invitado la usa para quitarse el evento de su calendario, quien invitó para revocarla
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Invitación eliminada }
+ */
+router.put(
+  "/invitations/:id",
+  validate(idParamSchema, "params"),
+  validate(respondInvitationSchema),
+  agendaController.respondToInvitation
+);
+router.delete("/invitations/:id", validate(idParamSchema, "params"), agendaController.removeInvitation);
 
 export default router;
