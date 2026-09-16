@@ -5,10 +5,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import { listGoals, Goal } from "../api/goals";
 import { colors, fonts, radius } from "../theme";
 
-// Colores que se leen bien sobre la tarjeta bg-primary (sage) del progreso de objetivos — mismo
-// criterio que dashboard/src/components/GoalsDonutChart.tsx (evita primary/positive, que son el
-// mismo sage y se camuflarían), traducido a los tokens RGB de theme.ts.
-const GOALS_DONUT_PALETTE = [colors.primaryForeground, colors.hobby, colors.secondary, colors.warning];
+// Colores que se leen bien sobre la tarjeta bg-goals-card (sage, o el azul apagado propio de
+// "Oscuro"/"Sistema" oscuro) del progreso de objetivos — mismo criterio que
+// dashboard/src/components/GoalsDonutChart.tsx (evita primary/positive, que son el mismo sage y
+// se camuflarían), traducido a los tokens RGB de theme.ts.
+const GOALS_DONUT_PALETTE = [colors.goalsCardForeground, colors.hobby, colors.secondary, colors.warning];
 
 // Más pequeño que un donut "de cartel": va al lado de la lista de objetivos, no tiene toda la
 // tarjeta para él solo — mismas medidas que la web.
@@ -137,10 +138,10 @@ export function GoalsProgressCard() {
 }
 
 const styles = StyleSheet.create({
-  // rounded-3xl bg-primary p-8 text-primary-foreground de la web.
+  // rounded-3xl bg-goals-card p-8 text-goals-card-foreground de la web.
   card: {
     borderRadius: radius.card,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.goalsCard,
     padding: 32,
   },
   title: {
@@ -148,30 +149,30 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textTransform: "uppercase",
     letterSpacing: 1,
-    color: colors.primaryForeground,
+    color: colors.goalsCardForeground,
     opacity: 0.6,
     marginBottom: 24,
   },
   emptyText: {
     fontFamily: fonts.sans,
     fontSize: 14,
-    color: colors.primaryForeground,
+    color: colors.goalsCardForeground,
     opacity: 0.8,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 16 },
   donutWrap: { width: SIZE, height: SIZE, alignItems: "center", justifyContent: "center" },
   donutCenter: { position: "absolute", alignItems: "center", justifyContent: "center" },
-  donutPercent: { fontFamily: fonts.serif, fontSize: 24, color: colors.primaryForeground },
+  donutPercent: { fontFamily: fonts.serif, fontSize: 24, color: colors.goalsCardForeground },
   donutLabel: {
     fontFamily: fonts.sans,
     fontSize: 10,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    color: colors.primaryForeground,
+    color: colors.goalsCardForeground,
     opacity: 0.6,
   },
   legend: { flex: 1, minWidth: 0, gap: 8 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 6, minWidth: 0 },
   legendDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  legendText: { flex: 1, minWidth: 0, fontFamily: fonts.sans, fontSize: 12, color: colors.primaryForeground, opacity: 0.8 },
+  legendText: { flex: 1, minWidth: 0, fontFamily: fonts.sans, fontSize: 12, color: colors.goalsCardForeground, opacity: 0.8 },
 });

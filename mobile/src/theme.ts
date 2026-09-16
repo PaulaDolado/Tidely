@@ -64,6 +64,12 @@ export interface ColorPalette {
   habitTint: string;
   cover: string;
   coverTint: string;
+  // Fondo de la tarjeta sólida "Progreso de objetivos" (GoalsProgressCard) — por defecto igual
+  // que primary/primaryForeground (así se queda en todos los temas salvo "oscuro"/"sistema" en
+  // modo oscuro, ver dashboard/src/styles.css: --goals-card), donde se pasa a un azul apagado
+  // propio en vez del primary vivo (#0A84FF), demasiado brillante para ocupar toda una tarjeta.
+  goalsCard: string;
+  goalsCardForeground: string;
 }
 
 export function withAlpha(hex: string, alpha: number): string {
@@ -85,11 +91,18 @@ type PaletteBase = Omit<
   | "hobbyTint"
   | "habitTint"
   | "coverTint"
->;
+  | "goalsCard"
+  | "goalsCardForeground"
+> &
+  // Solo "oscuro" necesita un valor propio (ver el comentario de goalsCard en ColorPalette) —
+  // el resto de temas lo dejan sin especificar y cae al primary/primaryForeground de siempre.
+  Partial<Pick<ColorPalette, "goalsCard" | "goalsCardForeground">>;
 
 function buildPalette(base: PaletteBase): ColorPalette {
   return {
     ...base,
+    goalsCard: base.goalsCard ?? base.primary,
+    goalsCardForeground: base.goalsCardForeground ?? base.primaryForeground,
     primaryTint: withAlpha(base.primary, 0.15),
     destructiveTint: withAlpha(base.destructive, 0.15),
     negativeTint: withAlpha(base.negative, 0.15),
@@ -172,14 +185,24 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     primaryForeground: "#FFFFFF",
     secondary: "#2C2C2E",
     secondaryForeground: "#F2F2F7",
+    // destructive se queda en su rojo de siempre (peligro real) y primary en su azul de siempre
+    // (acento, igual que en "Básico") — mismo criterio que en "espresso"/"basico" más abajo.
     destructive: "#FF453A",
     destructiveForeground: "#FFFFFF",
-    negative: "#FF453A",
-    positive: "#30D158",
-    warning: "#FFD60A",
-    hobby: "#FF9F0A",
-    habit: "#5E5CE6",
-    cover: "#AC8E68",
+    // Los 6 colores seleccionables pasan de los vivos naranja/verde/amarillo/morado/cuero de
+    // System Colors a una rampa de grises oscuros, para que "Oscuro" se sienta enteramente en
+    // tonos apagados, no con acentos de neón encima del negro.
+    negative: "#EAEAEA",
+    positive: "#969696",
+    warning: "#B4B4B4",
+    hobby: "#CCCCCC",
+    habit: "#787878",
+    cover: "#5A5A5A",
+    // Azul apagado en vez del primary vivo (#0A84FF) — ver el comentario de goalsCard en
+    // ColorPalette más arriba. Mismos hex que --goals-card en [data-theme="oscuro"] de
+    // dashboard/src/styles.css.
+    goalsCard: "#24384F",
+    goalsCardForeground: "#F2F2F7",
   }),
 
   // Tonos verdes/oliva y crema.

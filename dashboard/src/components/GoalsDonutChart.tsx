@@ -1,9 +1,10 @@
 import { Goal } from "../types";
 
-// Colores que se leen bien sobre la tarjeta bg-primary (sage) del progreso de objetivos —
+// Colores que se leen bien sobre la tarjeta bg-goals-card (sage, o el azul apagado propio de
+// "Oscuro"/"Sistema" oscuro — ver --goals-card en styles.css) del progreso de objetivos —
 // evitamos "primary"/"positive" (son el mismo sage, se camuflarían) y ciclamos si hay más
 // objetivos que colores.
-export const GOALS_DONUT_PALETTE = ["var(--primary-foreground)", "var(--hobby)", "var(--sand)", "var(--warning)"];
+export const GOALS_DONUT_PALETTE = ["var(--goals-card-foreground)", "var(--hobby)", "var(--sand)", "var(--warning)"];
 
 // Más pequeño que un donut "de cartel": va al lado de la lista de objetivos dentro de una
 // tarjeta estrecha (la barra lateral de Agenda), no tiene toda la tarjeta para él solo.

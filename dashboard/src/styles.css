@@ -36,6 +36,8 @@
   --color-warning: var(--warning);
   --color-habit: var(--habit);
   --color-cover: var(--cover);
+  --color-goals-card: var(--goals-card);
+  --color-goals-card-foreground: var(--goals-card-foreground);
   --shadow-soft: 0 1px 2px oklch(0.284 0.008 59.3 / 0.04), 0 8px 24px -16px oklch(0.284 0.008 59.3 / 0.25);
 }
 
@@ -75,6 +77,12 @@
   --border: oklch(0.284 0.008 59.3 / 0.1);
   --input: oklch(0.284 0.008 59.3 / 0.12);
   --ring: var(--sage);
+  /* Fondo de la tarjeta sólida "Progreso de objetivos" (GoalsProgressCard) — por defecto igual
+     que --primary/--primary-foreground (aquí no cambia nada), pero "Oscuro" y "Sistema" en modo
+     oscuro lo sobrescriben con un azul apagado propio: reusar --primary tal cual ahí daba un
+     azul de acento (#0a84ff) demasiado vivo para ocupar toda una tarjeta grande. */
+  --goals-card: var(--primary);
+  --goals-card-foreground: var(--primary-foreground);
   /* Barra de scroll "cápsula" del menú (ver .capsule-scrollbar): sin pista (transparente) y
      barra en el gris neutro por defecto del scrollbar del sistema, en vez del marrón chocolate
      que llevaba antes. */
@@ -117,6 +125,10 @@
     --warning: #ffd60a;
     --habit: #5e5ce6;
     --cover: #ac8e68;
+    /* Azul apagado en vez del --primary vivo (#0a84ff) — ver el comentario de --goals-card en
+       :root más arriba. */
+    --goals-card: #24384f;
+    --goals-card-foreground: #f2f2f7;
   }
 }
 
@@ -140,11 +152,19 @@
   --secondary-foreground: #1c1c1e;
   --muted: #e5e5ea;
   --muted-foreground: #6e6e73;
+  /* --destructive se queda en su rojo de siempre a propósito: sigue siendo la señal real de
+     "peligro" (borrar, error) — igual criterio que en "espresso", ver el comentario de ese
+     bloque más abajo. */
   --destructive: #ff3b30;
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
   --input: rgba(0, 0, 0, 0.12);
   --ring: #1e1e1e;
+  /* Los 6 colores seleccionables (categorías de Agenda, leyenda del calendario anual, placeholders
+     de Galería, tapa de libretas/proyectos) pasan a una rampa de grises neutros — misma idea que
+     la rampa de marrones de "espresso" — en vez del naranja/verde/rojo/amarillo/morado/cuero de
+     siempre, que rompían la neutralidad del resto del tema.
+  */
   --hobby: #d2d2d2;
   --positive: #969696;
   --negative: #3c3c3c;
@@ -173,12 +193,21 @@
   --border: rgba(255, 255, 255, 0.12);
   --input: rgba(255, 255, 255, 0.16);
   --ring: #0a84ff;
-  --hobby: #ff9f0a;
-  --positive: #30d158;
-  --negative: #ff453a;
-  --warning: #ffd60a;
-  --habit: #5e5ce6;
-  --cover: #ac8e68;
+  /* --destructive se queda en su rojo de siempre (peligro real) y --primary en su azul de
+     siempre (acento, igual que en "Básico") — mismo criterio que en "espresso"/"basico" arriba.
+     Los 6 colores seleccionables sí pasan de los vivos naranja/verde/amarillo/morado/cuero de
+     System Colors a una rampa de grises oscuros — para que "Oscuro" se sienta enteramente en
+     tonos apagados, no con acentos de neón encima del negro. */
+  --hobby: #cccccc;
+  --positive: #969696;
+  --negative: #eaeaea;
+  --warning: #b4b4b4;
+  --habit: #787878;
+  --cover: #5a5a5a;
+  /* Azul apagado en vez del --primary vivo (#0a84ff) — ver el comentario de --goals-card en
+     :root más arriba. */
+  --goals-card: #24384f;
+  --goals-card-foreground: #f2f2f7;
 }
 
 /* Salvia — tonos verdes/oliva y crema (marfil, champán, melocotón, bistre español, codium), a
@@ -223,16 +252,24 @@
   --secondary-foreground: #f3e4d3;
   --muted: #5c402f;
   --muted-foreground: #c9af9c;
+  /* --destructive se queda en su rojo-teja de siempre a propósito: es la señal real de "peligro"
+     (borrar, error), independiente de --negative — que abajo sí se pasa a marrón porque esa es la
+     que usa el selector de color de categorías/leyenda anual ("Rojo") y no debe destacar en rojo
+     entre el resto de opciones marrones. */
   --destructive: #c1503b;
   --destructive-foreground: #f3e4d3;
   --border: rgba(243, 228, 211, 0.14);
   --input: rgba(243, 228, 211, 0.18);
   --ring: #c89674;
-  --hobby: #c89674;
-  --positive: #7c8a5a;
-  --negative: #c1503b;
-  --warning: #d9a441;
-  --habit: #6e88a3;
+  /* Los 7 colores seleccionables (categorías de Agenda, leyenda del calendario anual, placeholders
+     de Galería, tapa de libretas/proyectos) pasan a una única rampa de marrones — como la paleta
+     de referencia (caramelo → moca → corteza) — en vez de mantener el naranja/verde/azul/dorado
+     de siempre, que desentonaban con el resto del tema. */
+  --hobby: #b68868;
+  --positive: #805d46;
+  --negative: #6e4e3b;
+  --warning: #a4795d;
+  --habit: #926b52;
   --cover: #91664a;
 }
 
