@@ -3,7 +3,7 @@ import { useTheme } from "../context/ThemeContext";
 import { fonts, PALETTES, radius, THEME_OPTIONS } from "../theme";
 
 // Puerto de la sección "General > Apariencia" de dashboard/src/components/SettingsDialog.tsx:
-// misma idea (5 temas con una miniatura fondo+tarjeta+acento cada uno, tema activo resaltado con
+// misma idea (6 temas con una miniatura fondo+tarjeta+acento cada uno, tema activo resaltado con
 // borde), pero como componente RN suelto en vez de sección de un diálogo más grande — mobile no
 // tiene (todavía) el resto de secciones de ese diálogo (Cuenta, políticas...), así que de momento
 // esto es TODO el "Ajustes" de mobile, abierto directamente desde el pie del menú (ver

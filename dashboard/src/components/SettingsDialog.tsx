@@ -78,9 +78,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 }
 
 // Previsualización de cada tema en su propia miniatura (fondo/tarjeta/acento) — colores fijos en
-// vez de leer las variables CSS reales, a propósito: aquí hay que ENSEÑAR los 5 temas a la vez
-// sin que elegir uno cambie cómo se ven los otros 4 en esta misma pantalla (si leyeran
-// `var(--color-primary)` etc., las 5 miniaturas mostrarían siempre el tema ACTIVO, no el suyo
+// vez de leer las variables CSS reales, a propósito: aquí hay que ENSEÑAR los 6 temas a la vez
+// sin que elegir uno cambie cómo se ven los otros 5 en esta misma pantalla (si leyeran
+// `var(--color-primary)` etc., las 6 miniaturas mostrarían siempre el tema ACTIVO, no el suyo
 // propio). Mismos valores que sus bloques `[data-theme="..."]` en styles.css — si cambian ahí,
 // cambian aquí también.
 const THEME_PREVIEWS: Record<Theme, { background: string; card: string; primary: string }> = {
@@ -89,6 +89,7 @@ const THEME_PREVIEWS: Record<Theme, { background: string; card: string; primary:
   oscuro: { background: "#000000", card: "#1c1c1e", primary: "#0a84ff" },
   salvia: { background: "#f9ead2", card: "#fffbf3", primary: "#4f5127" },
   espresso: { background: "#160c06", card: "#332116", primary: "#c89674" },
+  amor: { background: "#fdf0f3", card: "#fffbfc", primary: "#c2456b" },
 };
 
 // Extraído aparte (no solo dentro de GeneralSection) porque OnboardingWizard reutiliza el mismo

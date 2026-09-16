@@ -1,13 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
-// 5 temas (Ajustes > General > Apariencia, ver SettingsDialog.tsx): "sistema" es el look actual
+// 6 temas (Ajustes > General > Apariencia, ver SettingsDialog.tsx): "sistema" es el look actual
 // de la app sin cambios (sigue el claro/oscuro del sistema operativo, ver el bloque
 // `prefers-color-scheme` en styles.css); el resto son elecciones explícitas que ignoran el
 // sistema operativo. Los valores de cada paleta viven en styles.css (`[data-theme="..."]`), no
 // aquí — este contexto solo decide CUÁL aplicar y lo persiste, la definición de colores en sí es
 // CSS puro para que cualquier clase Tailwind que ya use estos tokens (bg-primary,
 // text-muted-foreground...) cambie sola sin tocar componentes.
-export type Theme = "sistema" | "basico" | "oscuro" | "salvia" | "espresso";
+export type Theme = "sistema" | "basico" | "oscuro" | "salvia" | "espresso" | "amor";
 
 export const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: "sistema", label: "Sistema" },
@@ -15,6 +15,7 @@ export const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: "oscuro", label: "Oscuro" },
   { value: "salvia", label: "Salvia" },
   { value: "espresso", label: "Espresso" },
+  { value: "amor", label: "Amor" },
 ];
 
 const STORAGE_KEY = "life-organizer:theme";

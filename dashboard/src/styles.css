@@ -236,6 +236,36 @@
   --cover: #91664a;
 }
 
+/* Amor — tonos rosas (frambuesa, blush, coral), fondo claro como "Salvia" en vez de oscuro como
+   "Espresso". `positive` se aparta a un verde salvia (en vez de un rosa más) a propósito, igual
+   criterio que `positive` en "Espresso": necesita distinguirse a simple vista de `primary` en
+   insignias de "completado"/objetivos, y ningún tono de rosa lo conseguía sin confundirse. */
+[data-theme="amor"] {
+  --background: #fdf0f3;
+  --foreground: #4a1f2b;
+  --card: #fffbfc;
+  --card-foreground: #4a1f2b;
+  --primary: #c2456b;
+  --primary-foreground: #fdf3f6;
+  --secondary: #f6d6de;
+  --secondary-foreground: #4a1f2b;
+  --muted: #f5e4e8;
+  --muted-foreground: #8a5568;
+  --destructive: #c0483c;
+  --destructive-foreground: #fdf3f6;
+  --border: rgba(74, 31, 43, 0.12);
+  --input: rgba(74, 31, 43, 0.15);
+  --ring: #c2456b;
+  --hobby: #e2917f;
+  --positive: #7d8f69;
+  --negative: #c0483c;
+  --warning: #cc9a3d;
+  /* Único tono frío de la paleta (igual criterio que --habit en el resto de temas) — se mantiene
+     aunque el resto de esta paleta sea cálida, para que Hábitos se siga distinguiendo. */
+  --habit: #7390a8;
+  --cover: #8a5568;
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

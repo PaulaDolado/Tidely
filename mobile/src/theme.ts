@@ -1,13 +1,13 @@
 // Tokens de diseño — puerto directo de la paleta/tipografía del dashboard web
 // (dashboard/src/styles.css: bloque `:root` y los `[data-theme="..."]`) a valores RGB/hex que
-// React Native entiende. Ahora hay 5 temas (Ajustes > General > Apariencia, ver
+// React Native entiende. Ahora hay 6 temas (Ajustes > General > Apariencia, ver
 // ThemeContext.tsx): "sistema" son los valores de siempre (sin cambios, sigue el claro/oscuro del
 // dispositivo), "basico" es la paleta neutra en tonalidades de grises (fondo claro estilo Apple,
 // pero SIN ningún acento de color — ver el comentario de PALETTES.basico más abajo), "oscuro" es
 // su contrapartida oscura (esa sí conserva el azul de acento y los System Colors vivos de Apple,
-// no se le pidió lo mismo que a "basico") y "salvia"/"espresso" son las dos paletas de marca
-// (verde/crema y marrón café). Mismos hex que sus equivalentes `[data-theme]` en styles.css — si
-// cambian ahí, cambian aquí también.
+// no se le pidió lo mismo que a "basico") y "salvia"/"espresso"/"amor" son las tres paletas de
+// marca (verde/crema, marrón café y rosa). Mismos hex que sus equivalentes `[data-theme]` en
+// styles.css — si cambian ahí, cambian aquí también.
 //
 // `colors` sigue siendo el MISMO objeto de siempre en cuanto a forma de uso (`import { colors }
 // from "../theme"; colors.background`) — las ~26 pantallas/componentes que ya lo importan así no
@@ -21,7 +21,7 @@
 // dashboard/src/pages/AgendaPage.tsx y PlanificadorPage.tsx: fondo al 15% de opacidad del color +
 // texto en el color sólido — de ahí los `*Tint` en rgba (RN no tiene el `bg-x/15` de Tailwind).
 
-export type Theme = "sistema" | "basico" | "oscuro" | "salvia" | "espresso";
+export type Theme = "sistema" | "basico" | "oscuro" | "salvia" | "espresso" | "amor";
 
 export const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: "sistema", label: "Sistema" },
@@ -29,6 +29,7 @@ export const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: "oscuro", label: "Oscuro" },
   { value: "salvia", label: "Salvia" },
   { value: "espresso", label: "Espresso" },
+  { value: "amor", label: "Amor" },
 ];
 
 export interface ColorPalette {
@@ -232,6 +233,34 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     hobby: "#B68868",
     habit: "#926B52",
     cover: "#91664A",
+  }),
+
+  // Tonos rosas (frambuesa, blush, coral) — fondo claro como "Salvia", no oscuro como "Espresso".
+  // `positive` se aparta a un verde salvia (en vez de un rosa más) a propósito, igual criterio
+  // que `positive` en "Espresso": necesita distinguirse a simple vista de `primary` en insignias
+  // de "completado"/objetivos, y ningún tono de rosa lo conseguía sin confundirse.
+  amor: buildPalette({
+    background: "#FDF0F3",
+    card: "#FFFBFC",
+    foreground: "#4A1F2B",
+    mutedForeground: "#8A5568",
+    muted: "#F5E4E8",
+    border: "rgba(74,31,43,0.12)",
+    inputBorder: "rgba(74,31,43,0.15)",
+    primary: "#C2456B",
+    primaryForeground: "#FDF3F6",
+    secondary: "#F6D6DE",
+    secondaryForeground: "#4A1F2B",
+    destructive: "#C0483C",
+    destructiveForeground: "#FDF3F6",
+    negative: "#C0483C",
+    positive: "#7D8F69",
+    warning: "#CC9A3D",
+    hobby: "#E2917F",
+    // Único tono frío de la paleta (igual criterio que --habit en el resto de temas) — se
+    // mantiene aunque el resto de esta paleta sea cálida, para que Hábitos se siga distinguiendo.
+    habit: "#7390A8",
+    cover: "#8A5568",
   }),
 };
 
