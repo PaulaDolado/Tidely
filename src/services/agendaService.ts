@@ -45,24 +45,31 @@ const SHARING_INCLUDE = {
 type EventWithSharingRaw = Prisma.EventGetPayload<{ include: typeof SHARING_INCLUDE }>;
 type PublicUser = { id: number; name: string; username: string };
 
-export interface EventSharing {
-  role: "owner" | "invitee";
-  // Presente solo cuando role === "owner": con quién(es) ya está compartido de verdad (invitación
-  // "accepted" — los "pending"/"declined" no cuentan para el distintivo, solo para gestionar la
-  // invitación en sí, ver GET /agenda/events/:id/invitations).
-  with?: PublicUser[];
-  // Presente solo cuando role === "invitee": quién creó el evento.
-  owner?: PublicUser;
-}
+export type EventSharing =
+  // Con quién(es) ya está compartido de verdad (invitación "accepted" — los "pending"/"declined"
+  // no cuentan para el distintivo, solo para gestionar la invitación en sí, ver
+  // GET /agenda/events/:id/invitations).
+  | { role: "owner"; with: PublicUser[] }
+  // `invitationId`: la propia invitación ACEPTADA de este usuario — el frontend la necesita para
+  // poder ofrecer "quitarme este evento del calendario" (DELETE /agenda/invitations/:id), ya que
+  // el invitado nunca puede tocar el Event en sí (ver comentario de EventInvitation en schema.prisma).
+  | { role: "invitee"; owner: PublicUser; invitationId: number };
 
 /** `null` si el evento no está compartido con nadie (el caso normal) — si no, quién lo comparte
- * con quién, desde el punto de vista de `userId` (ver EventSharing). */
+ * con quién, desde el punto de vista de `userId` (ver EventSharing). Defensivo ante `user`/
+ * `invitations` ausentes (tolera que un test unitario mockee `prisma.event.findMany` sin el
+ * `include` real) en vez de asumir que siempre vienen — en el código de verdad SIEMPRE vienen,
+ * porque `EventWithSharingRaw` obliga a pasar por `SHARING_INCLUDE` para poder llamar a esto.
+ */
 function computeSharing(event: EventWithSharingRaw, userId: number): EventSharing | null {
+  const invitations = event.invitations ?? [];
   if (event.userId === userId) {
-    if (event.invitations.length === 0) return null;
-    return { role: "owner", with: event.invitations.map((i) => i.invitee) };
+    if (invitations.length === 0) return null;
+    return { role: "owner", with: invitations.map((i) => i.invitee) };
   }
-  return { role: "invitee", owner: event.user };
+  const mine = invitations.find((i) => i.inviteeId === userId);
+  if (!mine || !event.user) return null;
+  return { role: "invitee", owner: event.user, invitationId: mine.id };
 }
 
 // Quita las relaciones crudas (`user`/`invitations`) que solo se pidieron para calcular
