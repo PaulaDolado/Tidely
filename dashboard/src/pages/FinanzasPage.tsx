@@ -131,13 +131,13 @@ export function FinanzasPage() {
         </div>
 
         <div className="space-y-6 lg:col-span-4">
-          <div className="rounded-3xl bg-primary p-8 text-primary-foreground">
+          <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
             <h2 className="mb-6 text-xs uppercase tracking-widest opacity-60">Resumen del mes</h2>
             <div className="space-y-4">
               <Row label="Ingresos" value={`+${eur(balance?.income ?? 0)}`} />
               <Row label="Gastos" value={`−${eur(balance?.expense ?? 0)}`} />
               <Row label="Ahorro" value={eur(totalAhorro)} />
-              <div className="my-2 h-px bg-primary-foreground/20" />
+              <div className="my-2 h-px bg-solid-card-foreground/20" />
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Saldo neto</span>
                 <span className="font-serif text-xl">{eur(balance?.balance ?? 0)}</span>

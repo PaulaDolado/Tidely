@@ -18,7 +18,7 @@ import {
   TransactionType,
   updateTransaction,
 } from "../api/finance";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
 // Puerto directo de dashboard/src/pages/FinanzasPage.tsx — mismos datos (balance del mes,
@@ -150,7 +150,7 @@ export function FinanzasScreen() {
               </View>
             )}
 
-            {/* rounded-3xl bg-primary p-8 text-primary-foreground de la web ("Resumen del mes")
+            {/* rounded-3xl bg-solid-card p-8 text-solid-card-foreground de la web ("Resumen del mes")
                 — antes se omitía a propósito por duplicar las tarjetas de arriba en una pantalla
                 de una sola columna (ver el comentario de cabecera), pero el usuario lo quiere de
                 vuelta con el mismo estilo que en la web, justo antes de "Top categorías". */}
@@ -458,17 +458,18 @@ const styles = StyleSheet.create({
   },
   cardTitleSecondary: { color: colors.secondaryForeground },
 
-  // rounded-3xl bg-primary p-8 text-primary-foreground de la web ("Resumen del mes") — fondo
-  // sólido sage, sin borde ni sombra, más padding que card-soft (p-8=32 vs p-6=24).
-  cardPrimary: { backgroundColor: colors.primary, borderRadius: radius.card, padding: 32, gap: 12 },
-  cardTitlePrimary: { color: colors.primaryForeground, opacity: 0.6 },
+  // rounded-3xl bg-solid-card p-8 text-solid-card-foreground de la web ("Resumen del mes") —
+  // fondo sólido sage (azul apagado en "Oscuro"/"Sistema" oscuro, ver theme.ts: solidCard), sin
+  // borde ni sombra, más padding que card-soft (p-8=32 vs p-6=24).
+  cardPrimary: { backgroundColor: colors.solidCard, borderRadius: radius.card, padding: 32, gap: 12 },
+  cardTitlePrimary: { color: colors.solidCardForeground, opacity: 0.6 },
   summaryMonthRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  summaryMonthLabel: { fontFamily: fonts.sans, fontSize: 13, color: colors.primaryForeground, opacity: 0.8 },
-  summaryMonthValue: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.primaryForeground },
-  // h-px bg-primary-foreground/20 de la web.
-  summaryMonthDivider: { height: 1, backgroundColor: "rgba(251, 250, 247, 0.2)" },
-  summaryMonthNetLabel: { fontFamily: fonts.sansSemiBold, fontSize: 14, color: colors.primaryForeground },
-  summaryMonthNetValue: { fontFamily: fonts.serif, fontSize: 20, color: colors.primaryForeground },
+  summaryMonthLabel: { fontFamily: fonts.sans, fontSize: 13, color: colors.solidCardForeground, opacity: 0.8 },
+  summaryMonthValue: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.solidCardForeground },
+  // h-px bg-solid-card-foreground/20 de la web.
+  summaryMonthDivider: { height: 1, backgroundColor: withAlpha(colors.solidCardForeground, 0.2) },
+  summaryMonthNetLabel: { fontFamily: fonts.sansSemiBold, fontSize: 14, color: colors.solidCardForeground },
+  summaryMonthNetValue: { fontFamily: fonts.serif, fontSize: 20, color: colors.solidCardForeground },
   trendRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 90 },
   trendBarWrap: { alignItems: "center", gap: 6, flex: 1 },
   trendBarTrack: { height: 64, justifyContent: "flex-end" },

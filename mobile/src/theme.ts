@@ -64,12 +64,13 @@ export interface ColorPalette {
   habitTint: string;
   cover: string;
   coverTint: string;
-  // Fondo de la tarjeta sólida "Progreso de objetivos" (GoalsProgressCard) — por defecto igual
+  // Fondo compartido por las tarjetas sólidas que usan primary a toda su superficie: "Progreso
+  // de objetivos" (GoalsProgressCard) y "Resumen del mes" (FinanzasScreen) — por defecto igual
   // que primary/primaryForeground (así se queda en todos los temas salvo "oscuro"/"sistema" en
-  // modo oscuro, ver dashboard/src/styles.css: --goals-card), donde se pasa a un azul apagado
+  // modo oscuro, ver dashboard/src/styles.css: --solid-card), donde se pasa a un azul apagado
   // propio en vez del primary vivo (#0A84FF), demasiado brillante para ocupar toda una tarjeta.
-  goalsCard: string;
-  goalsCardForeground: string;
+  solidCard: string;
+  solidCardForeground: string;
 }
 
 export function withAlpha(hex: string, alpha: number): string {
@@ -91,18 +92,18 @@ type PaletteBase = Omit<
   | "hobbyTint"
   | "habitTint"
   | "coverTint"
-  | "goalsCard"
-  | "goalsCardForeground"
+  | "solidCard"
+  | "solidCardForeground"
 > &
-  // Solo "oscuro" necesita un valor propio (ver el comentario de goalsCard en ColorPalette) —
+  // Solo "oscuro" necesita un valor propio (ver el comentario de solidCard en ColorPalette) —
   // el resto de temas lo dejan sin especificar y cae al primary/primaryForeground de siempre.
-  Partial<Pick<ColorPalette, "goalsCard" | "goalsCardForeground">>;
+  Partial<Pick<ColorPalette, "solidCard" | "solidCardForeground">>;
 
 function buildPalette(base: PaletteBase): ColorPalette {
   return {
     ...base,
-    goalsCard: base.goalsCard ?? base.primary,
-    goalsCardForeground: base.goalsCardForeground ?? base.primaryForeground,
+    solidCard: base.solidCard ?? base.primary,
+    solidCardForeground: base.solidCardForeground ?? base.primaryForeground,
     primaryTint: withAlpha(base.primary, 0.15),
     destructiveTint: withAlpha(base.destructive, 0.15),
     negativeTint: withAlpha(base.negative, 0.15),
@@ -198,11 +199,11 @@ export const PALETTES: Record<Theme, ColorPalette> = {
     hobby: "#CCCCCC",
     habit: "#787878",
     cover: "#5A5A5A",
-    // Azul apagado en vez del primary vivo (#0A84FF) — ver el comentario de goalsCard en
-    // ColorPalette más arriba. Mismos hex que --goals-card en [data-theme="oscuro"] de
+    // Azul apagado en vez del primary vivo (#0A84FF) — ver el comentario de solidCard en
+    // ColorPalette más arriba. Mismos hex que --solid-card en [data-theme="oscuro"] de
     // dashboard/src/styles.css.
-    goalsCard: "#24384F",
-    goalsCardForeground: "#F2F2F7",
+    solidCard: "#24384F",
+    solidCardForeground: "#F2F2F7",
   }),
 
   // Tonos verdes/oliva y crema.

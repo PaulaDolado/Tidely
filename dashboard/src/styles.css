@@ -36,8 +36,8 @@
   --color-warning: var(--warning);
   --color-habit: var(--habit);
   --color-cover: var(--cover);
-  --color-goals-card: var(--goals-card);
-  --color-goals-card-foreground: var(--goals-card-foreground);
+  --color-solid-card: var(--solid-card);
+  --color-solid-card-foreground: var(--solid-card-foreground);
   --shadow-soft: 0 1px 2px oklch(0.284 0.008 59.3 / 0.04), 0 8px 24px -16px oklch(0.284 0.008 59.3 / 0.25);
 }
 
@@ -77,12 +77,14 @@
   --border: oklch(0.284 0.008 59.3 / 0.1);
   --input: oklch(0.284 0.008 59.3 / 0.12);
   --ring: var(--sage);
-  /* Fondo de la tarjeta sólida "Progreso de objetivos" (GoalsProgressCard) — por defecto igual
-     que --primary/--primary-foreground (aquí no cambia nada), pero "Oscuro" y "Sistema" en modo
-     oscuro lo sobrescriben con un azul apagado propio: reusar --primary tal cual ahí daba un
-     azul de acento (#0a84ff) demasiado vivo para ocupar toda una tarjeta grande. */
-  --goals-card: var(--primary);
-  --goals-card-foreground: var(--primary-foreground);
+  /* Fondo compartido por las tarjetas/tapas "sólidas" que usan --primary a página completa:
+     "Progreso de objetivos" (GoalsProgressCard) y "Resumen del mes" (FinanzasPage) en Hoy/
+     Finanzas, y la tapa "Verde salvia" de las libretas de proyecto (ProyectosPage). Por defecto
+     igual que --primary/--primary-foreground (aquí no cambia nada), pero "Oscuro" y "Sistema" en
+     modo oscuro lo sobrescriben con un azul apagado propio: reusar --primary tal cual ahí daba un
+     azul de acento (#0a84ff) demasiado vivo para ocupar tanta superficie sólida. */
+  --solid-card: var(--primary);
+  --solid-card-foreground: var(--primary-foreground);
   /* Barra de scroll "cápsula" del menú (ver .capsule-scrollbar): sin pista (transparente) y
      barra en el gris neutro por defecto del scrollbar del sistema, en vez del marrón chocolate
      que llevaba antes. */
@@ -125,10 +127,10 @@
     --warning: #ffd60a;
     --habit: #5e5ce6;
     --cover: #ac8e68;
-    /* Azul apagado en vez del --primary vivo (#0a84ff) — ver el comentario de --goals-card en
+    /* Azul apagado en vez del --primary vivo (#0a84ff) — ver el comentario de --solid-card en
        :root más arriba. */
-    --goals-card: #24384f;
-    --goals-card-foreground: #f2f2f7;
+    --solid-card: #24384f;
+    --solid-card-foreground: #f2f2f7;
   }
 }
 
@@ -204,10 +206,10 @@
   --warning: #b4b4b4;
   --habit: #787878;
   --cover: #5a5a5a;
-  /* Azul apagado en vez del --primary vivo (#0a84ff) — ver el comentario de --goals-card en
+  /* Azul apagado en vez del --primary vivo (#0a84ff) — ver el comentario de --solid-card en
      :root más arriba. */
-  --goals-card: #24384f;
-  --goals-card-foreground: #f2f2f7;
+  --solid-card: #24384f;
+  --solid-card-foreground: #f2f2f7;
 }
 
 /* Salvia — tonos verdes/oliva y crema (marfil, champán, melocotón, bistre español, codium), a

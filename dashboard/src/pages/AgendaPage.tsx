@@ -2000,7 +2000,7 @@ function GoalsProgressCard({ goals }: { goals: Goal[] }) {
   const overall = goals.length > 0 ? Math.round(goals.reduce((sum, g) => sum + percentOf(g), 0) / goals.length) : 0;
 
   return (
-    <div className="rounded-3xl bg-goals-card p-8 text-goals-card-foreground">
+    <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
       <h2 className="mb-6 text-xs uppercase tracking-widest opacity-60">Progreso de objetivos</h2>
 
       {goals.length === 0 ? (

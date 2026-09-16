@@ -142,13 +142,13 @@ export function ProyectosPage({
 
 // Clases por tono — "sand" es el único de los tres que necesita borde (su fondo, --secondary,
 // tiene una luminosidad parecida a --background y sin borde se difumina contra la página; --cover
-// y --primary/sage ya son lo bastante oscuros/saturados para destacar solos). "solid" agrupa
+// y --solid-card/sage ya son lo bastante oscuros/saturados para destacar solos). "solid" agrupa
 // cover+sage porque ambos necesitan texto claro y las mismas superposiciones semitransparentes
 // (bg-background/opacity-N), frente a sand que usa los tokens normales de texto sobre fondo claro.
 const TONE_CLASSES: Record<ProjectColor, { card: string; tab: string; solid: boolean }> = {
   cover: { card: "bg-cover text-background", tab: "bg-cover", solid: true },
   sand: { card: "border border-secondary bg-secondary", tab: "bg-secondary", solid: false },
-  sage: { card: "bg-primary text-primary-foreground", tab: "bg-primary", solid: true },
+  sage: { card: "bg-solid-card text-solid-card-foreground", tab: "bg-solid-card", solid: true },
 };
 
 function NotebookCover({ project, tone, onOpen }: { project: Project; tone: ProjectColor; onOpen: () => void }) {
