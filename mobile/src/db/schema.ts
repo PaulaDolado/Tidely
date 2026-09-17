@@ -99,6 +99,166 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       synced INTEGER NOT NULL DEFAULT 0,
       pendingOp TEXT
     );
+
+    -- Fase 2 de sync (Finanzas, Objetivos, Proyectos, Horario, Páginas personalizadas): mismo
+    -- patrón id/synced/pendingOp que events/tasks/notes arriba, para todo lo que el móvil puede
+    -- crear offline. currentAmount de una meta de ahorro NO se guarda aquí — se calcula sumando
+    -- transactions locales de esa categoría, igual que hace el propio backend (ver
+    -- financeService.listSavingsGoals / ServerSavingsGoal en types.ts).
+
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      category TEXT NOT NULL,
+      description TEXT,
+      date TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS savings_goals (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'ahorro',
+      targetAmount REAL NOT NULL,
+      category TEXT NOT NULL,
+      stepAmount REAL NOT NULL DEFAULT 100,
+      deadline TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      period TEXT NOT NULL,
+      targetValue INTEGER NOT NULL,
+      currentValue INTEGER NOT NULL DEFAULT 0,
+      completed INTEGER NOT NULL DEFAULT 0,
+      bonusPoints INTEGER NOT NULL DEFAULT 10,
+      periodStart TEXT NOT NULL,
+      periodEnd TEXT NOT NULL,
+      expired INTEGER NOT NULL DEFAULT 0,
+      autoRenew INTEGER NOT NULL DEFAULT 1,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    -- A diferencia de habit_logs, SÍ se edita/borra offline (ver goalsService.updateProgress/
+    -- deleteProgress en el backend) — por eso lleva el triple id/synced/pendingOp normal, no la
+    -- clave compuesta de habit_logs.
+    CREATE TABLE IF NOT EXISTS goal_progress (
+      id TEXT PRIMARY KEY,
+      goalId TEXT NOT NULL,
+      value INTEGER NOT NULL,
+      note TEXT,
+      date TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'idea',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      deadline TEXT,
+      color TEXT,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS project_tasks (
+      id TEXT PRIMARY KEY,
+      projectId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    -- content es HTML enriquecido (blob opaco para el sync — se sobrescribe entero, nunca se
+    -- fusiona campo a campo, ver ProjectPage.content en el backend).
+    CREATE TABLE IF NOT EXISTS project_pages (
+      id TEXT PRIMARY KEY,
+      projectId TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT 'Página sin título',
+      content TEXT NOT NULL DEFAULT '',
+      "order" REAL NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS schedules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      "order" REAL NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS schedule_rows (
+      id TEXT PRIMARY KEY,
+      scheduleId TEXT NOT NULL,
+      "order" REAL NOT NULL DEFAULT 0,
+      timeLabel TEXT NOT NULL DEFAULT '',
+      monday TEXT NOT NULL DEFAULT '',
+      tuesday TEXT NOT NULL DEFAULT '',
+      wednesday TEXT NOT NULL DEFAULT '',
+      thursday TEXT NOT NULL DEFAULT '',
+      friday TEXT NOT NULL DEFAULT '',
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS calendar_legend_categories (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      color TEXT NOT NULL,
+      "order" INTEGER NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    -- Clave natural (date), no un id local — igual criterio que event_exceptions, pero esta SÍ
+    -- se escribe localmente (pintar/despintar un día), así que necesita su propio synced/
+    -- pendingOp. serverId permite emparejar el tombstone de un borrado hecho en otro
+    -- dispositivo (mismo motivo que habit_logs.serverId).
+    CREATE TABLE IF NOT EXISTS calendar_day_marks (
+      date TEXT PRIMARY KEY,
+      categoryId TEXT NOT NULL,
+      serverId INTEGER,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
+
+    -- content es JSON por plantilla (blob opaco para el sync, igual que project_pages.content).
+    CREATE TABLE IF NOT EXISTS custom_pages (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      subtitle TEXT,
+      template TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '{}',
+      "order" REAL NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      pendingOp TEXT
+    );
   `);
 
   // `categoryId` en `events` (categorías de evento gestionables por el usuario — ver

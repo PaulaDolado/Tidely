@@ -138,9 +138,157 @@ export interface ServerNote {
   updatedAt: string;
 }
 
+// --- Fase 2 de sync: Finanzas, Objetivos, Proyectos, Horario, Páginas personalizadas ---
+// Mismo criterio que arriba: solo los campos que el móvil realmente usa, tal cual los devuelve
+// `GET /sync/pull` (filas crudas de Prisma).
+
+export interface ServerTransaction {
+  id: number;
+  type: "income" | "expense";
+  amount: number;
+  category: string;
+  description: string | null;
+  date: string;
+  updatedAt: string;
+}
+
+// `currentAmount`/`progressPercent` NO viajan por sync (el backend los calcula sumando
+// Transaction al listar, nunca se guardan en la fila — ver financeService.listSavingsGoals): el
+// móvil los calcula igual, sumando sus `transactions` locales de esa categoría.
+export interface ServerSavingsGoal {
+  id: number;
+  name: string;
+  type: "ahorro" | "inversion";
+  targetAmount: number;
+  category: string;
+  stepAmount: number;
+  deadline: string | null;
+  // Necesario para el cálculo de "ritmo" (¿va a tiempo para la fecha límite?) en
+  // MetasAhorroScreen, igual que dashboard/src/pages/MetasAhorroPage.tsx.
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServerGoal {
+  id: number;
+  title: string;
+  description: string | null;
+  period: "weekly" | "monthly" | "annual";
+  targetValue: number;
+  currentValue: number;
+  completed: boolean;
+  bonusPoints: number;
+  periodStart: string;
+  periodEnd: string;
+  expired: boolean;
+  autoRenew: boolean;
+  updatedAt: string;
+}
+
+export interface ServerGoalProgress {
+  id: number;
+  goalId: number;
+  value: number;
+  note: string | null;
+  date: string;
+  updatedAt: string;
+}
+
+export interface ServerProject {
+  id: number;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  deadline: string | null;
+  color: string | null;
+  updatedAt: string;
+}
+
+export interface ServerProjectTask {
+  id: number;
+  projectId: number;
+  title: string;
+  completed: boolean;
+  updatedAt: string;
+}
+
+export interface ServerProjectPage {
+  id: number;
+  projectId: number;
+  title: string;
+  content: string; // HTML — blob opaco para el sync, ver mobile/src/api/projects.ts
+  order: number;
+  updatedAt: string;
+}
+
+export interface ServerSchedule {
+  id: number;
+  name: string;
+  order: number;
+  updatedAt: string;
+}
+
+export interface ServerScheduleRow {
+  id: number;
+  scheduleId: number;
+  order: number;
+  timeLabel: string;
+  monday: string;
+  tuesday: string;
+  wednesday: string;
+  thursday: string;
+  friday: string;
+  updatedAt: string;
+}
+
+export interface ServerCalendarLegendCategory {
+  id: number;
+  label: string;
+  color: CalendarColor;
+  order: number;
+  updatedAt: string;
+}
+
+export interface ServerCalendarDayMark {
+  id: number;
+  date: string;
+  categoryId: number;
+  updatedAt: string;
+}
+
+export interface ServerCustomPage {
+  id: number;
+  title: string;
+  subtitle: string | null;
+  template: string;
+  content: unknown; // JSON por plantilla — blob opaco para el sync, ver mobile/src/api/customPages.ts
+  order: number;
+  updatedAt: string;
+}
+
 export interface SyncTombstone {
   id: number;
-  entityType: "event" | "eventException" | "task" | "subtask" | "note" | "habit" | "habitLog";
+  entityType:
+    | "event"
+    | "eventException"
+    | "task"
+    | "subtask"
+    | "note"
+    | "habit"
+    | "habitLog"
+    | "transaction"
+    | "savingsGoal"
+    | "goal"
+    | "goalProgress"
+    | "project"
+    | "projectTask"
+    | "projectPage"
+    | "schedule"
+    | "scheduleRow"
+    | "calendarLegendCategory"
+    | "calendarDayMark"
+    | "customPage";
   entityId: number;
   deletedAt: string;
 }
@@ -155,6 +303,18 @@ export interface PullResponse {
   habits: ServerHabit[];
   habitLogs: ServerHabitLog[];
   tombstones: SyncTombstone[];
+  transactions: ServerTransaction[];
+  savingsGoals: ServerSavingsGoal[];
+  goals: ServerGoal[];
+  goalProgress: ServerGoalProgress[];
+  projects: ServerProject[];
+  projectTasks: ServerProjectTask[];
+  projectPages: ServerProjectPage[];
+  schedules: ServerSchedule[];
+  scheduleRows: ServerScheduleRow[];
+  calendarLegendCategories: ServerCalendarLegendCategory[];
+  calendarDayMarks: ServerCalendarDayMark[];
+  customPages: ServerCustomPage[];
 }
 
 export interface PushResult {
@@ -251,6 +411,162 @@ export interface LocalNote {
   content: string;
   checked: 0 | 1;
   createdAt: string;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+// --- Fase 2 de sync: mismo patrón id/synced/pendingOp que arriba para todo lo que el móvil
+// puede CREAR offline. `currentAmount` de SavingsGoal no se guarda (se calcula, ver
+// ServerSavingsGoal); `content` de ProjectPage/CustomPage viaja tal cual (blob opaco).
+
+export interface LocalTransaction {
+  id: string;
+  type: "income" | "expense";
+  amount: number;
+  category: string;
+  description: string | null;
+  date: string;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalSavingsGoal {
+  id: string;
+  name: string;
+  type: "ahorro" | "inversion";
+  targetAmount: number;
+  category: string;
+  stepAmount: number;
+  deadline: string | null;
+  createdAt: string;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalGoal {
+  id: string;
+  title: string;
+  description: string | null;
+  period: "weekly" | "monthly" | "annual";
+  targetValue: number;
+  currentValue: number;
+  completed: 0 | 1;
+  bonusPoints: number;
+  periodStart: string;
+  periodEnd: string;
+  expired: 0 | 1;
+  autoRenew: 0 | 1;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+// A diferencia de HabitLog, SÍ se edita/borra offline (ver goalsService.updateProgress/
+// deleteProgress en el backend) — necesita el mismo triple id/synced/pendingOp que una entidad
+// creable normal, no la clave compuesta de HabitLog.
+export interface LocalGoalProgress {
+  id: string;
+  goalId: string;
+  value: number;
+  note: string | null;
+  date: string;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalProject {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  deadline: string | null;
+  color: string | null;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalProjectTask {
+  id: string;
+  projectId: string;
+  title: string;
+  completed: 0 | 1;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalProjectPage {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string;
+  order: number;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalSchedule {
+  id: string;
+  name: string;
+  order: number;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalScheduleRow {
+  id: string;
+  scheduleId: string;
+  order: number;
+  timeLabel: string;
+  monday: string;
+  tuesday: string;
+  wednesday: string;
+  thursday: string;
+  friday: string;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+export interface LocalCalendarLegendCategory {
+  id: string;
+  label: string;
+  color: CalendarColor;
+  order: number;
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
+}
+
+// Clave natural (`date`), no un id local generado por el cliente — igual criterio que
+// `LocalEventException`, pero esta SÍ se escribe localmente (pintar/despintar un día), así que
+// necesita su propio `synced`/`pendingOp` para saber qué subir (ver calendarLegendRepo.ts).
+// `categoryId` es el id (local o de servidor, como texto) de `calendar_legend_categories.id`,
+// igual que `subtasks.taskId` referencia `tasks.id`.
+export interface LocalCalendarDayMark {
+  date: string;
+  categoryId: string;
+  serverId: number | null; // id real de la marca — permite emparejar su tombstone al borrarla en otro dispositivo
+  updatedAt: string;
+  synced: 0 | 1;
+  pendingOp: "upsert" | "delete" | null;
+}
+
+export interface LocalCustomPage {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  template: string;
+  content: unknown;
+  order: number;
   updatedAt: string;
   synced: 0 | 1;
   pendingOp: "update" | "delete" | null;
