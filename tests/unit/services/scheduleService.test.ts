@@ -13,6 +13,7 @@ jest.mock("../../../src/config/database", () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    syncTombstone: { create: jest.fn() },
     $transaction: jest.fn((ops) => Promise.all(ops)),
   },
 }));
@@ -94,6 +95,35 @@ describe("scheduleService", () => {
       await scheduleService.updateRow(1, 1, 1, { monday: "Cálculo I", friday: "Física II" });
 
       expect(prismaMock.scheduleRow.update.mock.calls[0][0].data).toEqual({ monday: "Cálculo I", friday: "Física II" });
+    });
+
+    it("acepta un order fraccionario (reordenar offline sin pasar por moveRow)", async () => {
+      prismaMock.schedule.findUnique.mockResolvedValue({ id: 1, userId: 1 });
+      prismaMock.scheduleRow.findUnique.mockResolvedValue({ id: 1, scheduleId: 1 });
+      prismaMock.scheduleRow.update.mockImplementation(({ data }) => Promise.resolve({ id: 1, ...data }));
+
+      await scheduleService.updateRow(1, 1, 1, { order: 1.5 });
+
+      expect(prismaMock.scheduleRow.update.mock.calls[0][0].data).toEqual({ order: 1.5 });
+    });
+  });
+
+  describe("updateSchedule", () => {
+    it("lanza ForbiddenError si el horario es de otro usuario", async () => {
+      prismaMock.schedule.findUnique.mockResolvedValue({ id: 1, userId: 2 });
+      await expect(scheduleService.updateSchedule(1, 1, { name: "Otro" })).rejects.toThrow(ForbiddenError);
+      expect(prismaMock.schedule.update).not.toHaveBeenCalled();
+    });
+
+    it("recorta el nombre y acepta order fraccionario, cada uno opcional por separado", async () => {
+      prismaMock.schedule.findUnique.mockResolvedValue({ id: 1, userId: 1 });
+      prismaMock.schedule.update.mockImplementation(({ data }) => Promise.resolve({ id: 1, ...data }));
+
+      await scheduleService.updateSchedule(1, 1, { name: "  2n trimestre  " });
+      expect(prismaMock.schedule.update.mock.calls[0][0].data).toEqual({ name: "2n trimestre" });
+
+      await scheduleService.updateSchedule(1, 1, { order: 2.5 });
+      expect(prismaMock.schedule.update.mock.calls[1][0].data).toEqual({ order: 2.5 });
     });
   });
 

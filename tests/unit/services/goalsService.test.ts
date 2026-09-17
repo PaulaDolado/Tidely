@@ -1,7 +1,9 @@
 jest.mock("../../../src/config/database", () => ({
   prisma: {
     goal: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    goalProgress: { create: jest.fn(), findMany: jest.fn() },
+    goalProgress: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    syncTombstone: { create: jest.fn() },
+    $transaction: jest.fn((ops) => Promise.all(ops)),
   },
 }));
 
@@ -12,7 +14,7 @@ import { ForbiddenError, NotFoundError } from "../../../src/utils/errorHandler";
 
 const prismaMock = prisma as unknown as {
   goal: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock; count: jest.Mock };
-  goalProgress: { create: jest.Mock; findMany: jest.Mock };
+  goalProgress: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock; delete: jest.Mock };
 };
 
 describe("goalsService", () => {
@@ -108,6 +110,82 @@ describe("goalsService", () => {
       prismaMock.goal.findUnique.mockResolvedValue({ ...existingGoal, userId: 2 });
 
       await expect(goalsService.registerProgress(1, 1, { value: 1 })).rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe("updateProgress", () => {
+    const goal = { id: 1, userId: 1, targetValue: 10, currentValue: 5, completed: false };
+    const progress = { id: 10, goalId: 1, userId: 1, value: 2 };
+
+    it("reajusta currentValue por la diferencia (delta), no sumando el nuevo valor entero", async () => {
+      prismaMock.goal.findUnique.mockResolvedValue(goal);
+      prismaMock.goalProgress.findUnique.mockResolvedValue(progress);
+      prismaMock.goalProgress.update.mockResolvedValue({ ...progress, value: 5 });
+      prismaMock.goal.update.mockImplementation(({ data }) => Promise.resolve({ ...goal, ...data }));
+
+      // value pasa de 2 a 5: delta +3 sobre currentValue (5 -> 8), no currentValue + 5.
+      const result = await goalsService.updateProgress(1, 1, 10, { value: 5 });
+
+      expect(prismaMock.goal.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { currentValue: 8, completed: false },
+      });
+      expect(result.goal.currentValue).toBe(8);
+    });
+
+    it("puede des-completar la meta si el nuevo valor baja currentValue por debajo de targetValue", async () => {
+      const completedGoal = { ...goal, currentValue: 10, completed: true };
+      prismaMock.goal.findUnique.mockResolvedValue(completedGoal);
+      prismaMock.goalProgress.findUnique.mockResolvedValue({ ...progress, value: 5 });
+      prismaMock.goalProgress.update.mockResolvedValue({ ...progress, value: 1 });
+      prismaMock.goal.update.mockImplementation(({ data }) => Promise.resolve({ ...completedGoal, ...data }));
+
+      const result = await goalsService.updateProgress(1, 1, 10, { value: 1 });
+
+      expect(result.goal.currentValue).toBe(6); // 10 + (1 - 5)
+      expect(result.goal.completed).toBe(false);
+    });
+
+    it("lanza NotFoundError si el registro de progreso no pertenece a la meta indicada", async () => {
+      prismaMock.goal.findUnique.mockResolvedValue(goal);
+      prismaMock.goalProgress.findUnique.mockResolvedValue({ ...progress, goalId: 2 });
+
+      await expect(goalsService.updateProgress(1, 1, 10, { value: 5 })).rejects.toThrow(NotFoundError);
+      expect(prismaMock.goalProgress.update).not.toHaveBeenCalled();
+    });
+
+    it("lanza ForbiddenError si el registro de progreso es de otro usuario", async () => {
+      prismaMock.goal.findUnique.mockResolvedValue(goal);
+      prismaMock.goalProgress.findUnique.mockResolvedValue({ ...progress, userId: 2 });
+
+      await expect(goalsService.updateProgress(1, 1, 10, { value: 5 })).rejects.toThrow(ForbiddenError);
+      expect(prismaMock.goalProgress.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteProgress", () => {
+    const goal = { id: 1, userId: 1, targetValue: 10, currentValue: 5, completed: false };
+    const progress = { id: 10, goalId: 1, userId: 1, value: 2 };
+
+    it("resta el value del registro de currentValue y recalcula completed", async () => {
+      prismaMock.goal.findUnique.mockResolvedValue(goal);
+      prismaMock.goalProgress.findUnique.mockResolvedValue(progress);
+
+      await goalsService.deleteProgress(1, 1, 10);
+
+      expect(prismaMock.goalProgress.delete).toHaveBeenCalledWith({ where: { id: 10 } });
+      expect(prismaMock.goal.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { currentValue: 3, completed: false },
+      });
+    });
+
+    it("lanza ForbiddenError si el registro de progreso es de otro usuario, sin borrar", async () => {
+      prismaMock.goal.findUnique.mockResolvedValue(goal);
+      prismaMock.goalProgress.findUnique.mockResolvedValue({ ...progress, userId: 2 });
+
+      await expect(goalsService.deleteProgress(1, 1, 10)).rejects.toThrow(ForbiddenError);
+      expect(prismaMock.goalProgress.delete).not.toHaveBeenCalled();
     });
   });
 

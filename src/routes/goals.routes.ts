@@ -8,6 +8,8 @@ import {
   createGoalSchema,
   updateGoalSchema,
   registerProgressSchema,
+  progressParamSchema,
+  updateProgressSchema,
 } from "../validators/goalsValidators";
 
 const router = Router();
@@ -84,6 +86,34 @@ router.post(
   validate(idParamSchema, "params"),
   validate(registerProgressSchema),
   goalsController.registerProgress
+);
+
+/**
+ * @openapi
+ * /goals/{id}/progress/{progressId}:
+ *   put:
+ *     tags: [Goals]
+ *     summary: Editar un registro de progreso (reajusta currentValue/completed de la meta)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Registro y meta actualizados }
+ *   delete:
+ *     tags: [Goals]
+ *     summary: Eliminar un registro de progreso (revierte currentValue/completed de la meta)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Registro eliminado }
+ */
+router.put(
+  "/:id/progress/:progressId",
+  validate(progressParamSchema, "params"),
+  validate(updateProgressSchema),
+  goalsController.updateProgress
+);
+router.delete(
+  "/:id/progress/:progressId",
+  validate(progressParamSchema, "params"),
+  goalsController.deleteProgress
 );
 
 /**

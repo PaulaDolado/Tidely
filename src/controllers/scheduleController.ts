@@ -26,7 +26,7 @@ export async function updateSchedule(req: AuthRequest, res: Response, next: Next
   try {
     const userId = req.userId as number;
     const id = parseInt(req.params.id, 10);
-    const schedule = await scheduleService.updateSchedule(userId, id, req.body.name);
+    const schedule = await scheduleService.updateSchedule(userId, id, req.body);
     res.json(schedule);
   } catch (error) {
     next(error);

@@ -14,8 +14,13 @@ export const createScheduleSchema = Joi.object({
 }).options({ stripUnknown: true });
 
 export const updateScheduleSchema = Joi.object({
-  name: Joi.string().min(1).max(60).required(),
-}).options({ stripUnknown: true });
+  name: Joi.string().min(1).max(60),
+  // Opcional: reordenar offline escribiendo un `order` fraccionario (ver syncService.ts / Fase
+  // 2 de sync) en vez de pasar por POST /schedules/:id/move.
+  order: Joi.number(),
+})
+  .min(1)
+  .options({ stripUnknown: true });
 
 // Texto libre por celda (asignatura, aula, lo que el usuario quiera escribir) — sin estructura
 // forzada, tal como pidió: "ya agrego yo cada asignatura en cada espacio". Multilínea (ver
@@ -33,6 +38,8 @@ export const updateRowSchema = Joi.object({
   wednesday: Joi.string().max(CELL_MAX).allow(""),
   thursday: Joi.string().max(CELL_MAX).allow(""),
   friday: Joi.string().max(CELL_MAX).allow(""),
+  // Ver comentario en updateScheduleSchema.order.
+  order: Joi.number(),
 }).min(1);
 
 export const moveSchema = Joi.object({

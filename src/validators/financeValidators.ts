@@ -67,6 +67,15 @@ export const createSavingsGoalSchema = Joi.object({
   deadline: Joi.date().iso().allow(null),
 }).options({ stripUnknown: true });
 
+export const updateSavingsGoalSchema = Joi.object({
+  name: Joi.string().min(1).max(100),
+  type: Joi.string().valid(...SAVINGS_GOAL_TYPES),
+  targetAmount: Joi.number().positive().precision(2),
+  category: Joi.string().min(1).max(50),
+  stepAmount: Joi.number().positive().precision(2),
+  deadline: Joi.date().iso().allow(null),
+}).min(1);
+
 export const contributeSchema = Joi.object({
   // Positivo: aporta a la meta (crea un income). Negativo: retira/corrige (crea un expense).
   amount: Joi.number().precision(2).invalid(0).required().messages({

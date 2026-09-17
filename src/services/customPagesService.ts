@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../config/database";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
+import { recordTombstone } from "./tombstoneService";
 
 /**
  * Contenido inicial de una página nueva, según el modelo elegido en "+ Nueva página" (ver
@@ -94,7 +95,10 @@ export async function updateCustomPage(userId: number, pageId: number, input: Up
 
 export async function deleteCustomPage(userId: number, pageId: number) {
   await findOwnedPage(userId, pageId);
-  await prisma.customPage.delete({ where: { id: pageId } });
+  await prisma.$transaction([
+    prisma.customPage.delete({ where: { id: pageId } }),
+    recordTombstone(prisma, userId, "customPage", pageId),
+  ]);
 }
 
 // Intercambia el `order` con la página inmediatamente anterior/siguiente del usuario — igual

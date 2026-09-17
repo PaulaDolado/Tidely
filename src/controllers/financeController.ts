@@ -119,6 +119,17 @@ export async function createSavingsGoal(req: AuthRequest, res: Response, next: N
   }
 }
 
+export async function updateSavingsGoal(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const id = parseInt(req.params.id, 10);
+    const goal = await financeService.updateSavingsGoal(userId, id, req.body);
+    res.json(goal);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function deleteSavingsGoal(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId as number;

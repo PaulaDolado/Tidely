@@ -2,6 +2,7 @@ import { prisma } from "../config/database";
 import { endOfWeek, endOfMonth, endOfYear, differenceInCalendarDays } from "date-fns";
 import { buildPagination } from "../utils/pagination";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
+import { recordTombstone } from "./tombstoneService";
 
 export type GoalPeriod = "weekly" | "monthly" | "annual";
 
@@ -109,7 +110,10 @@ export async function updateGoal(
 
 export async function deleteGoal(userId: number, goalId: number) {
   await findOwnedGoal(userId, goalId);
-  await prisma.goal.delete({ where: { id: goalId } });
+  await prisma.$transaction([
+    prisma.goal.delete({ where: { id: goalId } }),
+    recordTombstone(prisma, userId, "goal", goalId),
+  ]);
 }
 
 interface RegisterProgressInput {
@@ -145,6 +149,69 @@ export async function registerProgress(userId: number, goalId: number, input: Re
     justCompleted: completed && !goal.completed,
     bonusPointsAwarded: completed && !goal.completed ? updatedGoal.bonusPoints : 0,
   };
+}
+
+async function findOwnedProgress(userId: number, goalId: number, progressId: number) {
+  const progress = await prisma.goalProgress.findUnique({ where: { id: progressId } });
+  if (!progress || progress.goalId !== goalId) throw new NotFoundError("Registro de progreso no encontrado");
+  if (progress.userId !== userId) throw new ForbiddenError("No autorizado");
+  return progress;
+}
+
+interface UpdateProgressInput {
+  value?: number;
+  note?: string | null;
+  date?: string | Date;
+}
+
+/**
+ * Editar un registro de progreso reajusta `goal.currentValue` por la diferencia (`newValue -
+ * oldValue`), igual de bien si el registro se hizo hace tiempo — no hace falta recalcular sumando
+ * TODOS los registros del goal porque `currentValue` ya es ese acumulado y solo cambia lo que
+ * cambia este registro. `completed` se recalcula con el nuevo total: un valor editado a la baja
+ * puede des-completar la meta (no hay un "wallet" de `bonusPoints` que revertir — es un campo
+ * estático del Goal, no puntos ya canjeados, ver `registerProgress`).
+ */
+export async function updateProgress(userId: number, goalId: number, progressId: number, input: UpdateProgressInput) {
+  const goal = await findOwnedGoal(userId, goalId);
+  const progress = await findOwnedProgress(userId, goalId, progressId);
+
+  const nextValue = input.value !== undefined ? input.value : progress.value;
+  const delta = nextValue - progress.value;
+
+  const updatedProgress = await prisma.goalProgress.update({
+    where: { id: progressId },
+    data: {
+      ...(input.value !== undefined ? { value: input.value } : {}),
+      ...(input.note !== undefined ? { note: input.note } : {}),
+      ...(input.date !== undefined ? { date: new Date(input.date) } : {}),
+    },
+  });
+
+  const newCurrentValue = goal.currentValue + delta;
+  const updatedGoal = await prisma.goal.update({
+    where: { id: goalId },
+    data: { currentValue: newCurrentValue, completed: newCurrentValue >= goal.targetValue },
+  });
+
+  return { progress: updatedProgress, goal: updatedGoal };
+}
+
+/** Borrar un registro resta su `value` de `goal.currentValue` y recalcula `completed` — mismo
+ * criterio de reversión que `updateProgress`. */
+export async function deleteProgress(userId: number, goalId: number, progressId: number) {
+  const goal = await findOwnedGoal(userId, goalId);
+  const progress = await findOwnedProgress(userId, goalId, progressId);
+
+  const newCurrentValue = goal.currentValue - progress.value;
+  await prisma.$transaction([
+    prisma.goalProgress.delete({ where: { id: progressId } }),
+    recordTombstone(prisma, userId, "goalProgress", progressId),
+    prisma.goal.update({
+      where: { id: goalId },
+      data: { currentValue: newCurrentValue, completed: newCurrentValue >= goal.targetValue },
+    }),
+  ]);
 }
 
 export interface GoalRiskInput {

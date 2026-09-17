@@ -71,6 +71,30 @@ export async function registerProgress(req: AuthRequest, res: Response, next: Ne
   }
 }
 
+export async function updateProgress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const goalId = parseInt(req.params.id, 10);
+    const progressId = parseInt(req.params.progressId, 10);
+    const result = await goalsService.updateProgress(userId, goalId, progressId, req.body);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteProgress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const goalId = parseInt(req.params.id, 10);
+    const progressId = parseInt(req.params.progressId, 10);
+    await goalsService.deleteProgress(userId, goalId, progressId);
+    res.json({ message: "Registro de progreso eliminado" });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getAnalytics(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId as number;

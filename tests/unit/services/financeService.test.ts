@@ -10,7 +10,9 @@ jest.mock("../../../src/config/database", () => ({
       delete: jest.fn(),
       findUnique: jest.fn(),
     },
-    savingsGoal: { findMany: jest.fn(), create: jest.fn(), findUnique: jest.fn(), delete: jest.fn() },
+    savingsGoal: { findMany: jest.fn(), create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    syncTombstone: { create: jest.fn() },
+    $transaction: jest.fn((ops) => Promise.all(ops)),
   },
 }));
 
@@ -25,7 +27,7 @@ const prismaMock = prisma as unknown as {
     groupBy: jest.Mock;
     create: jest.Mock;
   };
-  savingsGoal: { findMany: jest.Mock; findUnique: jest.Mock; delete: jest.Mock };
+  savingsGoal: { findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock; delete: jest.Mock };
 };
 
 describe("financeService", () => {
@@ -290,6 +292,33 @@ describe("financeService", () => {
       prismaMock.savingsGoal.findUnique.mockResolvedValue({ ...goal, userId: 2 });
       await expect(financeService.contributeToSavingsGoal(1, 1, 100)).rejects.toThrow(ForbiddenError);
       expect(prismaMock.transaction.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updateSavingsGoal", () => {
+    const goal = { id: 1, userId: 1, name: "Kyoto", category: "savings-kyoto", targetAmount: 500 };
+
+    it("lanza ForbiddenError si la meta es de otro usuario", async () => {
+      prismaMock.savingsGoal.findUnique.mockResolvedValue({ ...goal, userId: 2 });
+      await expect(financeService.updateSavingsGoal(1, 1, { name: "Osaka" })).rejects.toThrow(ForbiddenError);
+      expect(prismaMock.savingsGoal.update).not.toHaveBeenCalled();
+    });
+
+    it("actualiza solo los campos indicados y recalcula currentAmount/progressPercent con la categoría resultante", async () => {
+      prismaMock.savingsGoal.findUnique.mockResolvedValue(goal);
+      prismaMock.savingsGoal.update.mockResolvedValue({ ...goal, name: "Osaka", targetAmount: 200 });
+      prismaMock.transaction.aggregate
+        .mockResolvedValueOnce({ _sum: { amount: 100 } }) // income
+        .mockResolvedValueOnce({ _sum: { amount: 0 } }); // expense
+
+      const result = await financeService.updateSavingsGoal(1, 1, { name: "Osaka", targetAmount: 200 });
+
+      expect(prismaMock.savingsGoal.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { name: "Osaka", targetAmount: 200 },
+      });
+      expect(result.currentAmount).toBe(100);
+      expect(result.progressPercent).toBe(50);
     });
   });
 

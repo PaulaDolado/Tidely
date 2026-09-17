@@ -250,12 +250,17 @@ model Goal {
 }
 
 model GoalProgress {
-  id     Int      @id @default(autoincrement())
-  goalId Int
-  userId Int
-  value  Int // valor agregado hoy
-  date   DateTime @default(now())
-  note   String?
+  id        Int      @id @default(autoincrement())
+  goalId    Int
+  userId    Int
+  value     Int // valor agregado hoy
+  date      DateTime @default(now())
+  note      String?
+  // Necesarios para el sync offline (cursor de pull + last-write-wins en push, ver
+  // syncService.ts) — no existían porque hasta ahora un registro nunca se editaba, solo se creaba
+  // (`registerProgress`) o se borraba entero.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -540,13 +545,19 @@ model Notification {
 // de esta app son siempre hard deletes (prisma.X.delete), así que sin esto un cliente que
 // llevara tiempo desconectado nunca se enteraría de que una fila desapareció — el pull de sync
 // devuelve estas filas junto a los cambios normales para que el móvil borre su copia local.
-// Solo cubre los modelos de la Fase 1 de sync (Event/EventException, Task/Subtask, Note,
-// Habit/HabitLog) — el resto de módulos (Finanzas, Proyectos, Hobbies, Objetivos...) no
-// sincroniza con el móvil todavía y sus deletes no generan tombstone.
+// Fase 1: Event/EventException, Task/Subtask, Note, Habit/HabitLog. Fase 2: Transaction/
+// SavingsGoal, Goal/GoalProgress, Project/ProjectTask/ProjectPage, Schedule/ScheduleRow,
+// CalendarLegendCategory, CalendarDayMark, CustomPage. Notificaciones todavía no sincronizan.
+// CalendarDayMark se identifica por (userId, date) al crear/editar (upsert, como
+// EventException), pero al borrarlo SÍ deja tombstone por su `id` real, igual que EventException.
 model SyncTombstone {
   id         Int      @id @default(autoincrement())
   userId     Int
-  entityType String // "event" | "eventException" | "task" | "subtask" | "note" | "habit" | "habitLog"
+  // "event" | "eventException" | "task" | "subtask" | "note" | "habit" | "habitLog" |
+  // "transaction" | "savingsGoal" | "goal" | "goalProgress" | "project" | "projectTask" |
+  // "projectPage" | "schedule" | "scheduleRow" | "calendarLegendCategory" | "calendarDayMark" |
+  // "customPage"
+  entityType String
   entityId   Int
   deletedAt  DateTime @default(now())
 
@@ -573,7 +584,7 @@ model CustomPage {
   subtitle  String?
   // "nota" | "kanban" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy"
   template  String
-  order     Int      @default(0)
+  order     Float    @default(0) // Float: permite reordenar offline, mismo motivo que Schedule.order.
   content   Json     @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -590,7 +601,10 @@ model Schedule {
   id        Int      @id @default(autoincrement())
   userId    Int
   name      String
-  order     Int      @default(0)
+  // Float (no Int): permite reordenar offline calculando un punto medio entre vecinos, sin
+  // renumerar toda la lista — mismo criterio que Task.order (ver mobile/src/db/tasksRepo.ts
+  // moveTask). El endpoint de swap `moveSchedule` sigue funcionando igual, ahora sobre floats.
+  order     Float    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -607,7 +621,7 @@ model Schedule {
 model ScheduleRow {
   id         Int      @id @default(autoincrement())
   scheduleId Int
-  order      Int      @default(0)
+  order      Float    @default(0) // Float: mismo motivo que Schedule.order.
   timeLabel  String   @default("") // texto libre, p.ej. "08:00 - 10:00"
   monday     String   @default("")
   tuesday    String   @default("")
@@ -650,6 +664,11 @@ model CalendarDayMark {
   userId     Int
   categoryId Int
   date       DateTime @db.Date
+  // Necesarios para el sync offline (cursor de pull, ver syncService.ts) — una marca de día se
+  // trata como upsert-por-fecha (igual que EventException), no hace falta clientUpdatedAt para
+  // conflictos porque "pintar encima" siempre sustituye sin comparar (ver setDayMark).
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   category CalendarLegendCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)

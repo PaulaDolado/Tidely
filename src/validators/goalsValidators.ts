@@ -42,3 +42,14 @@ export const registerProgressSchema = Joi.object({
   note: Joi.string().max(500).allow(null, ""),
   date: Joi.date().iso(),
 });
+
+export const progressParamSchema = Joi.object({
+  id: Joi.number().integer().positive().required(),
+  progressId: Joi.number().integer().positive().required(),
+});
+
+export const updateProgressSchema = Joi.object({
+  value: Joi.number().integer(),
+  note: Joi.string().max(500).allow(null, ""),
+  date: Joi.date().iso(),
+}).min(1);

@@ -35,7 +35,9 @@ export const updateCustomPageSchema = Joi.object({
       if (JSON.stringify(value).length > CONTENT_BYTE_LIMIT) return helpers.error("any.invalid");
       return value;
     }, "límite de tamaño del contenido"),
-  order: Joi.number().integer().min(0),
+  // No entero: el móvil calcula un punto medio fraccionario entre vecinos para reordenar offline
+  // (ver syncService.ts / mobile tasksRepo::moveTask), igual que Schedule.order.
+  order: Joi.number().min(0),
 }).min(1);
 
 export const moveCustomPageSchema = Joi.object({

@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
+import { recordTombstone } from "./tombstoneService";
 
 // ---------------------------------------------------------------------------------------------
 // Horarios (Schedule): el usuario puede tener varios, uno por trimestre/semestre.
@@ -27,14 +28,31 @@ async function findOwnedSchedule(userId: number, scheduleId: number) {
   return schedule;
 }
 
-export async function updateSchedule(userId: number, scheduleId: number, name: string) {
+interface UpdateScheduleInput {
+  name?: string;
+  // Opcional: permite reordenar escribiendo un `order` fraccionario calculado por el cliente
+  // (ver mobile/src/db/tasksRepo.ts::moveTask) en vez de pasar por el endpoint de swap
+  // `moveSchedule` — necesario para poder reordenar offline (ver syncService.ts).
+  order?: number;
+}
+
+export async function updateSchedule(userId: number, scheduleId: number, input: UpdateScheduleInput) {
   await findOwnedSchedule(userId, scheduleId);
-  return prisma.schedule.update({ where: { id: scheduleId }, data: { name: name.trim() } });
+  return prisma.schedule.update({
+    where: { id: scheduleId },
+    data: {
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.order !== undefined ? { order: input.order } : {}),
+    },
+  });
 }
 
 export async function deleteSchedule(userId: number, scheduleId: number) {
   await findOwnedSchedule(userId, scheduleId);
-  await prisma.schedule.delete({ where: { id: scheduleId } });
+  await prisma.$transaction([
+    prisma.schedule.delete({ where: { id: scheduleId } }),
+    recordTombstone(prisma, userId, "schedule", scheduleId),
+  ]);
 }
 
 // Intercambia el `order` con el horario inmediatamente anterior/siguiente — mismo patrón que
@@ -89,6 +107,8 @@ interface UpdateRowInput {
   wednesday?: string;
   thursday?: string;
   friday?: string;
+  // Ver comentario en UpdateScheduleInput.order.
+  order?: number;
 }
 
 export async function updateRow(userId: number, scheduleId: number, rowId: number, input: UpdateRowInput) {
@@ -102,13 +122,17 @@ export async function updateRow(userId: number, scheduleId: number, rowId: numbe
       ...(input.wednesday !== undefined ? { wednesday: input.wednesday } : {}),
       ...(input.thursday !== undefined ? { thursday: input.thursday } : {}),
       ...(input.friday !== undefined ? { friday: input.friday } : {}),
+      ...(input.order !== undefined ? { order: input.order } : {}),
     },
   });
 }
 
 export async function deleteRow(userId: number, scheduleId: number, rowId: number) {
   await findOwnedRow(userId, scheduleId, rowId);
-  await prisma.scheduleRow.delete({ where: { id: rowId } });
+  await prisma.$transaction([
+    prisma.scheduleRow.delete({ where: { id: rowId } }),
+    recordTombstone(prisma, userId, "scheduleRow", rowId),
+  ]);
 }
 
 // Intercambia el `order` con la fila inmediatamente anterior/siguiente, dentro del mismo horario.

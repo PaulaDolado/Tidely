@@ -1,6 +1,7 @@
 import { prisma } from "../config/database";
 import { buildPagination } from "../utils/pagination";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
+import { recordTombstone } from "./tombstoneService";
 
 interface CreateProjectInput {
   title: string;
@@ -98,7 +99,10 @@ export async function updateProject(userId: number, projectId: number, input: Pa
 
 export async function deleteProject(userId: number, projectId: number) {
   await findOwnedProject(userId, projectId);
-  await prisma.project.delete({ where: { id: projectId } });
+  await prisma.$transaction([
+    prisma.project.delete({ where: { id: projectId } }),
+    recordTombstone(prisma, userId, "project", projectId),
+  ]);
 }
 
 export async function getProjectProgress(userId: number, projectId: number) {
@@ -172,7 +176,10 @@ export async function updatePage(userId: number, projectId: number, pageId: numb
 
 export async function deletePage(userId: number, projectId: number, pageId: number) {
   await findOwnedPage(userId, projectId, pageId);
-  await prisma.projectPage.delete({ where: { id: pageId } });
+  await prisma.$transaction([
+    prisma.projectPage.delete({ where: { id: pageId } }),
+    recordTombstone(prisma, userId, "projectPage", pageId),
+  ]);
 }
 
 export async function setTaskCompleted(userId: number, projectId: number, taskId: number, completed: boolean) {
@@ -185,7 +192,10 @@ export async function setTaskCompleted(userId: number, projectId: number, taskId
 
 export async function deleteTask(userId: number, projectId: number, taskId: number) {
   await findOwnedTask(userId, projectId, taskId);
-  await prisma.projectTask.delete({ where: { id: taskId } });
+  await prisma.$transaction([
+    prisma.projectTask.delete({ where: { id: taskId } }),
+    recordTombstone(prisma, userId, "projectTask", taskId),
+  ]);
 }
 
 const RECENT_ENTRIES_LIMIT = 5;

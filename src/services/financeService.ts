@@ -1,6 +1,7 @@
 import { prisma } from "../config/database";
 import { startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths } from "date-fns";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
+import { recordTombstone } from "./tombstoneService";
 
 function toNumber(value: unknown): number {
   return value === null || value === undefined ? 0 : Number(value);
@@ -277,7 +278,10 @@ export async function updateTransaction(userId: number, id: number, input: Parti
 
 export async function deleteTransaction(userId: number, id: number) {
   await findOwnedTransaction(userId, id);
-  await prisma.transaction.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.transaction.delete({ where: { id } }),
+    recordTombstone(prisma, userId, "transaction", id),
+  ]);
 }
 
 interface SavingsGoalInput {
@@ -362,9 +366,35 @@ async function findOwnedSavingsGoal(userId: number, savingsGoalId: number) {
   return goal;
 }
 
+export async function updateSavingsGoal(userId: number, savingsGoalId: number, input: Partial<SavingsGoalInput>) {
+  await findOwnedSavingsGoal(userId, savingsGoalId);
+
+  const goal = await prisma.savingsGoal.update({
+    where: { id: savingsGoalId },
+    data: {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.type !== undefined ? { type: input.type } : {}),
+      ...(input.targetAmount !== undefined ? { targetAmount: input.targetAmount } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.stepAmount !== undefined ? { stepAmount: input.stepAmount } : {}),
+      ...(input.deadline !== undefined ? { deadline: input.deadline ? new Date(input.deadline) : null } : {}),
+    },
+  });
+  const currentAmount = await computeSavingsProgress(userId, goal.category);
+  const targetAmount = toNumber(goal.targetAmount);
+  return {
+    ...goal,
+    currentAmount,
+    progressPercent: targetAmount > 0 ? Math.min(100, Math.round((currentAmount / targetAmount) * 100)) : 0,
+  };
+}
+
 export async function deleteSavingsGoal(userId: number, savingsGoalId: number) {
   await findOwnedSavingsGoal(userId, savingsGoalId);
-  await prisma.savingsGoal.delete({ where: { id: savingsGoalId } });
+  await prisma.$transaction([
+    prisma.savingsGoal.delete({ where: { id: savingsGoalId } }),
+    recordTombstone(prisma, userId, "savingsGoal", savingsGoalId),
+  ]);
 }
 
 /**

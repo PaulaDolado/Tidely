@@ -11,6 +11,7 @@ import {
   createTransactionSchema,
   updateTransactionSchema,
   createSavingsGoalSchema,
+  updateSavingsGoalSchema,
   listSavingsGoalsQuerySchema,
   contributeSchema,
   analyticsQuerySchema,
@@ -190,6 +191,12 @@ router.post(
 /**
  * @openapi
  * /finance/savings-goals/{id}:
+ *   put:
+ *     tags: [Finance]
+ *     summary: Editar meta de ahorro
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Meta de ahorro actualizada }
  *   delete:
  *     tags: [Finance]
  *     summary: Eliminar meta de ahorro
@@ -197,6 +204,12 @@ router.post(
  *     responses:
  *       200: { description: Meta de ahorro eliminada }
  */
+router.put(
+  "/savings-goals/:id",
+  validate(idParamSchema, "params"),
+  validate(updateSavingsGoalSchema),
+  financeController.updateSavingsGoal
+);
 router.delete(
   "/savings-goals/:id",
   validate(idParamSchema, "params"),

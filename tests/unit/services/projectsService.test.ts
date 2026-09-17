@@ -15,7 +15,9 @@ jest.mock("../../../src/config/database", () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
-    projectPage: { findMany: jest.fn() },
+    projectPage: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    syncTombstone: { create: jest.fn() },
+    $transaction: jest.fn((ops) => Promise.all(ops)),
   },
 }));
 
