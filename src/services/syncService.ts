@@ -3,6 +3,12 @@ import * as agendaService from "./agendaService";
 import * as plannerService from "./plannerService";
 import * as notesService from "./notesService";
 import * as habitsService from "./habitsService";
+import * as financeService from "./financeService";
+import * as goalsService from "./goalsService";
+import * as projectsService from "./projectsService";
+import * as scheduleService from "./scheduleService";
+import * as calendarLegendService from "./calendarLegendService";
+import * as customPagesService from "./customPagesService";
 import { logger } from "../utils/logger";
 
 const EPOCH = new Date(0);
@@ -30,7 +36,31 @@ export async function pull(userId: number, since?: Date) {
   const cursor = since ?? EPOCH;
   const serverTime = new Date();
 
-  const [events, eventExceptions, tasks, subtasks, notes, habits, habitLogs, tombstones] = await Promise.all([
+  const [
+    events,
+    eventExceptions,
+    tasks,
+    subtasks,
+    notes,
+    habits,
+    habitLogs,
+    tombstones,
+    transactions,
+    savingsGoals,
+    goals,
+    goalProgress,
+    projects,
+    projectTasks,
+    projectPages,
+    schedules,
+    scheduleRows,
+    calendarLegendCategories,
+    // Al crear/editar, una marca de día se manda siempre entera (upsert) y se identifica por
+    // fecha, no por id — igual que EventException. Al borrarla SÍ genera tombstone por su `id`
+    // real (ver calendarLegendService.setDayMark), igual que EventException también lo hace.
+    calendarDayMarks,
+    customPages,
+  ] = await Promise.all([
     prisma.event.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
     prisma.eventException.findMany({ where: { event: { userId }, updatedAt: { gt: cursor } } }),
     prisma.task.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
@@ -41,9 +71,43 @@ export async function pull(userId: number, since?: Date) {
     // `createdAt` ya es un cursor de "nuevo desde" válido, no hace falta `updatedAt`.
     prisma.habitLog.findMany({ where: { userId, createdAt: { gt: cursor } } }),
     prisma.syncTombstone.findMany({ where: { userId, deletedAt: { gt: cursor } } }),
+    prisma.transaction.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.savingsGoal.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.goal.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.goalProgress.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.project.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.projectTask.findMany({ where: { project: { userId }, updatedAt: { gt: cursor } } }),
+    prisma.projectPage.findMany({ where: { project: { userId }, updatedAt: { gt: cursor } } }),
+    prisma.schedule.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.scheduleRow.findMany({ where: { schedule: { userId }, updatedAt: { gt: cursor } } }),
+    prisma.calendarLegendCategory.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.calendarDayMark.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
+    prisma.customPage.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
   ]);
 
-  return { serverTime, events, eventExceptions, tasks, subtasks, notes, habits, habitLogs, tombstones };
+  return {
+    serverTime,
+    events,
+    eventExceptions,
+    tasks,
+    subtasks,
+    notes,
+    habits,
+    habitLogs,
+    tombstones,
+    transactions,
+    savingsGoals,
+    goals,
+    goalProgress,
+    projects,
+    projectTasks,
+    projectPages,
+    schedules,
+    scheduleRows,
+    calendarLegendCategories,
+    calendarDayMarks,
+    customPages,
+  };
 }
 
 interface ConflictInfo {
@@ -204,6 +268,205 @@ export async function push(userId: number, body: SyncPushBody): Promise<PushResu
     await prisma.habitLog.create({ data: { habitId: input.habitId, userId, date } });
   }
 
+  // --- Transactions ---
+  for (const input of body.transactions.create) {
+    const created = await financeService.createTransaction(userId, omit(input, ["localId"]) as never);
+    idMappings.push({ entityType: "transaction", localId: input.localId, id: created.id });
+  }
+  for (const input of body.transactions.update) {
+    const result = await applyIfNewer(
+      () => prisma.transaction.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => financeService.updateTransaction(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "transaction", id: input.id });
+  }
+
+  // --- SavingsGoals ---
+  for (const input of body.savingsGoals.create) {
+    const created = await financeService.createSavingsGoal(userId, omit(input, ["localId"]) as never);
+    idMappings.push({ entityType: "savingsGoal", localId: input.localId, id: created.id });
+  }
+  for (const input of body.savingsGoals.update) {
+    const result = await applyIfNewer(
+      () => prisma.savingsGoal.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => financeService.updateSavingsGoal(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "savingsGoal", id: input.id });
+  }
+
+  // --- Goals ---
+  for (const input of body.goals.create) {
+    const created = await goalsService.createGoal(userId, omit(input, ["localId"]) as never);
+    idMappings.push({ entityType: "goal", localId: input.localId, id: created.id });
+  }
+  for (const input of body.goals.update) {
+    const result = await applyIfNewer(
+      () => prisma.goal.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => goalsService.updateGoal(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "goal", id: input.id });
+  }
+
+  // --- GoalProgress --- (a diferencia de HabitLog, SÍ se edita/borra offline — ver
+  // goalsService.updateProgress/deleteProgress, que revierten currentValue de la meta)
+  for (const input of body.goalProgress.create) {
+    const created = await goalsService.registerProgress(userId, input.goalId, omit(input, ["localId", "goalId"]) as never);
+    idMappings.push({ entityType: "goalProgress", localId: input.localId, id: created.progress.id });
+  }
+  for (const input of body.goalProgress.update) {
+    const result = await applyIfNewer(
+      () => prisma.goalProgress.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => goalsService.updateProgress(userId, input.goalId, input.id, omit(input, ["id", "clientUpdatedAt", "goalId"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "goalProgress", id: input.id });
+  }
+
+  // --- Projects ---
+  for (const input of body.projects.create) {
+    const created = await projectsService.createProject(userId, omit(input, ["localId"]) as never);
+    idMappings.push({ entityType: "project", localId: input.localId, id: created.id });
+  }
+  for (const input of body.projects.update) {
+    const result = await applyIfNewer(
+      () => prisma.project.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => projectsService.updateProject(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "project", id: input.id });
+  }
+
+  // --- ProjectTasks --- (addTask/updateTask solo admiten título; completed se aplica en un
+  // segundo paso, igual patrón que subtasks/notes)
+  for (const input of body.projectTasks.create) {
+    const created = await projectsService.addTask(userId, input.projectId, input.title);
+    if (input.completed) {
+      await projectsService.setTaskCompleted(userId, input.projectId, created.id, true);
+    }
+    idMappings.push({ entityType: "projectTask", localId: input.localId, id: created.id });
+  }
+  for (const input of body.projectTasks.update) {
+    const result = await applyIfNewer(
+      async () => {
+        const task = await prisma.projectTask.findUnique({ where: { id: input.id }, include: { project: { select: { userId: true } } } });
+        return task ? { userId: task.project.userId, updatedAt: task.updatedAt } : null;
+      },
+      userId,
+      new Date(input.clientUpdatedAt),
+      async () => {
+        await projectsService.updateTask(userId, input.projectId, input.id, input.title);
+        if (input.completed !== undefined) {
+          await projectsService.setTaskCompleted(userId, input.projectId, input.id, input.completed);
+        }
+      }
+    );
+    if (result === "conflict") conflicts.push({ entityType: "projectTask", id: input.id });
+  }
+
+  // --- ProjectPages --- (content es un blob HTML opaco, LWW por clientUpdatedAt igual que Note)
+  for (const input of body.projectPages.create) {
+    const created = await projectsService.addPage(userId, input.projectId, omit(input, ["localId", "projectId"]) as never);
+    idMappings.push({ entityType: "projectPage", localId: input.localId, id: created.id });
+  }
+  for (const input of body.projectPages.update) {
+    const result = await applyIfNewer(
+      async () => {
+        const page = await prisma.projectPage.findUnique({ where: { id: input.id }, include: { project: { select: { userId: true } } } });
+        return page ? { userId: page.project.userId, updatedAt: page.updatedAt } : null;
+      },
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => projectsService.updatePage(userId, input.projectId, input.id, omit(input, ["id", "clientUpdatedAt", "projectId"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "projectPage", id: input.id });
+  }
+
+  // --- Schedules ---
+  for (const input of body.schedules.create) {
+    const created = await scheduleService.createSchedule(userId, input.name);
+    idMappings.push({ entityType: "schedule", localId: input.localId, id: created.id });
+  }
+  for (const input of body.schedules.update) {
+    const result = await applyIfNewer(
+      () => prisma.schedule.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => scheduleService.updateSchedule(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "schedule", id: input.id });
+  }
+
+  // --- ScheduleRows --- (addRow solo admite timeLabel; si la fila offline ya traía celdas/order
+  // rellenos, se aplican en un segundo paso con updateRow — mismo patrón que ProjectTasks)
+  for (const input of body.scheduleRows.create) {
+    const created = await scheduleService.addRow(userId, input.scheduleId, input.timeLabel);
+    const rest = omit(input, ["localId", "scheduleId", "timeLabel"]);
+    if (Object.keys(rest).length > 0) {
+      await scheduleService.updateRow(userId, input.scheduleId, created.id, rest as never);
+    }
+    idMappings.push({ entityType: "scheduleRow", localId: input.localId, id: created.id });
+  }
+  for (const input of body.scheduleRows.update) {
+    const result = await applyIfNewer(
+      async () => {
+        const row = await prisma.scheduleRow.findUnique({ where: { id: input.id }, include: { schedule: { select: { userId: true } } } });
+        return row ? { userId: row.schedule.userId, updatedAt: row.updatedAt } : null;
+      },
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => scheduleService.updateRow(userId, input.scheduleId, input.id, omit(input, ["id", "clientUpdatedAt", "scheduleId"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "scheduleRow", id: input.id });
+  }
+
+  // --- CalendarLegendCategories ---
+  for (const input of body.calendarLegendCategories.create) {
+    const created = await calendarLegendService.createCategory(userId, input.label, input.color);
+    idMappings.push({ entityType: "calendarLegendCategory", localId: input.localId, id: created.id });
+  }
+  for (const input of body.calendarLegendCategories.update) {
+    const result = await applyIfNewer(
+      () => prisma.calendarLegendCategory.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => calendarLegendService.updateCategory(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "calendarLegendCategory", id: input.id });
+  }
+
+  // --- CalendarDayMarks --- (upsert por fecha, siempre gana el último — igual criterio que
+  // agendaService.setEventException; "borrar" un día va por `deletes` y sí genera tombstone,
+  // ver calendarLegendService.setDayMark)
+  for (const input of body.calendarDayMarks.upsert) {
+    await calendarLegendService.setDayMark(userId, input.date, input.categoryId);
+  }
+
+  // --- CustomPages --- (content es un blob JSON por plantilla, opaco para el sync — LWW por
+  // clientUpdatedAt igual que Note/ProjectPage; las plantillas "finanzas"/"objetivos"/"agenda"
+  // de una página personalizada son snapshots independientes, no se cruzan con
+  // Transaction/Goal/Event reales)
+  for (const input of body.customPages.create) {
+    const created = await customPagesService.createCustomPage(userId, input.title, input.template);
+    idMappings.push({ entityType: "customPage", localId: input.localId, id: created.id });
+  }
+  for (const input of body.customPages.update) {
+    const result = await applyIfNewer(
+      () => prisma.customPage.findUnique({ where: { id: input.id } }),
+      userId,
+      new Date(input.clientUpdatedAt),
+      () => customPagesService.updateCustomPage(userId, input.id, omit(input, ["id", "clientUpdatedAt"]) as never)
+    );
+    if (result === "conflict") conflicts.push({ entityType: "customPage", id: input.id });
+  }
+
   // --- Deletes ---
   for (const del of body.deletes) {
     try {
@@ -218,7 +481,18 @@ export async function push(userId: number, body: SyncPushBody): Promise<PushResu
         const date = new Date(del.date);
         const existing = await prisma.habitLog.findUnique({ where: { habitId_date: { habitId: del.habitId, date } } });
         if (existing) await habitsService.toggleHabitDay(userId, del.habitId, del.date);
-      }
+      } else if (del.entityType === "transaction") await financeService.deleteTransaction(userId, del.id);
+      else if (del.entityType === "savingsGoal") await financeService.deleteSavingsGoal(userId, del.id);
+      else if (del.entityType === "goal") await goalsService.deleteGoal(userId, del.id);
+      else if (del.entityType === "goalProgress") await goalsService.deleteProgress(userId, del.goalId, del.id);
+      else if (del.entityType === "project") await projectsService.deleteProject(userId, del.id);
+      else if (del.entityType === "projectTask") await projectsService.deleteTask(userId, del.projectId, del.id);
+      else if (del.entityType === "projectPage") await projectsService.deletePage(userId, del.projectId, del.id);
+      else if (del.entityType === "schedule") await scheduleService.deleteSchedule(userId, del.id);
+      else if (del.entityType === "scheduleRow") await scheduleService.deleteRow(userId, del.scheduleId, del.id);
+      else if (del.entityType === "calendarLegendCategory") await calendarLegendService.deleteCategory(userId, del.id);
+      else if (del.entityType === "calendarDayMark") await calendarLegendService.setDayMark(userId, del.date, null);
+      else if (del.entityType === "customPage") await customPagesService.deleteCustomPage(userId, del.id);
     } catch (error) {
       // Ya borrado desde otro dispositivo (NotFoundError) — idempotente, no es un fallo del
       // push. Cualquier otro error (p.ej. ForbiddenError) sí se propaga.
@@ -255,10 +529,56 @@ interface SyncPushBody {
   notes: { create: (CreateEnvelope & { content: string; checked?: boolean })[]; update: UpdateEnvelope[] };
   habits: { create: (CreateEnvelope & { title: string })[]; update: (UpdateEnvelope & { title: string })[] };
   habitLogs: { create: { habitId: number; date: string }[] };
+  // --- Fase 2 de sync ---
+  transactions: { create: CreateEnvelope[]; update: UpdateEnvelope[] };
+  savingsGoals: { create: CreateEnvelope[]; update: UpdateEnvelope[] };
+  goals: { create: CreateEnvelope[]; update: UpdateEnvelope[] };
+  goalProgress: {
+    create: (CreateEnvelope & { goalId: number })[];
+    update: (UpdateEnvelope & { goalId: number })[];
+  };
+  projects: { create: CreateEnvelope[]; update: UpdateEnvelope[] };
+  projectTasks: {
+    create: (CreateEnvelope & { projectId: number; title: string; completed?: boolean })[];
+    update: (UpdateEnvelope & { projectId: number; title: string; completed?: boolean })[];
+  };
+  projectPages: {
+    create: (CreateEnvelope & { projectId: number })[];
+    update: (UpdateEnvelope & { projectId: number })[];
+  };
+  schedules: { create: (CreateEnvelope & { name: string })[]; update: UpdateEnvelope[] };
+  scheduleRows: {
+    create: (CreateEnvelope & { scheduleId: number; timeLabel?: string })[];
+    update: (UpdateEnvelope & { scheduleId: number })[];
+  };
+  calendarLegendCategories: {
+    create: (CreateEnvelope & { label: string; color: string })[];
+    update: UpdateEnvelope[];
+  };
+  calendarDayMarks: { upsert: { date: string; categoryId: number }[] };
+  customPages: { create: (CreateEnvelope & { title: string; template: string })[]; update: UpdateEnvelope[] };
   deletes: (
-    | { entityType: "event" | "task" | "note" | "habit"; id: number }
+    | {
+        entityType:
+          | "event"
+          | "task"
+          | "note"
+          | "habit"
+          | "transaction"
+          | "savingsGoal"
+          | "goal"
+          | "project"
+          | "schedule"
+          | "calendarLegendCategory"
+          | "customPage";
+        id: number;
+      }
     | { entityType: "subtask"; id: number; taskId: number }
     | { entityType: "eventException"; eventId: number; originalStartTime: string }
     | { entityType: "habitLog"; habitId: number; date: string }
+    | { entityType: "goalProgress"; id: number; goalId: number }
+    | { entityType: "projectTask" | "projectPage"; id: number; projectId: number }
+    | { entityType: "scheduleRow"; id: number; scheduleId: number }
+    | { entityType: "calendarDayMark"; date: string }
   )[];
 }

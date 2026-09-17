@@ -3,6 +3,19 @@ import { createEventSchema, updateEventSchema, setExceptionSchema } from "./agen
 import { createTaskSchema, updateTaskSchema, createSubtaskSchema, updateSubtaskSchema } from "./plannerValidators";
 import { createNoteSchema, updateNoteSchema } from "./notesValidators";
 import { createHabitSchema, updateHabitSchema } from "./habitsValidators";
+import { createTransactionSchema, updateTransactionSchema, createSavingsGoalSchema, updateSavingsGoalSchema } from "./financeValidators";
+import { createGoalSchema, updateGoalSchema, registerProgressSchema, updateProgressSchema } from "./goalsValidators";
+import {
+  createProjectSchema,
+  updateProjectSchema,
+  createTaskSchema as createProjectTaskSchema,
+  updateTaskSchema as updateProjectTaskSchema,
+  createPageSchema as createProjectPageSchema,
+  updatePageSchema as updateProjectPageSchema,
+} from "./projectsValidators";
+import { createScheduleSchema, updateScheduleSchema, updateRowSchema } from "./scheduleValidators";
+import { createCategorySchema, updateCategorySchema } from "./calendarLegendValidators";
+import { createCustomPageSchema, updateCustomPageSchema } from "./customPagesValidators";
 
 export const syncPullQuerySchema = Joi.object({
   // Sin `since`: bootstrap completo (todo lo del usuario, sin filtrar por fecha).
@@ -80,16 +93,125 @@ const habitLogsSchema = Joi.object({
     .default([]),
 }).default({ create: [] });
 
-// Tres formas de "borrar", según cómo se identifica cada tipo (ver syncService.ts):
+// --- Fase 2 de sync: Finanzas, Objetivos, Proyectos, Horario, Páginas personalizadas ---
+
+const transactionsSchema = Joi.object({
+  create: Joi.array().items(createTransactionSchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateTransactionSchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+const savingsGoalsSchema = Joi.object({
+  create: Joi.array().items(createSavingsGoalSchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateSavingsGoalSchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+const goalsSchema = Joi.object({
+  create: Joi.array().items(createGoalSchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateGoalSchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+// A diferencia de HabitLog, un GoalProgress SÍ se puede editar/borrar offline (ver
+// goalsService.ts updateProgress/deleteProgress, que revierten currentValue) — por eso necesita
+// `localId` como cualquier entidad creable, no solo (habitId, date).
+const goalProgressSchema = Joi.object({
+  create: Joi.array()
+    .items(registerProgressSchema.keys({ ...localIdField, goalId: Joi.number().integer().positive().required() }))
+    .default([]),
+  update: Joi.array()
+    .items(updateProgressSchema.keys({ ...updateEnvelope, goalId: Joi.number().integer().positive().required() }))
+    .default([]),
+}).default({ create: [], update: [] });
+
+const projectsSchema = Joi.object({
+  create: Joi.array().items(createProjectSchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateProjectSchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+const projectParentField = { projectId: Joi.number().integer().positive().required() };
+
+// `completed` opcional en el create: igual que con subtareas/notas, una tarea de proyecto creada
+// offline puede haberse marcado como hecha antes de sincronizar nunca (ver syncService.ts).
+const projectTasksSchema = Joi.object({
+  create: Joi.array()
+    .items(createProjectTaskSchema.keys({ ...localIdField, ...projectParentField, completed: Joi.boolean() }))
+    .default([]),
+  update: Joi.array()
+    .items(updateProjectTaskSchema.keys({ ...updateEnvelope, ...projectParentField, completed: Joi.boolean() }))
+    .default([]),
+}).default({ create: [], update: [] });
+
+const projectPagesSchema = Joi.object({
+  create: Joi.array().items(createProjectPageSchema.keys({ ...localIdField, ...projectParentField })).default([]),
+  update: Joi.array().items(updateProjectPageSchema.keys({ ...updateEnvelope, ...projectParentField })).default([]),
+}).default({ create: [], update: [] });
+
+const schedulesSchema = Joi.object({
+  create: Joi.array().items(createScheduleSchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateScheduleSchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+const scheduleParentField = { scheduleId: Joi.number().integer().positive().required() };
+
+// Reutiliza `updateRowSchema` (todos los campos opcionales, incluido `order`) también para
+// `create`: una fila creada offline puede llegar ya con celdas rellenas — más simple que
+// duplicar la lista de campos entre create/update (ver addRowSchema, que solo cubre timeLabel).
+const scheduleRowsSchema = Joi.object({
+  create: Joi.array().items(updateRowSchema.keys({ ...localIdField, ...scheduleParentField })).default([]),
+  update: Joi.array().items(updateRowSchema.keys({ ...updateEnvelope, ...scheduleParentField })).default([]),
+}).default({ create: [], update: [] });
+
+const calendarLegendCategoriesSchema = Joi.object({
+  create: Joi.array().items(createCategorySchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateCategorySchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+// Una marca de día no tiene "update" ni id propio conocido por el cliente — se identifica por
+// fecha y siempre sustituye (pintar encima cambia el color, no lo acumula), igual criterio que
+// `eventExceptionsSchema`. Un `categoryId: null` (borrar la marca) va por `deletes`, no por aquí.
+const calendarDayMarksSchema = Joi.object({
+  upsert: Joi.array()
+    .items(
+      Joi.object({
+        date: Joi.string()
+          .pattern(/^\d{4}-\d{2}-\d{2}$/)
+          .required(),
+        categoryId: Joi.number().integer().positive().required(),
+      })
+    )
+    .default([]),
+}).default({ upsert: [] });
+
+const customPagesSchema = Joi.object({
+  create: Joi.array().items(createCustomPageSchema.keys(localIdField)).default([]),
+  update: Joi.array().items(updateCustomPageSchema.keys(updateEnvelope)).default([]),
+}).default({ create: [], update: [] });
+
+// Formas de "borrar", según cómo se identifica cada tipo (ver syncService.ts):
 // - la mayoría por su `id` de servidor;
 // - una excepción de evento por (eventId, originalStartTime) — no tiene id propio conocido
 //   por el cliente hasta que hace un pull;
 // - una subtarea necesita también `taskId` (deleteSubtask lo exige, ver plannerService.ts);
 // - un HabitLog se borra "desmarcando el día" (habitId, date) — no por id, igual que un
-//   registro no se referencia por id en ningún otro sitio de la app (ver habitsService.ts).
+//   registro no se referencia por id en ningún otro sitio de la app (ver habitsService.ts);
+// - GoalProgress/ProjectTask/ProjectPage/ScheduleRow necesitan también el id de su padre;
+// - CalendarDayMark se borra por `date`, igual criterio que HabitLog.
 const deleteSchema = Joi.alternatives().try(
   Joi.object({
-    entityType: Joi.string().valid("event", "task", "note", "habit").required(),
+    entityType: Joi.string()
+      .valid(
+        "event",
+        "task",
+        "note",
+        "habit",
+        "transaction",
+        "savingsGoal",
+        "goal",
+        "project",
+        "schedule",
+        "calendarLegendCategory",
+        "customPage"
+      )
+      .required(),
     id: Joi.number().integer().positive().required(),
   }),
   Joi.object({
@@ -108,6 +230,27 @@ const deleteSchema = Joi.alternatives().try(
     date: Joi.string()
       .pattern(/^\d{4}-\d{2}-\d{2}$/)
       .required(),
+  }),
+  Joi.object({
+    entityType: Joi.string().valid("goalProgress").required(),
+    id: Joi.number().integer().positive().required(),
+    goalId: Joi.number().integer().positive().required(),
+  }),
+  Joi.object({
+    entityType: Joi.string().valid("projectTask", "projectPage").required(),
+    id: Joi.number().integer().positive().required(),
+    projectId: Joi.number().integer().positive().required(),
+  }),
+  Joi.object({
+    entityType: Joi.string().valid("scheduleRow").required(),
+    id: Joi.number().integer().positive().required(),
+    scheduleId: Joi.number().integer().positive().required(),
+  }),
+  Joi.object({
+    entityType: Joi.string().valid("calendarDayMark").required(),
+    date: Joi.string()
+      .pattern(/^\d{4}-\d{2}-\d{2}$/)
+      .required(),
   })
 );
 
@@ -119,5 +262,17 @@ export const syncPushSchema = Joi.object({
   notes: notesSchema,
   habits: habitsSchema,
   habitLogs: habitLogsSchema,
+  transactions: transactionsSchema,
+  savingsGoals: savingsGoalsSchema,
+  goals: goalsSchema,
+  goalProgress: goalProgressSchema,
+  projects: projectsSchema,
+  projectTasks: projectTasksSchema,
+  projectPages: projectPagesSchema,
+  schedules: schedulesSchema,
+  scheduleRows: scheduleRowsSchema,
+  calendarLegendCategories: calendarLegendCategoriesSchema,
+  calendarDayMarks: calendarDayMarksSchema,
+  customPages: customPagesSchema,
   deletes: Joi.array().items(deleteSchema).default([]),
 }).options({ stripUnknown: true });

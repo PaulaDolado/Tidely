@@ -113,19 +113,39 @@ conexión.
 | POST | `/sync/push` | JWT | Sube un lote de cambios hechos offline: creaciones, ediciones y borrados |
 
 **Alcance (Fase 1)**: `Event` + `EventException`, `Task` + `Subtask`, `Note`, `Habit` +
-`HabitLog`. **No sincronizan** (solo web, por ahora): Metas (`Goal`/`GoalProgress`), Finanzas
-(`Transaction`/`SavingsGoal`), Proyectos (`Project`/`ProjectTask`/`ProjectPage`), Páginas
-personalizadas (`CustomPage`, incluida la plantilla "galeria"), Notificaciones.
+`HabitLog`. **Alcance (Fase 2)**: Finanzas (`Transaction`/`SavingsGoal`), Metas
+(`Goal`/`GoalProgress`, con `GoalProgress` editable/borrable offline — a diferencia de
+`HabitLog`, revierte `currentValue`/`completed` de la meta), Proyectos
+(`Project`/`ProjectTask`/`ProjectPage`), Horario (`Schedule`/`ScheduleRow`,
+`CalendarLegendCategory`/`CalendarDayMark`), Páginas personalizadas (`CustomPage`, incluida la
+plantilla "galeria" — su `content` es un blob JSON opaco para el sync, igual que
+`ProjectPage.content`; las sub-plantillas "finanzas"/"objetivos"/"agenda" de una página
+personalizada son snapshots independientes, no se cruzan con los módulos reales). **No
+sincroniza todavía**: Notificaciones.
 
-**Pull** — respuesta `{ serverTime, events, eventExceptions, tasks, subtasks, notes, habits, habitLogs, tombstones }`.
-`serverTime` es el instante en que se hizo la consulta (no el `updatedAt` máximo de las filas
-devueltas) — el cliente debe guardarlo y enviarlo como `since` en el siguiente pull. Cada
+**Pull** — respuesta `{ serverTime, events, eventExceptions, tasks, subtasks, notes, habits,
+habitLogs, tombstones, transactions, savingsGoals, goals, goalProgress, projects, projectTasks,
+projectPages, schedules, scheduleRows, calendarLegendCategories, calendarDayMarks, customPages
+}`. `serverTime` es el instante en que se hizo la consulta (no el `updatedAt` máximo de las
+filas devueltas) — el cliente debe guardarlo y enviarlo como `since` en el siguiente pull. Cada
 tombstone es `{ id, entityType, entityId, deletedAt }` — el cliente borra localmente esa fila.
+`calendarDayMarks` sí genera tombstone al borrar una marca (identificado por el `id` real de la
+fila, no por `date`) — pero borrar una `CalendarLegendCategory` NO deja tombstone individual por
+cada día que caiga en cascada (mismo criterio que borrar un `Habit` no tombstonea cada
+`HabitLog`): el cliente trata "categoría borrada" como "borra también sus marcas locales".
 
-**Push** — body por tipo (`events`, `tasks`, `subtasks`, `notes`, `habits`): `{ create: [...],
-update: [...] }`; `eventExceptions: { upsert: [...] }`; `habitLogs: { create: [...] }` (sin
-`update` — un registro de hábito solo se crea o se borra, nunca se edita); y un array común
-`deletes: [{ entityType, id, ... }]`.
+**Push** — body por tipo (`events`, `tasks`, `subtasks`, `notes`, `habits`, `transactions`,
+`savingsGoals`, `goals`, `goalProgress`, `projects`, `projectTasks`, `projectPages`,
+`schedules`, `scheduleRows`, `calendarLegendCategories`, `customPages`): `{ create: [...],
+update: [...] }`; `eventExceptions: { upsert: [...] }`; `calendarDayMarks: { upsert: [...] }`
+(igual criterio: se identifica por `date`, no por `id`, y siempre sustituye); `habitLogs: {
+create: [...] }` (sin `update` — un registro de hábito solo se crea o se borra, nunca se edita);
+y un array común `deletes: [{ entityType, id, ... }]`.
+
+`Schedule.order`/`ScheduleRow.order`/`CustomPage.order` son `Float` (no `Int`) precisamente para
+poder reordenar offline: el cliente calcula un punto medio fraccionario entre los dos vecinos
+(o `+1000` al final) en vez de depender de los endpoints de swap `POST .../move`, que siguen
+existiendo para el uso conectado desde escritorio.
 
 - Cada elemento de `create` lleva un `localId` (UUID generado por el cliente); la respuesta
   incluye `idMappings: [{ entityType, localId, id }]` para que el móvil sustituya su id local

@@ -16,6 +16,18 @@ describe("Sync Endpoints", () => {
     await prisma.task.deleteMany({});
     await prisma.eventException.deleteMany({});
     await prisma.event.deleteMany({});
+    await prisma.calendarDayMark.deleteMany({});
+    await prisma.calendarLegendCategory.deleteMany({});
+    await prisma.customPage.deleteMany({});
+    await prisma.scheduleRow.deleteMany({});
+    await prisma.schedule.deleteMany({});
+    await prisma.projectPage.deleteMany({});
+    await prisma.projectTask.deleteMany({});
+    await prisma.project.deleteMany({});
+    await prisma.goalProgress.deleteMany({});
+    await prisma.goal.deleteMany({});
+    await prisma.transaction.deleteMany({});
+    await prisma.savingsGoal.deleteMany({});
     await prisma.user.deleteMany({});
 
     const response = await request(app).post("/auth/register").send({
@@ -209,6 +221,213 @@ describe("Sync Endpoints", () => {
         .send({ tasks: { create: [{ localId: "not-a-uuid", title: "x" }] } });
 
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe("Fase 2: Finanzas, Objetivos, Proyectos, Horario, Páginas", () => {
+    it("el bootstrap de pull también trae transacciones, metas, proyectos, horarios y páginas", async () => {
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "expense", amount: 10, category: "comida" });
+      await request(app).post("/goals").set(authed()).send({ title: "Leer", period: "weekly", targetValue: 3 });
+      await request(app).post("/projects").set(authed()).send({ title: "Reforma" });
+      await request(app).post("/schedule").set(authed()).send({ name: "1r trimestre" });
+      await request(app).post("/custom-pages").set(authed()).send({ title: "Mi nota", template: "nota" });
+
+      const response = await request(app).get("/sync/pull").set(authed());
+
+      expect(response.body.transactions).toHaveLength(1);
+      expect(response.body.goals).toHaveLength(1);
+      expect(response.body.projects).toHaveLength(1);
+      expect(response.body.schedules).toHaveLength(1);
+      expect(response.body.customPages).toHaveLength(1);
+    });
+
+    it("crea una transacción offline y aparece en el siguiente pull", async () => {
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          transactions: {
+            create: [{ localId: "11111111-1111-1111-1111-111111111111", type: "income", amount: 50, category: "salario" }],
+          },
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.idMappings[0]).toMatchObject({ entityType: "transaction" });
+
+      const pull = await request(app).get("/sync/pull").set(authed());
+      expect(pull.body.transactions).toHaveLength(1);
+      expect(pull.body.transactions[0].category).toBe("salario");
+    });
+
+    it("descarta una edición offline de una meta de ahorro más antigua que la del servidor (conflicto)", async () => {
+      const goal = await request(app)
+        .post("/finance/savings-goals")
+        .set(authed())
+        .send({ name: "Kyoto", targetAmount: 500, category: "ahorro-kyoto" });
+      await request(app).put(`/finance/savings-goals/${goal.body.id}`).set(authed()).send({ name: "Editado desde la web" });
+
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          savingsGoals: {
+            update: [{ id: goal.body.id, clientUpdatedAt: new Date(Date.now() - 60_000).toISOString(), name: "Offline viejo" }],
+          },
+        });
+
+      expect(response.body.conflicts).toEqual([{ entityType: "savingsGoal", id: goal.body.id }]);
+      const current = await prisma.savingsGoal.findUnique({ where: { id: goal.body.id } });
+      expect(current?.name).toBe("Editado desde la web");
+    });
+
+    it("crear, editar y borrar un registro de progreso offline reajusta currentValue/completed de la meta en cada paso", async () => {
+      const goal = await request(app).post("/goals").set(authed()).send({ title: "Ejercicio", period: "weekly", targetValue: 10 });
+
+      const created = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          goalProgress: {
+            create: [{ localId: "22222222-2222-2222-2222-222222222222", goalId: goal.body.id, value: 4 }],
+          },
+        });
+      const progressId = created.body.idMappings[0].id;
+      expect((await prisma.goal.findUnique({ where: { id: goal.body.id } }))?.currentValue).toBe(4);
+
+      await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          goalProgress: {
+            update: [
+              {
+                id: progressId,
+                goalId: goal.body.id,
+                clientUpdatedAt: new Date(Date.now() + 60_000).toISOString(),
+                value: 9,
+              },
+            ],
+          },
+        });
+      // 4 -> 9 es delta +5 sobre currentValue: 4 + 5 = 9, no 4 + 9.
+      expect((await prisma.goal.findUnique({ where: { id: goal.body.id } }))?.currentValue).toBe(9);
+
+      await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ deletes: [{ entityType: "goalProgress", id: progressId, goalId: goal.body.id }] });
+
+      const finalGoal = await prisma.goal.findUnique({ where: { id: goal.body.id } });
+      expect(finalGoal?.currentValue).toBe(0);
+      expect(finalGoal?.completed).toBe(false);
+    });
+
+    it("crea una tarea de proyecto offline ya marcada como completada (dos pasos: addTask + setTaskCompleted)", async () => {
+      const project = await request(app).post("/projects").set(authed()).send({ title: "Reforma" });
+
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          projectTasks: {
+            create: [
+              { localId: "33333333-3333-3333-3333-333333333333", projectId: project.body.id, title: "Comprar pintura", completed: true },
+            ],
+          },
+        });
+
+      const taskId = response.body.idMappings[0].id;
+      const task = await prisma.projectTask.findUnique({ where: { id: taskId } });
+      expect(task?.completed).toBe(true);
+    });
+
+    it("reordenar un horario offline (order fraccionario) persiste sin pasar por el endpoint de swap", async () => {
+      const schedule = await request(app).post("/schedule").set(authed()).send({ name: "1r trimestre" });
+
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          schedules: {
+            update: [{ id: schedule.body.id, clientUpdatedAt: new Date(Date.now() + 60_000).toISOString(), order: 2.5 }],
+          },
+        });
+
+      expect(response.body.conflicts).toEqual([]);
+      const updated = await prisma.schedule.findUnique({ where: { id: schedule.body.id } });
+      expect(updated?.order).toBe(2.5);
+    });
+
+    it("una marca de día se sube como upsert y, al borrarla, deja tombstone por su id real (no por date)", async () => {
+      const category = await request(app).post("/calendar-legend").set(authed()).send({ label: "Exámenes", color: "warning" });
+
+      await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ calendarDayMarks: { upsert: [{ date: "2026-09-20", categoryId: category.body.id }] } });
+
+      const afterUpsert = await request(app).get("/sync/pull").set(authed());
+      expect(afterUpsert.body.calendarDayMarks).toHaveLength(1);
+      const cursor = afterUpsert.body.serverTime;
+
+      const deleteResponse = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ deletes: [{ entityType: "calendarDayMark", date: "2026-09-20" }] });
+      expect(deleteResponse.status).toBe(200);
+
+      const afterDelete = await request(app).get("/sync/pull").set(authed()).query({ since: cursor });
+      expect(afterDelete.body.tombstones).toHaveLength(1);
+      expect(afterDelete.body.tombstones[0]).toMatchObject({ entityType: "calendarDayMark" });
+
+      const bootstrap = await request(app).get("/sync/pull").set(authed());
+      expect(bootstrap.body.calendarDayMarks).toEqual([]);
+    });
+
+    it("borrar una CalendarLegendCategory no deja tombstone individual por cada día en cascada (mismo criterio que Habit/HabitLog)", async () => {
+      const category = await request(app).post("/calendar-legend").set(authed()).send({ label: "Exámenes", color: "warning" });
+      const cursor = (await request(app).get("/sync/pull").set(authed())).body.serverTime;
+      await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ calendarDayMarks: { upsert: [{ date: "2026-09-21", categoryId: category.body.id }] } });
+
+      await request(app).delete(`/calendar-legend/${category.body.id}`).set(authed());
+
+      const pull = await request(app).get("/sync/pull").set(authed()).query({ since: cursor });
+      expect(pull.body.tombstones).toHaveLength(1);
+      expect(pull.body.tombstones[0]).toMatchObject({ entityType: "calendarLegendCategory", entityId: category.body.id });
+    });
+
+    it("crea una página personalizada offline y edita su content (blob JSON) con last-write-wins", async () => {
+      const created = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          customPages: {
+            create: [{ localId: "44444444-4444-4444-4444-444444444444", title: "Mi kanban", template: "kanban" }],
+          },
+        });
+      const pageId = created.body.idMappings[0].id;
+
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          customPages: {
+            update: [
+              {
+                id: pageId,
+                clientUpdatedAt: new Date(Date.now() + 60_000).toISOString(),
+                content: { columns: [{ id: "c1", title: "Hecho", cards: [] }] },
+              },
+            ],
+          },
+        });
+
+      expect(response.body.conflicts).toEqual([]);
+      const page = await prisma.customPage.findUnique({ where: { id: pageId } });
+      expect(page?.content).toEqual({ columns: [{ id: "c1", title: "Hecho", cards: [] }] });
     });
   });
 });

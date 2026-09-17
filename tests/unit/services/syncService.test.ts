@@ -8,6 +8,18 @@ jest.mock("../../../src/config/database", () => ({
     habit: { findMany: jest.fn(), findUnique: jest.fn() },
     habitLog: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
     syncTombstone: { findMany: jest.fn() },
+    transaction: { findMany: jest.fn(), findUnique: jest.fn() },
+    savingsGoal: { findMany: jest.fn(), findUnique: jest.fn() },
+    goal: { findMany: jest.fn(), findUnique: jest.fn() },
+    goalProgress: { findMany: jest.fn(), findUnique: jest.fn() },
+    project: { findMany: jest.fn(), findUnique: jest.fn() },
+    projectTask: { findMany: jest.fn(), findUnique: jest.fn() },
+    projectPage: { findMany: jest.fn(), findUnique: jest.fn() },
+    schedule: { findMany: jest.fn(), findUnique: jest.fn() },
+    scheduleRow: { findMany: jest.fn(), findUnique: jest.fn() },
+    calendarLegendCategory: { findMany: jest.fn(), findUnique: jest.fn() },
+    calendarDayMark: { findMany: jest.fn() },
+    customPage: { findMany: jest.fn(), findUnique: jest.fn() },
   },
 }));
 
@@ -41,11 +53,70 @@ jest.mock("../../../src/services/habitsService", () => ({
   toggleHabitDay: jest.fn(),
 }));
 
+jest.mock("../../../src/services/financeService", () => ({
+  createTransaction: jest.fn(),
+  updateTransaction: jest.fn(),
+  deleteTransaction: jest.fn(),
+  createSavingsGoal: jest.fn(),
+  updateSavingsGoal: jest.fn(),
+  deleteSavingsGoal: jest.fn(),
+}));
+
+jest.mock("../../../src/services/goalsService", () => ({
+  createGoal: jest.fn(),
+  updateGoal: jest.fn(),
+  deleteGoal: jest.fn(),
+  registerProgress: jest.fn(),
+  updateProgress: jest.fn(),
+  deleteProgress: jest.fn(),
+}));
+
+jest.mock("../../../src/services/projectsService", () => ({
+  createProject: jest.fn(),
+  updateProject: jest.fn(),
+  deleteProject: jest.fn(),
+  addTask: jest.fn(),
+  updateTask: jest.fn(),
+  setTaskCompleted: jest.fn(),
+  deleteTask: jest.fn(),
+  addPage: jest.fn(),
+  updatePage: jest.fn(),
+  deletePage: jest.fn(),
+}));
+
+jest.mock("../../../src/services/scheduleService", () => ({
+  createSchedule: jest.fn(),
+  updateSchedule: jest.fn(),
+  deleteSchedule: jest.fn(),
+  addRow: jest.fn(),
+  updateRow: jest.fn(),
+  deleteRow: jest.fn(),
+}));
+
+jest.mock("../../../src/services/calendarLegendService", () => ({
+  createCategory: jest.fn(),
+  updateCategory: jest.fn(),
+  deleteCategory: jest.fn(),
+  setDayMark: jest.fn(),
+}));
+
+jest.mock("../../../src/services/customPagesService", () => ({
+  createCustomPage: jest.fn(),
+  updateCustomPage: jest.fn(),
+  deleteCustomPage: jest.fn(),
+}));
+
 import { prisma } from "../../../src/config/database";
 import * as agendaService from "../../../src/services/agendaService";
 import * as plannerService from "../../../src/services/plannerService";
 import * as notesService from "../../../src/services/notesService";
 import * as habitsService from "../../../src/services/habitsService";
+import * as financeService from "../../../src/services/financeService";
+import * as goalsService from "../../../src/services/goalsService";
+import * as projectsService from "../../../src/services/projectsService";
+import * as scheduleService from "../../../src/services/scheduleService";
+import * as calendarLegendService from "../../../src/services/calendarLegendService";
+import * as customPagesService from "../../../src/services/customPagesService";
 import * as syncService from "../../../src/services/syncService";
 import { NotFoundError, ForbiddenError } from "../../../src/utils/errorHandler";
 
@@ -58,6 +129,18 @@ const prismaMock = prisma as unknown as {
   habit: { findMany: jest.Mock; findUnique: jest.Mock };
   habitLog: { findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock };
   syncTombstone: { findMany: jest.Mock };
+  transaction: { findMany: jest.Mock; findUnique: jest.Mock };
+  savingsGoal: { findMany: jest.Mock; findUnique: jest.Mock };
+  goal: { findMany: jest.Mock; findUnique: jest.Mock };
+  goalProgress: { findMany: jest.Mock; findUnique: jest.Mock };
+  project: { findMany: jest.Mock; findUnique: jest.Mock };
+  projectTask: { findMany: jest.Mock; findUnique: jest.Mock };
+  projectPage: { findMany: jest.Mock; findUnique: jest.Mock };
+  schedule: { findMany: jest.Mock; findUnique: jest.Mock };
+  scheduleRow: { findMany: jest.Mock; findUnique: jest.Mock };
+  calendarLegendCategory: { findMany: jest.Mock; findUnique: jest.Mock };
+  calendarDayMark: { findMany: jest.Mock };
+  customPage: { findMany: jest.Mock; findUnique: jest.Mock };
 };
 
 function emptyBody() {
@@ -69,14 +152,49 @@ function emptyBody() {
     notes: { create: [], update: [] },
     habits: { create: [], update: [] },
     habitLogs: { create: [] },
+    transactions: { create: [], update: [] },
+    savingsGoals: { create: [], update: [] },
+    goals: { create: [], update: [] },
+    goalProgress: { create: [], update: [] },
+    projects: { create: [], update: [] },
+    projectTasks: { create: [], update: [] },
+    projectPages: { create: [], update: [] },
+    schedules: { create: [], update: [] },
+    scheduleRows: { create: [], update: [] },
+    calendarLegendCategories: { create: [], update: [] },
+    calendarDayMarks: { upsert: [] },
+    customPages: { create: [], update: [] },
     deletes: [],
   };
 }
 
+const ALL_MODELS = [
+  "event",
+  "eventException",
+  "task",
+  "subtask",
+  "note",
+  "habit",
+  "habitLog",
+  "syncTombstone",
+  "transaction",
+  "savingsGoal",
+  "goal",
+  "goalProgress",
+  "project",
+  "projectTask",
+  "projectPage",
+  "schedule",
+  "scheduleRow",
+  "calendarLegendCategory",
+  "calendarDayMark",
+  "customPage",
+] as const;
+
 describe("syncService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    for (const model of ["event", "eventException", "task", "subtask", "note", "habit", "habitLog", "syncTombstone"] as const) {
+    for (const model of ALL_MODELS) {
       (prismaMock as never as Record<string, { findMany: jest.Mock }>)[model].findMany?.mockResolvedValue([]);
     }
   });
@@ -101,16 +219,25 @@ describe("syncService", () => {
       expect(prismaMock.task.findMany.mock.calls[0][0].where.updatedAt.gt).toEqual(since);
       expect(prismaMock.habitLog.findMany.mock.calls[0][0].where.createdAt.gt).toEqual(since);
       expect(prismaMock.syncTombstone.findMany.mock.calls[0][0].where.deletedAt.gt).toEqual(since);
+      expect(prismaMock.transaction.findMany.mock.calls[0][0].where.updatedAt.gt).toEqual(since);
+      expect(prismaMock.goalProgress.findMany.mock.calls[0][0].where.updatedAt.gt).toEqual(since);
+      // Hijos filtrados vía la relación con el padre, igual que subtask/eventException.
+      expect(prismaMock.projectTask.findMany.mock.calls[0][0].where.project).toEqual({ userId: 1 });
+      expect(prismaMock.scheduleRow.findMany.mock.calls[0][0].where.schedule).toEqual({ userId: 1 });
     });
 
-    it("agrupa lo devuelto por cada tipo en la respuesta", async () => {
+    it("agrupa lo devuelto por cada tipo en la respuesta, incluidos los módulos de Fase 2", async () => {
       prismaMock.event.findMany.mockResolvedValue([{ id: 1 }]);
       prismaMock.syncTombstone.findMany.mockResolvedValue([{ id: 5, entityType: "task", entityId: 9 }]);
+      prismaMock.transaction.findMany.mockResolvedValue([{ id: 7 }]);
+      prismaMock.calendarDayMark.findMany.mockResolvedValue([{ date: "2026-08-10", categoryId: 2 }]);
 
       const result = await syncService.pull(1);
 
       expect(result.events).toEqual([{ id: 1 }]);
       expect(result.tombstones).toEqual([{ id: 5, entityType: "task", entityId: 9 }]);
+      expect(result.transactions).toEqual([{ id: 7 }]);
+      expect(result.calendarDayMarks).toEqual([{ date: "2026-08-10", categoryId: 2 }]);
     });
   });
 
@@ -273,6 +400,195 @@ describe("syncService", () => {
       await syncService.push(1, { ...emptyBody(), deletes: [{ entityType: "habitLog", habitId: 5, date: "2026-08-10" }] });
 
       expect(habitsService.toggleHabitDay).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("push — Fase 2: Finanzas/Objetivos/Proyectos/Horario/Páginas", () => {
+    it("crea una transacción y devuelve el mapeo localId→id", async () => {
+      (financeService.createTransaction as jest.Mock).mockResolvedValue({ id: 100 });
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        transactions: { create: [{ localId: "tx-1", type: "expense", amount: 10, category: "comida" }], update: [] },
+      });
+
+      expect(financeService.createTransaction).toHaveBeenCalledWith(1, { type: "expense", amount: 10, category: "comida" });
+      expect(result.idMappings).toEqual([{ entityType: "transaction", localId: "tx-1", id: 100 }]);
+    });
+
+    it("aplica last-write-wins también a savingsGoals, igual que el resto de módulos", async () => {
+      prismaMock.savingsGoal.findUnique.mockResolvedValue({ userId: 1, updatedAt: new Date("2026-08-01T00:00:00.000Z") });
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        savingsGoals: { create: [], update: [{ id: 5, clientUpdatedAt: "2026-08-02T00:00:00.000Z", name: "Kyoto" }] },
+      });
+
+      expect(financeService.updateSavingsGoal).toHaveBeenCalledWith(1, 5, { name: "Kyoto" });
+      expect(result.conflicts).toEqual([]);
+    });
+
+    it("crea un registro de progreso pasando el goalId por separado del resto del envelope", async () => {
+      (goalsService.registerProgress as jest.Mock).mockResolvedValue({ progress: { id: 55 } });
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        goalProgress: { create: [{ localId: "gp-1", goalId: 9, value: 2, note: "offline" }], update: [] },
+      });
+
+      expect(goalsService.registerProgress).toHaveBeenCalledWith(1, 9, { value: 2, note: "offline" });
+      expect(result.idMappings).toEqual([{ entityType: "goalProgress", localId: "gp-1", id: 55 }]);
+    });
+
+    it("editar un goalProgress hace el chequeo LWW contra goalProgress.updatedAt y llama a updateProgress con el goalId", async () => {
+      prismaMock.goalProgress.findUnique.mockResolvedValue({ userId: 1, updatedAt: new Date("2026-08-01T00:00:00.000Z") });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        goalProgress: { create: [], update: [{ id: 55, goalId: 9, clientUpdatedAt: "2026-08-02T00:00:00.000Z", value: 3 }] },
+      });
+
+      expect(goalsService.updateProgress).toHaveBeenCalledWith(1, 9, 55, { value: 3 });
+    });
+
+    it("borrar un goalProgress pasa por deleteProgress con goalId + id, que revierte currentValue en el service", async () => {
+      await syncService.push(1, { ...emptyBody(), deletes: [{ entityType: "goalProgress", id: 55, goalId: 9 }] });
+
+      expect(goalsService.deleteProgress).toHaveBeenCalledWith(1, 9, 55);
+    });
+
+    it("crea una tarea de proyecto (título solo) y la completa en un segundo paso si venía marcada", async () => {
+      (projectsService.addTask as jest.Mock).mockResolvedValue({ id: 21 });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        projectTasks: { create: [{ localId: "pt-1", projectId: 4, title: "Diseño", completed: true }], update: [] },
+      });
+
+      expect(projectsService.addTask).toHaveBeenCalledWith(1, 4, "Diseño");
+      expect(projectsService.setTaskCompleted).toHaveBeenCalledWith(1, 4, 21, true);
+    });
+
+    it("editar una tarea de proyecto resuelve la propiedad vía la relación con el proyecto (project.userId), no un userId propio", async () => {
+      prismaMock.projectTask.findUnique.mockResolvedValue({
+        updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+        project: { userId: 2 },
+      });
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        projectTasks: { create: [], update: [{ id: 21, projectId: 4, clientUpdatedAt: "2026-08-02T00:00:00.000Z", title: "X" }] },
+      });
+
+      // "gone" (fila de otro usuario): se ignora sin más, no se reporta como conflicto.
+      expect(projectsService.updateTask).not.toHaveBeenCalled();
+      expect(result.conflicts).toEqual([]);
+    });
+
+    it("una página de proyecto (content HTML opaco) sigue el mismo LWW que una nota", async () => {
+      prismaMock.projectPage.findUnique.mockResolvedValue({
+        updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+        project: { userId: 1 },
+      });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        projectPages: {
+          create: [],
+          update: [{ id: 8, projectId: 4, clientUpdatedAt: "2026-08-02T00:00:00.000Z", content: "<p>hola</p>" }],
+        },
+      });
+
+      expect(projectsService.updatePage).toHaveBeenCalledWith(1, 4, 8, { content: "<p>hola</p>" });
+    });
+
+    it("crea un horario (nombre) y una fila con timeLabel + celdas en dos pasos", async () => {
+      (scheduleService.createSchedule as jest.Mock).mockResolvedValue({ id: 3 });
+      (scheduleService.addRow as jest.Mock).mockResolvedValue({ id: 12 });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        schedules: { create: [{ localId: "sch-1", name: "1r trimestre" }], update: [] },
+        scheduleRows: {
+          create: [{ localId: "row-1", scheduleId: 3, timeLabel: "08:00", monday: "Cálculo" }],
+          update: [],
+        },
+      });
+
+      expect(scheduleService.createSchedule).toHaveBeenCalledWith(1, "1r trimestre");
+      expect(scheduleService.addRow).toHaveBeenCalledWith(1, 3, "08:00");
+      expect(scheduleService.updateRow).toHaveBeenCalledWith(1, 3, 12, { monday: "Cálculo" });
+    });
+
+    it("no llama a updateRow en el create si la fila offline no traía más que timeLabel", async () => {
+      (scheduleService.addRow as jest.Mock).mockResolvedValue({ id: 13 });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        scheduleRows: { create: [{ localId: "row-2", scheduleId: 3, timeLabel: "09:00" }], update: [] },
+      });
+
+      expect(scheduleService.updateRow).not.toHaveBeenCalled();
+    });
+
+    it("reordenar un horario offline es un update normal con `order` fraccionario, sin pasar por moveSchedule", async () => {
+      prismaMock.schedule.findUnique.mockResolvedValue({ userId: 1, updatedAt: new Date("2026-08-01T00:00:00.000Z") });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        schedules: { create: [], update: [{ id: 3, clientUpdatedAt: "2026-08-02T00:00:00.000Z", order: 1.5 }] },
+      });
+
+      expect(scheduleService.updateSchedule).toHaveBeenCalledWith(1, 3, { order: 1.5 });
+    });
+
+    it("borra una fila de horario con su scheduleId", async () => {
+      await syncService.push(1, { ...emptyBody(), deletes: [{ entityType: "scheduleRow", id: 12, scheduleId: 3 }] });
+
+      expect(scheduleService.deleteRow).toHaveBeenCalledWith(1, 3, 12);
+    });
+
+    it("crea una categoría de la leyenda del calendario (label + color)", async () => {
+      (calendarLegendService.createCategory as jest.Mock).mockResolvedValue({ id: 6 });
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        calendarLegendCategories: { create: [{ localId: "cat-1", label: "Exámenes", color: "warning" }], update: [] },
+      });
+
+      expect(calendarLegendService.createCategory).toHaveBeenCalledWith(1, "Exámenes", "warning");
+      expect(result.idMappings).toEqual([{ entityType: "calendarLegendCategory", localId: "cat-1", id: 6 }]);
+    });
+
+    it("una marca de día se sube como upsert por fecha, no como create/update", async () => {
+      await syncService.push(1, {
+        ...emptyBody(),
+        calendarDayMarks: { upsert: [{ date: "2026-08-10", categoryId: 6 }] },
+      });
+
+      expect(calendarLegendService.setDayMark).toHaveBeenCalledWith(1, "2026-08-10", 6);
+    });
+
+    it("borrar una marca de día llama a setDayMark con categoryId null (el tombstone lo genera el propio service)", async () => {
+      await syncService.push(1, { ...emptyBody(), deletes: [{ entityType: "calendarDayMark", date: "2026-08-10" }] });
+
+      expect(calendarLegendService.setDayMark).toHaveBeenCalledWith(1, "2026-08-10", null);
+    });
+
+    it("crea una página personalizada (title + template) y su content se trata como blob opaco al editar", async () => {
+      (customPagesService.createCustomPage as jest.Mock).mockResolvedValue({ id: 30 });
+      prismaMock.customPage.findUnique.mockResolvedValue({ userId: 1, updatedAt: new Date("2026-08-01T00:00:00.000Z") });
+
+      await syncService.push(1, {
+        ...emptyBody(),
+        customPages: {
+          create: [{ localId: "cp-1", title: "Mi kanban", template: "kanban" }],
+          update: [{ id: 30, clientUpdatedAt: "2026-08-02T00:00:00.000Z", content: { columns: [] } }],
+        },
+      });
+
+      expect(customPagesService.createCustomPage).toHaveBeenCalledWith(1, "Mi kanban", "kanban");
+      expect(customPagesService.updateCustomPage).toHaveBeenCalledWith(1, 30, { content: { columns: [] } });
     });
   });
 });
