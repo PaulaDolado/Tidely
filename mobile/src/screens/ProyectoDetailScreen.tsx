@@ -3,30 +3,30 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndic
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ApiError } from "../api/client";
+import { runSync } from "../sync";
+import { getProject, updateProjectLocal, deleteProjectLocal } from "../db/projectsRepo";
 import {
-  addProjectPage,
-  addProjectTask,
-  deleteProject,
-  deleteProjectPage,
-  deleteProjectTask,
-  getProject,
-  listProjectPages,
-  Project,
-  ProjectPage,
-  ProjectStatus,
-  ProjectTask,
-  setProjectTaskCompleted,
-  updateProjectPage,
-  updateProjectStatus,
-  updateProjectTask,
-} from "../api/projects";
+  listForProject as listTasksForProject,
+  createProjectTaskLocal,
+  updateProjectTaskTitleLocal,
+  setProjectTaskCompletedLocal,
+  deleteProjectTaskLocal,
+} from "../db/projectTasksRepo";
+import {
+  listForProject as listPagesForProject,
+  createProjectPageLocal,
+  updateProjectPageLocal,
+  deleteProjectPageLocal,
+} from "../db/projectPagesRepo";
+import { LocalProject, LocalProjectPage, LocalProjectTask } from "../types";
 import { htmlToPlainText, plainTextToHtml } from "../utils/htmlText";
 import { colors, fonts, radius, shadow } from "../theme";
 import { ProyectosStackParamList } from "./ProyectosScreen";
 
 // Cuaderno de un proyecto — puerto de ProjectNotebook + ProjectPages en
-// dashboard/src/pages/ProyectosPage.tsx. Dos simplificaciones deliberadas frente a la web:
+// dashboard/src/pages/ProyectosPage.tsx. Offline-first, igual que el resto de pantallas: lee/
+// escribe en SQLite (projectsRepo/projectTasksRepo/projectPagesRepo) y sincroniza vía runSync().
+// Dos simplificaciones deliberadas frente a la web:
 //   - El contenido de cada página se edita como texto plano, no con el editor enriquecido de la
 //     web (negrita/listas/imágenes) — no hay ninguna librería de rich text en package.json, y
 //     traer una solo para esto es demasiado para lo que se pidió. Ver utils/htmlText.ts
@@ -36,6 +36,7 @@ import { ProyectosStackParamList } from "./ProyectosScreen";
 //     que el resto de editores del móvil (ver PaginaDetailScreen.tsx).
 // La exportación a PDF/Word de la web tampoco tiene equivalente aquí (usa el diálogo de impresión
 // del navegador y un blob .doc, ninguno de los dos existe en un teléfono).
+type ProjectStatus = "idea" | "en_curso" | "pausado" | "completado";
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   idea: "Idea",
   en_curso: "En curso",
@@ -44,43 +45,58 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
 };
 const STATUS_ORDER: ProjectStatus[] = ["idea", "en_curso", "pausado", "completado"];
 
+function computeProgress(tasks: LocalProjectTask[]): { total: number; completed: number } {
+  const total = tasks.length;
+  const completed = tasks.filter((t) => t.completed === 1).length;
+  return { total, completed };
+}
+
 type Props = NativeStackScreenProps<ProyectosStackParamList, "Detalle">;
 
 export function ProyectoDetailScreen({ route, navigation }: Props) {
   const { id: projectId } = route.params;
-  const [project, setProject] = useState<Project | null>(null);
-  const [pages, setPages] = useState<ProjectPage[]>([]);
+  const [project, setProject] = useState<LocalProject | null>(null);
+  const [tasks, setTasks] = useState<LocalProjectTask[]>([]);
+  const [pages, setPages] = useState<LocalProjectPage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState("");
   const [content, setContent] = useState("");
   const [savingContent, setSavingContent] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const [taskDraft, setTaskDraft] = useState("");
-  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTaskTitle, setEditingTaskTitle] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      const [loadedProject, loadedPages] = await Promise.all([getProject(projectId), listProjectPages(projectId)]);
-      setProject(loadedProject);
-      setPages(loadedPages);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo cargar el proyecto");
-    } finally {
-      setLoading(false);
-    }
+    const [loadedProject, loadedTasks, loadedPages] = await Promise.all([
+      getProject(projectId),
+      listTasksForProject(projectId),
+      listPagesForProject(projectId),
+    ]);
+    setProject(loadedProject);
+    setTasks(loadedTasks);
+    setPages(loadedPages);
+    setLoading(false);
   }, [projectId]);
+
+  const sync = useCallback(async () => {
+    setSyncError(null);
+    const result = await runSync();
+    if (result.success) await reload();
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+  }, [reload]);
 
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload])
+      sync();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [projectId])
   );
 
   // Selecciona la primera página en cuanto cargan (si no hay ninguna abierta ya) — igual que en
@@ -95,7 +111,7 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages]);
 
-  function selectPage(page: ProjectPage) {
+  function selectPage(page: LocalProjectPage) {
     setSelectedPageId(page.id);
     setPageTitle(page.title);
     setContent(htmlToPlainText(page.content));
@@ -104,9 +120,17 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
 
   const cycleStatus = async () => {
     if (!project) return;
-    const next = STATUS_ORDER[(STATUS_ORDER.indexOf(project.status) + 1) % STATUS_ORDER.length];
-    const updated = await updateProjectStatus(projectId, next);
-    setProject(updated);
+    const next = STATUS_ORDER[(STATUS_ORDER.indexOf(project.status as ProjectStatus) + 1) % STATUS_ORDER.length];
+    await updateProjectLocal(projectId, {
+      title: project.title,
+      description: project.description,
+      status: next,
+      priority: project.priority,
+      deadline: project.deadline,
+      color: project.color,
+    });
+    await reload();
+    await sync();
   };
 
   const confirmDeleteProject = () => {
@@ -116,7 +140,8 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
         text: "Eliminar",
         style: "destructive",
         onPress: async () => {
-          await deleteProject(projectId);
+          await deleteProjectLocal(projectId);
+          await sync();
           navigation.goBack();
         },
       },
@@ -129,32 +154,36 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     const title = taskDraft.trim();
     if (!title) return;
     setTaskDraft("");
-    const task = await addProjectTask(projectId, title);
-    setProject((p) => (p ? { ...p, tasks: [...(p.tasks ?? []), task] } : p));
+    await createProjectTaskLocal(projectId, title);
+    await reload();
+    await sync();
   };
 
-  const toggleTask = async (task: ProjectTask) => {
-    const updated = await setProjectTaskCompleted(projectId, task.id, !task.completed);
-    setProject((p) => (p ? { ...p, tasks: p.tasks?.map((t) => (t.id === task.id ? updated : t)) } : p));
+  const toggleTask = async (task: LocalProjectTask) => {
+    await setProjectTaskCompletedLocal(task.id, task.completed !== 1);
+    await reload();
+    await sync();
   };
 
-  const saveTaskTitle = async (taskId: number, title: string) => {
+  const saveTaskTitle = async (taskId: string, title: string) => {
     setEditingTaskId(null);
     const trimmed = title.trim();
     if (!trimmed) return; // vacío: se descarta el cambio, igual que en la web
-    const updated = await updateProjectTask(projectId, taskId, trimmed);
-    setProject((p) => (p ? { ...p, tasks: p.tasks?.map((t) => (t.id === taskId ? updated : t)) } : p));
+    await updateProjectTaskTitleLocal(taskId, trimmed);
+    await reload();
+    await sync();
   };
 
-  const confirmDeleteTask = (task: ProjectTask) => {
+  const confirmDeleteTask = (task: LocalProjectTask) => {
     Alert.alert("Eliminar apunte", `¿Quitar "${task.title}"?`, [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Eliminar",
         style: "destructive",
         onPress: async () => {
-          await deleteProjectTask(projectId, task.id);
-          setProject((p) => (p ? { ...p, tasks: p.tasks?.filter((t) => t.id !== task.id) } : p));
+          await deleteProjectTaskLocal(task.id);
+          await reload();
+          await sync();
         },
       },
     ]);
@@ -163,17 +192,21 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
   // --- Páginas ---
 
   const addPage = async () => {
-    const created = await addProjectPage(projectId, `Página ${pages.length + 1}`);
-    setPages((prev) => [...prev, created]);
-    selectPage(created);
+    const id = await createProjectPageLocal(projectId, `Página ${pages.length + 1}`);
+    const refreshed = await listPagesForProject(projectId);
+    setPages(refreshed);
+    const created = refreshed.find((p) => p.id === id);
+    if (created) selectPage(created);
+    await sync();
   };
 
   const saveTitle = async () => {
     if (selectedPageId === null) return;
     const trimmed = pageTitle.trim();
     if (!trimmed) return;
-    const updated = await updateProjectPage(projectId, selectedPageId, { title: trimmed });
-    setPages((prev) => prev.map((p) => (p.id === selectedPageId ? updated : p)));
+    await updateProjectPageLocal(selectedPageId, { title: trimmed });
+    setPages((prev) => prev.map((p) => (p.id === selectedPageId ? { ...p, title: trimmed } : p)));
+    await sync();
   };
 
   const saveContent = async () => {
@@ -181,21 +214,23 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     setSavingContent(true);
     try {
       const html = plainTextToHtml(content);
-      const updated = await updateProjectPage(projectId, selectedPageId, { content: html });
-      setPages((prev) => prev.map((p) => (p.id === selectedPageId ? updated : p)));
+      await updateProjectPageLocal(selectedPageId, { content: html });
+      setPages((prev) => prev.map((p) => (p.id === selectedPageId ? { ...p, content: html } : p)));
       setDirty(false);
     } finally {
       setSavingContent(false);
     }
+    await sync();
   };
 
   // Página vacía se borra sin preguntar (nada que perder); con contenido, pide confirmación —
   // igual que en la web.
-  const handleDeletePage = (page: ProjectPage) => {
+  const handleDeletePage = (page: LocalProjectPage) => {
     const isEmpty = !page.content || htmlToPlainText(page.content).trim() === "";
     const doDelete = async () => {
-      await deleteProjectPage(projectId, page.id);
+      await deleteProjectPageLocal(page.id);
       setPages((prev) => prev.filter((p) => p.id !== page.id));
+      await sync();
     };
     if (isEmpty) {
       doDelete();
@@ -215,25 +250,20 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  if (error && !project) {
-    return (
-      <SafeAreaView style={styles.container} edges={["bottom"]}>
-        <Text style={styles.errorBanner}>{error}</Text>
-      </SafeAreaView>
-    );
-  }
-
   if (!project) return null;
+
+  const progress = computeProgress(tasks);
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.statusRow}>
           <Pressable style={styles.statusBadge} onPress={cycleStatus}>
-            <Text style={styles.statusBadgeText}>{STATUS_LABELS[project.status]}</Text>
+            <Text style={styles.statusBadgeText}>{STATUS_LABELS[project.status as ProjectStatus] ?? project.status}</Text>
           </Pressable>
           <Text style={styles.progressText}>
-            {project.progress?.completed ?? 0}/{project.progress?.total ?? 0} apuntes resueltos
+            {progress.completed}/{progress.total} apuntes resueltos
           </Text>
         </View>
 
@@ -254,16 +284,16 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
             </Pressable>
           </View>
 
-          {(project.tasks?.length ?? 0) === 0 ? (
+          {tasks.length === 0 ? (
             <Text style={styles.emptyText}>Aún no tienes apuntes en esta libreta.</Text>
           ) : (
-            project.tasks?.map((task) => (
+            tasks.map((task) => (
               <View key={task.id} style={styles.taskRow}>
                 <Pressable
-                  style={[styles.taskCheckbox, task.completed && styles.taskCheckboxDone]}
+                  style={[styles.taskCheckbox, task.completed === 1 && styles.taskCheckboxDone]}
                   onPress={() => toggleTask(task)}
                 >
-                  {task.completed && <Text style={styles.taskCheckboxMark}>✓</Text>}
+                  {task.completed === 1 && <Text style={styles.taskCheckboxMark}>✓</Text>}
                 </Pressable>
                 {editingTaskId === task.id ? (
                   <TextInput
@@ -278,12 +308,12 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
                   <Pressable
                     style={{ flex: 1, minWidth: 0 }}
                     onPress={() => {
-                      if (task.completed) return;
+                      if (task.completed === 1) return;
                       setEditingTaskTitle(task.title);
                       setEditingTaskId(task.id);
                     }}
                   >
-                    <Text numberOfLines={2} style={[styles.taskTitle, task.completed && styles.taskTitleDone]}>
+                    <Text numberOfLines={2} style={[styles.taskTitle, task.completed === 1 && styles.taskTitleDone]}>
                       {task.title}
                     </Text>
                   </Pressable>

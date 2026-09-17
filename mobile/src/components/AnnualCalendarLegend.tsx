@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
-import { ApiError } from "../api/client";
+import { runSync } from "../sync";
 import {
   listCategories,
-  createCategory,
-  renameCategory,
-  changeCategoryColor,
-  deleteCategory,
-  listMarks,
-  setDayMark,
-} from "../api/calendarLegend";
-import { CalendarColor, CalendarLegendCategory } from "../types";
+  createCategoryLocal,
+  updateCategoryLocal,
+  deleteCategoryLocal,
+  listMarksInRange,
+  setDayMarkLocal,
+  unsetDayMarkLocal,
+} from "../db/calendarLegendRepo";
+import { CalendarColor, LocalCalendarLegendCategory } from "../types";
 import { CALENDAR_COLOR_CLASSES, CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
 import { colors, fonts, radius, withAlpha } from "../theme";
 
@@ -54,45 +54,32 @@ function monthWeeks(year: number, month: number): (Date | null)[][] {
  * de la rejilla de hasta 4 columnas de escritorio (aquí no hay sitio para más de una).
  */
 export function AnnualCalendarLegend() {
-  const [categories, setCategories] = useState<CalendarLegendCategory[]>([]);
+  const [categories, setCategories] = useState<LocalCalendarLegendCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
-  const [categoriesError, setCategoriesError] = useState<string | null>(null);
 
   const [yearOffset, setYearOffset] = useState(0);
   const startYear = academicYearStart(yearOffset);
 
-  const [marks, setMarks] = useState<Map<string, number>>(new Map());
+  const [marks, setMarks] = useState<Map<string, string>>(new Map());
   const [loadingMarks, setLoadingMarks] = useState(true);
 
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
-  const [renamingCategoryId, setRenamingCategoryId] = useState<number | null>(null);
+  const [renamingCategoryId, setRenamingCategoryId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [editingColorCategoryId, setEditingColorCategoryId] = useState<number | null>(null);
+  const [editingColorCategoryId, setEditingColorCategoryId] = useState<string | null>(null);
 
   const reloadCategories = useCallback(async () => {
     setLoadingCategories(true);
-    try {
-      setCategories(await listCategories());
-      setCategoriesError(null);
-    } catch (err) {
-      setCategoriesError(err instanceof ApiError ? err.message : "No se pudieron cargar las categorías");
-    } finally {
-      setLoadingCategories(false);
-    }
+    setCategories(await listCategories());
+    setLoadingCategories(false);
   }, []);
 
   const reloadMarks = useCallback(async () => {
     setLoadingMarks(true);
-    try {
-      const list = await listMarks(`${startYear}-09-01`, `${startYear + 1}-07-31`);
-      setMarks(new Map(list.map((m) => [m.date, m.categoryId])));
-    } catch {
-      // Silencioso a propósito: un fallo puntual al cambiar de curso no debe tirar toda la
-      // pantalla de Horario, que vive por encima de este componente.
-    } finally {
-      setLoadingMarks(false);
-    }
+    const list = await listMarksInRange(`${startYear}-09-01`, `${startYear + 1}-07-31`);
+    setMarks(new Map(list.map((m) => [m.date, m.categoryId])));
+    setLoadingMarks(false);
   }, [startYear]);
 
   useEffect(() => {
@@ -103,9 +90,9 @@ export function AnnualCalendarLegend() {
     reloadMarks();
   }, [reloadMarks]);
 
-  // Copia local optimista: tocar un día actualiza esto al instante sin esperar la respuesta del
-  // servidor. Tocar un día ya pintado con la categoría activa lo despinta (mismo criterio que la
-  // web al "repintar" con el mismo valor).
+  // Copia local optimista: tocar un día actualiza esto al instante, la escritura en SQLite +
+  // sync van en segundo plano. Tocar un día ya pintado con la categoría activa lo despinta
+  // (mismo criterio que la web al "repintar" con el mismo valor).
   const toggleDay = (key: string) => {
     if (selectedCategoryId === null) return;
     const current = marks.get(key) ?? null;
@@ -116,34 +103,38 @@ export function AnnualCalendarLegend() {
       else next.set(key, nextValue);
       return next;
     });
-    setDayMark(key, nextValue).catch(() => reloadMarks());
+    (nextValue === null ? unsetDayMarkLocal(key) : setDayMarkLocal(key, nextValue)).then(() => runSync());
   };
 
   const handleAddCategory = async (label: string, color: CalendarColor) => {
-    await createCategory(label, color);
+    await createCategoryLocal(label, color);
     setShowAddCategory(false);
     await reloadCategories();
+    await runSync();
   };
 
-  const handleRenameCategory = async (id: number, label: string) => {
-    await renameCategory(id, label);
+  const handleRenameCategory = async (id: string, label: string) => {
+    await updateCategoryLocal(id, { label });
     await reloadCategories();
+    await runSync();
   };
 
-  const handleChangeColor = async (id: number, color: CalendarColor) => {
+  const handleChangeColor = async (id: string, color: CalendarColor) => {
     setEditingColorCategoryId(null);
-    await changeCategoryColor(id, color);
+    await updateCategoryLocal(id, { color });
     await reloadCategories();
+    await runSync();
   };
 
   // Borrado directo, sin doble confirmación: la web pide un segundo clic ("¿Confirmar?"), pero
   // ese patrón depende de un hover que no existe en táctil — mismo criterio que ya usa
   // HorarioScreen.tsx para "Eliminar horario" y "✕" de fila (un solo toque, sin confirmar).
-  const handleDeleteCategory = async (id: number) => {
-    await deleteCategory(id);
+  const handleDeleteCategory = async (id: string) => {
+    await deleteCategoryLocal(id);
     if (selectedCategoryId === id) setSelectedCategoryId(null);
     await reloadCategories();
     await reloadMarks();
+    await runSync();
   };
 
   return (
@@ -173,8 +164,6 @@ export function AnnualCalendarLegend() {
           ? "Elige una categoría de la leyenda de abajo y toca los días para pintarlos."
           : "Toca los días para pintarlos — tócalos otra vez para despintarlos."}
       </Text>
-
-      {categoriesError && <Text style={styles.errorBanner}>{categoriesError}</Text>}
 
       {loadingCategories || loadingMarks ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 12 }} />
@@ -281,7 +270,7 @@ function CategoryChip({
   onPickColor,
   onDeletePress,
 }: {
-  category: CalendarLegendCategory;
+  category: LocalCalendarLegendCategory;
   isSelected: boolean;
   isRenaming: boolean;
   renameValue: string;

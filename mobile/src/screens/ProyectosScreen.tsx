@@ -8,7 +8,7 @@ import { DetailBackButton } from "../components/DetailBackButton";
 // pila anidada dentro de la pestaña — mismo patrón que "Páginas" (ver PaginasScreen.tsx).
 export type ProyectosStackParamList = {
   Lista: undefined;
-  Detalle: { id: number; title: string };
+  Detalle: { id: string; title: string };
 };
 
 const Stack = createNativeStackNavigator<ProyectosStackParamList>();

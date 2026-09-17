@@ -10,7 +10,7 @@ import { DetailBackButton } from "../components/DetailBackButton";
 // de pestañas son pantallas planas sin esta necesidad.
 export type PaginasStackParamList = {
   Lista: undefined;
-  Detalle: { id: number; title: string };
+  Detalle: { id: string; title: string };
 };
 
 const Stack = createNativeStackNavigator<PaginasStackParamList>();

@@ -3,53 +3,63 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Activi
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { useFocusEffect } from "@react-navigation/native";
-import { ApiError } from "../api/client";
+import { runSync } from "../sync";
 import {
-  addRow,
-  createSchedule,
-  DAY_KEYS,
-  DAY_LABELS,
-  DayKey,
-  deleteRow,
-  deleteSchedule,
-  listRows,
   listSchedules,
-  moveRow,
-  moveSchedule,
-  renameSchedule,
-  Schedule,
-  ScheduleRow,
-  updateRow,
-} from "../api/schedule";
+  createScheduleLocal,
+  renameScheduleLocal,
+  deleteScheduleLocal,
+  moveScheduleLocal,
+} from "../db/scheduleRepo";
+import {
+  listForSchedule,
+  createRowLocal,
+  updateRowCellLocal,
+  deleteRowLocal,
+  moveRowLocal,
+} from "../db/scheduleRowsRepo";
+import { LocalSchedule, LocalScheduleRow } from "../types";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { AnnualCalendarLegend } from "../components/AnnualCalendarLegend";
 
-// Puerto directo de dashboard/src/pages/SchedulePage.tsx — mismo modelo (Schedule con nombre
-// propio + ScheduleRow de texto libre lunes-viernes, sin fechas). Como Objetivos, no pasa por
-// SQLite: ver el comentario de cabecera de src/api/schedule.ts para el porqué. Con paridad
-// completa con la web: los dos modos de vista ("Flechas" — un horario a la vez — y "Apilado" —
-// todos uno debajo de otro) y el calendario anual con leyenda (AnnualCalendarLegend) debajo.
+// Puerto de dashboard/src/pages/SchedulePage.tsx — mismo modelo (Schedule con nombre propio +
+// ScheduleRow de texto libre lunes-viernes, sin fechas). Offline-first, igual que Agenda/
+// Planificador: lee/escribe en SQLite (scheduleRepo/scheduleRowsRepo) y sincroniza vía runSync();
+// reordenar (flechas ↑↓) calcula un `order` fraccionario localmente en vez de llamar al endpoint
+// de swap `moveSchedule`/`moveRow` (ver scheduleRepo.moveScheduleLocal). Con paridad completa con
+// la web: los dos modos de vista ("Flechas" — un horario a la vez — y "Apilado" — todos uno
+// debajo de otro) y el calendario anual con leyenda (AnnualCalendarLegend) debajo.
 // Simplificación deliberada frente a la web: los borrados (horario/franja) son de un solo toque,
 // sin el "¿Confirmar?" de doble clic — ese patrón depende de un hover que no existe en táctil.
+
+type DayKey = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
+const DAY_LABELS: Record<DayKey, string> = {
+  monday: "Lunes",
+  tuesday: "Martes",
+  wednesday: "Miércoles",
+  thursday: "Jueves",
+  friday: "Viernes",
+};
+const DAY_KEYS: DayKey[] = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 
 const VIEW_MODE_KEY = "life-organizer.schedule-view-mode";
 type ViewMode = "flechas" | "apilado";
 
 export function HorarioScreen() {
   const { collapsed } = useSidebar();
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [schedules, setSchedules] = useState<LocalSchedule[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [rows, setRows] = useState<ScheduleRow[]>([]);
+  const [rows, setRows] = useState<LocalScheduleRow[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [pendingFocusId, setPendingFocusId] = useState<number | null>(null);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("flechas");
 
   const active = schedules[activeIndex] ?? null;
@@ -70,20 +80,25 @@ export function HorarioScreen() {
 
   const reloadSchedules = useCallback(async () => {
     setLoadingSchedules(true);
-    setError(null);
-    try {
-      setSchedules(await listSchedules());
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudieron cargar los horarios");
-    } finally {
-      setLoadingSchedules(false);
-    }
+    setSchedules(await listSchedules());
+    setLoadingSchedules(false);
   }, []);
+
+  const sync = useCallback(async () => {
+    setSyncing(true);
+    setSyncError(null);
+    const result = await runSync();
+    setSyncing(false);
+    if (result.success) await reloadSchedules();
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+  }, [reloadSchedules]);
 
   useFocusEffect(
     useCallback(() => {
       reloadSchedules();
-    }, [reloadSchedules])
+      sync();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   // Si se borra el horario activo (o cambia el total), el índice no debe quedar fuera de rango.
@@ -102,16 +117,10 @@ export function HorarioScreen() {
     }
   }, [schedules, pendingFocusId]);
 
-  const reloadRows = useCallback(async (scheduleId: number) => {
+  const reloadRows = useCallback(async (scheduleId: string) => {
     setLoadingRows(true);
-    setRowError(null);
-    try {
-      setRows(await listRows(scheduleId));
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "No se pudo cargar el horario");
-    } finally {
-      setLoadingRows(false);
-    }
+    setRows(await listForSchedule(scheduleId));
+    setLoadingRows(false);
   }, []);
 
   useEffect(() => {
@@ -124,11 +133,12 @@ export function HorarioScreen() {
   const handleCreateSchedule = async () => {
     const trimmed = newName.trim();
     if (!trimmed) return;
-    const created = await createSchedule(trimmed);
+    const id = await createScheduleLocal(trimmed);
     setNewName("");
     setShowCreate(false);
-    setPendingFocusId(created.id);
+    setPendingFocusId(id);
     await reloadSchedules();
+    await sync();
   };
 
   const handleRename = async () => {
@@ -136,67 +146,71 @@ export function HorarioScreen() {
     const trimmed = nameDraft.trim();
     setRenaming(false);
     if (!trimmed || trimmed === active.name) return;
-    await renameSchedule(active.id, trimmed);
+    await renameScheduleLocal(active.id, trimmed);
     await reloadSchedules();
+    await sync();
   };
 
   const handleDeleteSchedule = async () => {
     if (!active) return;
-    await deleteSchedule(active.id);
+    await deleteScheduleLocal(active.id);
     await reloadSchedules();
+    await sync();
   };
 
   const handleMoveSchedule = async (direction: "up" | "down") => {
     if (!active) return;
-    await moveSchedule(active.id, direction);
+    await moveScheduleLocal(active.id, direction);
     await reloadSchedules();
+    await sync();
   };
 
-  const updateLocalCell = (rowId: number, field: DayKey | "timeLabel", value: string) => {
+  const updateLocalCell = (rowId: string, field: DayKey | "timeLabel", value: string) => {
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)));
   };
 
-  const persistCell = async (rowId: number, field: DayKey | "timeLabel", value: string) => {
-    if (!active) return;
-    try {
-      await updateRow(active.id, rowId, { [field]: value });
-      setRowError(null);
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "No se pudo guardar el cambio");
-    }
+  const persistCell = async (rowId: string, field: DayKey | "timeLabel", value: string) => {
+    await updateRowCellLocal(rowId, field, value);
+    await sync();
   };
 
   const handleAddRow = async () => {
     if (!active) return;
-    await addRow(active.id);
+    await createRowLocal(active.id, "");
     await reloadRows(active.id);
+    await sync();
   };
 
-  const handleDeleteRow = async (rowId: number) => {
+  const handleDeleteRow = async (rowId: string) => {
     if (!active) return;
-    await deleteRow(active.id, rowId);
+    await deleteRowLocal(rowId);
     await reloadRows(active.id);
+    await sync();
   };
 
-  const handleMoveRow = async (rowId: number, direction: "up" | "down") => {
+  const handleMoveRow = async (rowId: string, direction: "up" | "down") => {
     if (!active) return;
-    await moveRow(active.id, rowId, direction);
+    await moveRowLocal(rowId, direction);
     await reloadRows(active.id);
+    await sync();
   };
 
   // Versiones "por id" de las acciones de arriba, para el modo Apilado: ahí cada
   // ScheduleTableCard gestiona su propio horario, no el `active` de la vista Flechas.
-  const renameScheduleById = async (id: number, name: string) => {
-    await renameSchedule(id, name);
+  const renameScheduleById = async (id: string, name: string) => {
+    await renameScheduleLocal(id, name);
     await reloadSchedules();
+    await sync();
   };
-  const deleteScheduleById = async (id: number) => {
-    await deleteSchedule(id);
+  const deleteScheduleById = async (id: string) => {
+    await deleteScheduleLocal(id);
     await reloadSchedules();
+    await sync();
   };
-  const moveScheduleById = async (id: number, direction: "up" | "down") => {
-    await moveSchedule(id, direction);
+  const moveScheduleById = async (id: string, direction: "up" | "down") => {
+    await moveScheduleLocal(id, direction);
     await reloadSchedules();
+    await sync();
   };
 
   return (
@@ -225,7 +239,13 @@ export function HorarioScreen() {
         </View>
       </View>
 
-      {error && <Text style={styles.errorBanner}>{error}</Text>}
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
+      {syncing && (
+        <View style={styles.syncBar}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.syncText}>Sincronizando…</Text>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={styles.screenScroll}>
         {loadingSchedules && schedules.length === 0 ? (
@@ -283,8 +303,6 @@ export function HorarioScreen() {
                 </Pressable>
               </View>
             </View>
-
-            {rowError && <Text style={styles.errorBanner}>{rowError}</Text>}
 
             <ScheduleTableGrid
               rows={rows}
@@ -346,13 +364,13 @@ function ScheduleTableGrid({
   onDeleteRow,
   onMoveRow,
 }: {
-  rows: ScheduleRow[];
+  rows: LocalScheduleRow[];
   loading: boolean;
-  onCellChange: (rowId: number, field: DayKey | "timeLabel", value: string) => void;
-  onCellBlur: (rowId: number, field: DayKey | "timeLabel", value: string) => void;
+  onCellChange: (rowId: string, field: DayKey | "timeLabel", value: string) => void;
+  onCellBlur: (rowId: string, field: DayKey | "timeLabel", value: string) => void;
   onAddRow: () => void;
-  onDeleteRow: (rowId: number) => void;
-  onMoveRow: (rowId: number, direction: "up" | "down") => void;
+  onDeleteRow: (rowId: string) => void;
+  onMoveRow: (rowId: string, direction: "up" | "down") => void;
 }) {
   if (loading) return <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />;
 
@@ -432,7 +450,7 @@ function ScheduleTableCard({
   onMoveUp,
   onMoveDown,
 }: {
-  schedule: Schedule;
+  schedule: LocalSchedule;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onRename: (name: string) => void;
@@ -440,22 +458,15 @@ function ScheduleTableCard({
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
-  const [rows, setRows] = useState<ScheduleRow[]>([]);
+  const [rows, setRows] = useState<LocalScheduleRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rowError, setRowError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(schedule.name);
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try {
-      setRows(await listRows(schedule.id));
-      setRowError(null);
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "No se pudo cargar el horario");
-    } finally {
-      setLoading(false);
-    }
+    setRows(await listForSchedule(schedule.id));
+    setLoading(false);
   }, [schedule.id]);
 
   useEffect(() => {
@@ -466,32 +477,31 @@ function ScheduleTableCard({
     setNameDraft(schedule.name);
   }, [schedule.name]);
 
-  const updateLocalCell = (rowId: number, field: DayKey | "timeLabel", value: string) => {
+  const updateLocalCell = (rowId: string, field: DayKey | "timeLabel", value: string) => {
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)));
   };
 
-  const persistCell = async (rowId: number, field: DayKey | "timeLabel", value: string) => {
-    try {
-      await updateRow(schedule.id, rowId, { [field]: value });
-      setRowError(null);
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "No se pudo guardar el cambio");
-    }
+  const persistCell = async (rowId: string, field: DayKey | "timeLabel", value: string) => {
+    await updateRowCellLocal(rowId, field, value);
+    await runSync();
   };
 
   const handleAddRow = async () => {
-    await addRow(schedule.id);
+    await createRowLocal(schedule.id, "");
     await reload();
+    await runSync();
   };
 
-  const handleDeleteRow = async (rowId: number) => {
-    await deleteRow(schedule.id, rowId);
+  const handleDeleteRow = async (rowId: string) => {
+    await deleteRowLocal(rowId);
     await reload();
+    await runSync();
   };
 
-  const handleMoveRow = async (rowId: number, direction: "up" | "down") => {
-    await moveRow(schedule.id, rowId, direction);
+  const handleMoveRow = async (rowId: string, direction: "up" | "down") => {
+    await moveRowLocal(rowId, direction);
     await reload();
+    await runSync();
   };
 
   const handleRename = () => {
@@ -542,8 +552,6 @@ function ScheduleTableCard({
         </View>
       </View>
 
-      {rowError && <Text style={styles.errorBanner}>{rowError}</Text>}
-
       <ScheduleTableGrid
         rows={rows}
         loading={loading}
@@ -569,6 +577,8 @@ const styles = StyleSheet.create({
   newButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.background },
   content: { padding: 20 },
   errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, paddingHorizontal: 20, paddingBottom: 8 },
+  syncBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
+  syncText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
   emptyText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, fontStyle: "italic" },
 
   // rounded-full border border-border p-1 de la web (SchedulePage.tsx) — el toggle Flechas/Apilado.

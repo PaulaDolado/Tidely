@@ -3,30 +3,38 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Activi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
-import { ApiError } from "../api/client";
+import { runSync } from "../sync";
 import {
-  createTransaction,
-  deleteTransaction,
+  createTransactionLocal,
+  deleteTransactionLocal,
   FinanceAnalytics,
-  getAnalytics,
-  getMonthlyBalance,
-  listSavingsGoals,
+  getAnalyticsLocal,
+  getMonthlyBalanceLocal,
   listTransactions,
   MonthlyBalance,
-  NewTransactionInput,
-  Transaction,
-  TransactionType,
-  updateTransaction,
-} from "../api/finance";
+  updateTransactionLocal,
+} from "../db/transactionsRepo";
+import { listSavingsGoals } from "../db/savingsGoalsRepo";
+import { LocalTransaction } from "../types";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
-// Puerto directo de dashboard/src/pages/FinanzasPage.tsx — mismos datos (balance del mes,
-// movimientos, análisis, resumen de metas de ahorro) y mismos estilos de tarjeta (card-soft,
-// panel sólido bg-primary de "Resumen del mes", panel sólido bg-secondary de "Top categorías").
-// No pasa por SQLite: ver el comentario de src/api/finance.ts para el porqué. Simplificación
-// deliberada frente a la web: sin exportación CSV (descargar/compartir ficheros añade permisos y
-// UI que no compensan para una función secundaria) — ver mobile/README.md.
+// Puerto de dashboard/src/pages/FinanzasPage.tsx — mismos datos (balance del mes, movimientos,
+// análisis, resumen de metas de ahorro) y mismos estilos de tarjeta. Offline-first, igual que
+// Agenda/Planificador: lee/escribe en SQLite (transactionsRepo) y sincroniza vía runSync() — el
+// balance/analytics se calculan localmente sobre las transacciones ya sincronizadas (ver
+// transactionsRepo.getMonthlyBalanceLocal/getAnalyticsLocal), mismo cálculo que financeService.ts
+// en el backend. Simplificación deliberada frente a la web: sin exportación CSV (descargar/
+// compartir ficheros añade permisos y UI que no compensan para una función secundaria).
+
+type TransactionType = "income" | "expense";
+interface NewTransactionInput {
+  type: TransactionType;
+  amount: number;
+  category: string;
+  description: string | null;
+  date: string;
+}
 
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(amount);
@@ -37,61 +45,70 @@ const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "S
 export function FinanzasScreen() {
   const { collapsed } = useSidebar();
   const [balance, setBalance] = useState<MonthlyBalance | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<LocalTransaction[]>([]);
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
   const [savingsTotal, setSavingsTotal] = useState(0);
   const [investmentTotal, setInvestmentTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // "new" = formulario de alta; una Transaction = editándola (mismo Modal/MovementForm para los
-  // dos casos, ver más abajo) — así se puede corregir la fecha de un movimiento que se olvidó
-  // registrar el mes pasado, en vez de tener que borrarlo y crearlo de nuevo.
-  const [formTx, setFormTx] = useState<Transaction | "new" | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  // "new" = formulario de alta; una LocalTransaction = editándola (mismo Modal/MovementForm para
+  // los dos casos, ver más abajo) — así se puede corregir la fecha de un movimiento que se
+  // olvidó registrar el mes pasado, en vez de tener que borrarlo y crearlo de nuevo.
+  const [formTx, setFormTx] = useState<LocalTransaction | "new" | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      const now = new Date();
-      const [bal, txs, stats, savingsGoals] = await Promise.all([
-        getMonthlyBalance(now.getMonth() + 1, now.getFullYear()),
-        listTransactions(15),
-        getAnalytics(),
-        listSavingsGoals("all"),
-      ]);
-      setBalance(bal);
-      setTransactions(txs);
-      setAnalytics(stats);
-      setSavingsTotal(savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0));
-      setInvestmentTotal(savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudieron cargar las finanzas");
-    } finally {
-      setLoading(false);
-    }
+    const now = new Date();
+    const [bal, txs, stats, savingsGoals] = await Promise.all([
+      getMonthlyBalanceLocal(now.getMonth() + 1, now.getFullYear()),
+      listTransactions(15),
+      getAnalyticsLocal(),
+      listSavingsGoals(),
+    ]);
+    setBalance(bal);
+    setTransactions(txs);
+    setAnalytics(stats);
+    setSavingsTotal(savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0));
+    setInvestmentTotal(savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0));
+    setLoading(false);
   }, []);
+
+  const sync = useCallback(async () => {
+    setSyncing(true);
+    setSyncError(null);
+    const result = await runSync();
+    setSyncing(false);
+    if (result.success) await reload();
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+  }, [reload]);
 
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload])
+      sync();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   const handleCreate = async (input: NewTransactionInput) => {
-    await createTransaction(input);
+    await createTransactionLocal(input);
     setFormTx(null);
     await reload();
+    await sync();
   };
 
-  const handleUpdate = async (id: number, input: NewTransactionInput) => {
-    await updateTransaction(id, input);
+  const handleUpdate = async (id: string, input: NewTransactionInput) => {
+    await updateTransactionLocal(id, input);
     setFormTx(null);
     await reload();
+    await sync();
   };
 
-  const handleDelete = async (id: number) => {
-    await deleteTransaction(id);
+  const handleDelete = async (id: string) => {
+    await deleteTransactionLocal(id);
     await reload();
+    await sync();
   };
 
   const maxTrend = Math.max(1, ...(analytics?.monthlyTrend.map((m) => Math.max(Math.abs(m.income), Math.abs(m.expense))) ?? [1]));
@@ -105,8 +122,15 @@ export function FinanzasScreen() {
         </Pressable>
       </View>
 
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
+      {syncing && (
+        <View style={styles.syncBar}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.syncText}>Sincronizando…</Text>
+        </View>
+      )}
+
       <ScrollView contentContainerStyle={styles.content}>
-        {error && <Text style={styles.errorBanner}>{error}</Text>}
         {loading && !balance ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
         ) : (
@@ -257,13 +281,13 @@ export function FinanzasScreen() {
                 onCancel={() => setFormTx(null)}
                 onSubmit={async (input) => {
                   if (formTx === "new") await handleCreate(input);
-                  else await handleUpdate((formTx as Transaction).id, input);
+                  else await handleUpdate((formTx as LocalTransaction).id, input);
                 }}
                 onDelete={
                   formTx === "new"
                     ? undefined
                     : async () => {
-                        await handleDelete((formTx as Transaction).id);
+                        await handleDelete((formTx as LocalTransaction).id);
                         setFormTx(null);
                       }
                 }
@@ -296,7 +320,7 @@ function MovementForm({
   onCancel,
   onDelete,
 }: {
-  initial?: Transaction;
+  initial?: LocalTransaction;
   onSubmit: (input: NewTransactionInput) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
@@ -406,7 +430,9 @@ const styles = StyleSheet.create({
   newButton: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   newButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.background },
   content: { padding: 20, paddingTop: 8, gap: 16, paddingBottom: 40 },
-  errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive },
+  errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, paddingHorizontal: 20, paddingBottom: 8 },
+  syncBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
+  syncText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
 
   summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   // card-soft de la web (rounded-3xl border-border bg-card shadow-soft) — antes llevaba

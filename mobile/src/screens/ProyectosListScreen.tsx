@@ -3,8 +3,10 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndic
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ApiError } from "../api/client";
-import { addProjectTask, createProject, listProjects, Project, ProjectStatus } from "../api/projects";
+import { runSync } from "../sync";
+import { listProjects, createProjectLocal } from "../db/projectsRepo";
+import { createProjectTaskLocal } from "../db/projectTasksRepo";
+import { LocalProject } from "../types";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { ProyectosStackParamList } from "./ProyectosScreen";
@@ -16,6 +18,9 @@ import { FolderIcon } from "../components/FolderIcon";
 // icono de carpeta (FolderIcon) que retoma esa misma idea — mismos dos tonos alternos que
 // `NotebookCover` (dashboard/src/pages/ProyectosPage.tsx): `colors.cover` (tapa marrón) /
 // `colors.secondary` (arena), sin inventar una paleta "carpeta amarilla" ajena a la web.
+// Offline-first, igual que el resto de pantallas: lee/escribe en SQLite (projectsRepo) y
+// sincroniza vía runSync().
+type ProjectStatus = "idea" | "en_curso" | "pausado" | "completado";
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   idea: "Idea",
   en_curso: "En curso",
@@ -27,37 +32,41 @@ type Props = NativeStackScreenProps<ProyectosStackParamList, "Lista">;
 
 export function ProyectosListScreen({ navigation }: Props) {
   const { collapsed } = useSidebar();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<LocalProject[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      setProjects(await listProjects());
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudieron cargar los proyectos");
-    } finally {
-      setLoading(false);
-    }
+    setProjects(await listProjects());
+    setLoading(false);
   }, []);
+
+  const sync = useCallback(async () => {
+    setSyncError(null);
+    const result = await runSync();
+    if (result.success) await reload();
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+  }, [reload]);
 
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload])
+      sync();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   const handleCreate = async (title: string, note: string) => {
-    const created = await createProject(title, note || null);
+    const id = await createProjectLocal({ title, description: note || null, status: "idea", priority: "medium", deadline: null, color: null });
     // Mismo detalle que la web: el apunte rápido opcional del formulario de creación se guarda
     // como la primera tarea de la libreta, no como `description` duplicada.
-    if (note.trim()) await addProjectTask(created.id, note.trim());
+    if (note.trim()) await createProjectTaskLocal(id, note.trim());
     setShowCreate(false);
     await reload();
-    navigation.navigate("Detalle", { id: created.id, title: created.title });
+    await sync();
+    navigation.navigate("Detalle", { id, title });
   };
 
   return (
@@ -69,8 +78,9 @@ export function ProyectosListScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
+
       <ScrollView contentContainerStyle={styles.content}>
-        {error && <Text style={styles.errorBanner}>{error}</Text>}
         {loading && projects.length === 0 ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
         ) : projects.length === 0 ? (
@@ -93,7 +103,7 @@ export function ProyectosListScreen({ navigation }: Props) {
                     {project.title}
                   </Text>
                   <View style={styles.statusBadge}>
-                    <Text style={styles.statusBadgeText}>{STATUS_LABELS[project.status]}</Text>
+                    <Text style={styles.statusBadgeText}>{STATUS_LABELS[project.status as ProjectStatus] ?? project.status}</Text>
                   </View>
                 </View>
                 {project.description && (

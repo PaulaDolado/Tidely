@@ -2,24 +2,25 @@ import { useCallback, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { ApiError } from "../api/client";
+import { runSync } from "../sync";
 import {
-  contributeSavingsGoal,
-  createSavingsGoal,
-  deleteSavingsGoal,
+  createSavingsGoalLocal,
+  deleteSavingsGoalLocal,
   listSavingsGoals,
-  NewSavingsGoalInput,
-  SavingsGoal,
-  SavingsGoalType,
-} from "../api/finance";
+  LocalSavingsGoalWithProgress,
+} from "../db/savingsGoalsRepo";
+import { createTransactionLocal } from "../db/transactionsRepo";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
-// Puerto directo de dashboard/src/pages/MetasAhorroPage.tsx + dashboard/src/components/
-// SavingsGoals.tsx — mismo "grid de casillas" (cada casilla = stepAmount, tocarla aporta o retira
-// dinero de verdad vía POST .../contribute, que crea una Transaction real; el progreso no se
-// guarda, se recalcula siempre desde las Transactions de esa categoría — ver src/api/finance.ts).
-// No pasa por SQLite, igual que Finanzas/Horario/Objetivos.
+// Puerto de dashboard/src/pages/MetasAhorroPage.tsx + dashboard/src/components/SavingsGoals.tsx
+// — mismo "grid de casillas" (cada casilla = stepAmount, tocarla aporta o retira dinero de
+// verdad creando una Transaction real; el progreso no se guarda, se recalcula siempre desde las
+// Transactions de esa categoría — ver savingsGoalsRepo.listSavingsGoals). Offline-first, igual
+// que Finanzas/Objetivos: lee/escribe en SQLite y sincroniza vía runSync().
+
+type SavingsGoalType = "ahorro" | "inversion";
+type SavingsGoal = LocalSavingsGoalWithProgress;
 
 const PREVIEW_BOXES = 30;
 const MAX_TOTAL_BOXES = 2000;
@@ -76,50 +77,69 @@ export function MetasAhorroScreen() {
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [allGoals, setAllGoals] = useState<SavingsGoal[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [boxesModalGoal, setBoxesModalGoal] = useState<SavingsGoal | null>(null);
 
   const reload = useCallback(async (currentTab: SavingsGoalType | "all") => {
     setLoading(true);
-    setError(null);
-    try {
-      const [list, all] = await Promise.all([listSavingsGoals(currentTab), currentTab === "all" ? Promise.resolve(null) : listSavingsGoals("all")]);
-      setGoals(list);
-      setAllGoals(currentTab === "all" ? list : (all ?? []));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudieron cargar las metas de ahorro");
-    } finally {
-      setLoading(false);
-    }
+    const [list, all] = await Promise.all([
+      listSavingsGoals(currentTab === "all" ? undefined : currentTab),
+      currentTab === "all" ? Promise.resolve(null) : listSavingsGoals(),
+    ]);
+    setGoals(list);
+    setAllGoals(currentTab === "all" ? list : (all ?? []));
+    setLoading(false);
   }, []);
+
+  const sync = useCallback(async () => {
+    setSyncing(true);
+    setSyncError(null);
+    const result = await runSync();
+    setSyncing(false);
+    if (result.success) await reload(tab);
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, reload]);
 
   useFocusEffect(
     useCallback(() => {
       reload(tab);
+      sync();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab])
   );
 
   const handleCreate = async (input: { name: string; type: SavingsGoalType; targetAmount: number; stepAmount: number }) => {
     const category = `${input.type}-${slugify(input.name)}`;
-    const payload: NewSavingsGoalInput = { ...input, category };
-    await createSavingsGoal(payload);
+    await createSavingsGoalLocal({ ...input, category, deadline: null });
     setShowCreate(false);
     await reload(tab);
+    await sync();
   };
 
-  const handleDelete = async (id: number) => {
-    await deleteSavingsGoal(id);
+  const handleDelete = async (id: string) => {
+    await deleteSavingsGoalLocal(id);
     await reload(tab);
+    await sync();
   };
 
-  const handleContribute = async (id: number, amount: number) => {
-    await contributeSavingsGoal(id, amount);
+  /** Igual criterio que financeService.contributeToSavingsGoal en el backend: aportar/retirar es
+   * crear una Transaction real etiquetada con la categoría de la meta, no un contador aparte. */
+  const handleContribute = async (goal: SavingsGoal, amount: number) => {
+    await createTransactionLocal({
+      type: amount > 0 ? "income" : "expense",
+      amount: Math.abs(amount),
+      category: goal.category,
+      description: `Aporte a meta de ahorro: ${goal.name}`,
+      date: new Date().toISOString(),
+    });
     await reload(tab);
-    if (boxesModalGoal?.id === id) {
-      const refreshed = await listSavingsGoals("all");
-      setBoxesModalGoal(refreshed.find((g) => g.id === id) ?? null);
+    await sync();
+    if (boxesModalGoal?.id === goal.id) {
+      const refreshed = await listSavingsGoals();
+      setBoxesModalGoal(refreshed.find((g) => g.id === goal.id) ?? null);
     }
   };
 
@@ -132,9 +152,15 @@ export function MetasAhorroScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {error && <Text style={styles.errorBanner}>{error}</Text>}
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
+      {syncing && (
+        <View style={styles.syncBar}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.syncText}>Sincronizando…</Text>
+        </View>
+      )}
 
+      <ScrollView contentContainerStyle={styles.content}>
         <ProgressOverview goals={allGoals} />
 
         <View style={styles.tabRow}>
@@ -156,7 +182,7 @@ export function MetasAhorroScreen() {
                 key={goal.id}
                 goal={goal}
                 onDelete={() => handleDelete(goal.id)}
-                onContribute={(amount) => handleContribute(goal.id, amount)}
+                onContribute={(amount) => handleContribute(goal, amount)}
                 onOpenAllBoxes={() => setBoxesModalGoal(goal)}
               />
             ))}
@@ -178,7 +204,7 @@ export function MetasAhorroScreen() {
             {boxesModalGoal && (
               <ScrollView>
                 <Text style={styles.modalTitle}>{boxesModalGoal.name}</Text>
-                <BoxesGrid goal={boxesModalGoal} limit={MAX_TOTAL_BOXES} onContribute={(amount) => handleContribute(boxesModalGoal.id, amount)} />
+                <BoxesGrid goal={boxesModalGoal} limit={MAX_TOTAL_BOXES} onContribute={(amount) => handleContribute(boxesModalGoal, amount)} />
                 <Pressable style={styles.cancelButton} onPress={() => setBoxesModalGoal(null)}>
                   <Text style={styles.cancelButtonText}>Cerrar</Text>
                 </Pressable>
@@ -372,7 +398,9 @@ const styles = StyleSheet.create({
   newButton: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   newButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.background },
   content: { padding: 20, paddingTop: 8, gap: 16, paddingBottom: 40 },
-  errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive },
+  errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, paddingHorizontal: 20, paddingBottom: 8 },
+  syncBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
+  syncText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
   emptyText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, fontStyle: "italic" },
 
   // card-soft de la web — p-6 (24px), no los 16px que llevaba antes.

@@ -5,7 +5,10 @@ import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ApiError } from "../api/client";
+import { useFocusEffect } from "@react-navigation/native";
+import { runSync } from "../sync";
+import { getCustomPage, updateCustomPageLocal, deleteCustomPageLocal } from "../db/customPagesRepo";
+import { LocalCustomPage } from "../types";
 import {
   AgendaContent,
   AgendaNote,
@@ -14,13 +17,11 @@ import {
   CustomFieldDef,
   CustomFieldType,
   CustomFieldValue,
-  CustomPage,
-  deleteCustomPage,
+  CustomPageTemplate,
   FinanceContent,
   FinanceEntry,
   GalleryContent,
   GalleryEntry,
-  getCustomPage,
   GoalsContent,
   KanbanCard,
   KanbanColumn,
@@ -28,7 +29,6 @@ import {
   NotaContent,
   SimpleGoal,
   TEMPLATE_LABELS,
-  updateCustomPage,
 } from "../api/customPages";
 import { htmlToPlainText, plainTextToHtml } from "../utils/htmlText";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
@@ -59,9 +59,9 @@ type Props = NativeStackScreenProps<PaginasStackParamList, "Detalle">;
 
 export function PaginaDetailScreen({ route, navigation }: Props) {
   const { id } = route.params;
-  const [page, setPage] = useState<CustomPage | null>(null);
+  const [page, setPage] = useState<LocalCustomPage | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [editingEntry, setEditingEntry] = useState<GalleryEntry | null>(null);
@@ -71,26 +71,33 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      const loaded = await getCustomPage(id);
-      setPage(loaded);
+    const loaded = await getCustomPage(id);
+    setPage(loaded);
+    if (loaded) {
       setTitle(loaded.title);
       setSubtitle(loaded.subtitle ?? "");
       if (loaded.template === "nota") {
         setNotaText(htmlToPlainText((loaded.content as NotaContent).html ?? ""));
         setNotaDirty(false);
       }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo cargar la página");
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, [id]);
 
-  useEffect(() => {
-    reload();
+  const sync = useCallback(async () => {
+    setSyncError(null);
+    const result = await runSync();
+    if (result.success) await reload();
+    else setSyncError(result.error ?? "No se pudo sincronizar");
   }, [reload]);
+
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+      sync();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id])
+  );
 
   const galleryItems: GalleryEntry[] = page?.template === "galeria" ? ((page.content as GalleryContent).items ?? []) : [];
   // Masonry de verdad (no un reparto por índice par/impar): cada entrada va a la columna más baja
@@ -100,18 +107,26 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   // más anchas que un teléfono, así que 2 es lo que le corresponde aquí.
   const galleryColumns = useMemo(() => distributeIntoColumns(galleryItems, 2), [galleryItems]);
 
+  /** Guarda un patch en SQLite, refresca `page` desde ahí (en vez de fusionar a mano) y dispara
+   * sync — mismo criterio "guardado inmediato en cada acción" que ya tenía esta pantalla, ahora
+   * offline-first (ver customPagesRepo.updateCustomPageLocal). */
+  const persist = async (patch: { title?: string; subtitle?: string | null; content?: unknown }) => {
+    await updateCustomPageLocal(id, patch);
+    await reload();
+    await sync();
+  };
+
   const saveTitleAndSubtitle = async () => {
     if (!page) return;
     if (title.trim() === page.title && subtitle === (page.subtitle ?? "")) return;
-    const updated = await updateCustomPage(id, { title: title.trim() || page.title, subtitle: subtitle.trim() || null });
-    setPage(updated);
-    navigation.setParams({ title: updated.title });
+    const nextTitle = title.trim() || page.title;
+    await persist({ title: nextTitle, subtitle: subtitle.trim() || null });
+    navigation.setParams({ title: nextTitle });
   };
 
   const saveGalleryItems = async (items: GalleryEntry[]) => {
     if (!page) return;
-    const updated = await updateCustomPage(id, { content: { items } });
-    setPage(updated);
+    await persist({ content: { items } });
   };
 
   const saveNota = async () => {
@@ -119,8 +134,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     setSavingNota(true);
     try {
       const html = plainTextToHtml(notaText);
-      const updated = await updateCustomPage(id, { content: { html } });
-      setPage(updated);
+      await persist({ content: { html } });
       setNotaDirty(false);
     } finally {
       setSavingNota(false);
@@ -134,34 +148,29 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   // para no perder fieldDefs/fields que ya existieran desde la web.
   const saveKanbanContent = async (content: KanbanContent) => {
     if (!page) return;
-    const updated = await updateCustomPage(id, { content });
-    setPage(updated);
+    await persist({ content });
   };
 
   // Mismo criterio que saveKanbanContent/saveGalleryItems: guardado inmediato en cada acción
   // (añadir/marcar/borrar movimiento, tarea u objetivo), no un botón "Guardar" aparte.
   const saveFinanceEntries = async (entries: FinanceEntry[]) => {
     if (!page) return;
-    const updated = await updateCustomPage(id, { content: { entries } });
-    setPage(updated);
+    await persist({ content: { entries } });
   };
 
   const saveChecklistItems = async (items: ChecklistItem[]) => {
     if (!page) return;
-    const updated = await updateCustomPage(id, { content: { items } });
-    setPage(updated);
+    await persist({ content: { items } });
   };
 
   const saveGoals = async (goals: SimpleGoal[]) => {
     if (!page) return;
-    const updated = await updateCustomPage(id, { content: { goals } });
-    setPage(updated);
+    await persist({ content: { goals } });
   };
 
   const saveAgendaItems = async (items: AgendaNote[]) => {
     if (!page) return;
-    const updated = await updateCustomPage(id, { content: { items } });
-    setPage(updated);
+    await persist({ content: { items } });
   };
 
   const handleAddEntry = async () => {
@@ -198,7 +207,8 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
       setConfirmingDelete(true);
       return;
     }
-    await deleteCustomPage(id);
+    await deleteCustomPageLocal(id);
+    await sync();
     navigation.goBack();
   };
 
@@ -210,16 +220,11 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  if (error && !page) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.errorBanner}>{error}</Text>
-      </SafeAreaView>
-    );
-  }
+  if (!page) return null;
 
   return (
     <SafeAreaView style={styles.container}>
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
       <ScrollView contentContainerStyle={styles.content}>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} onBlur={saveTitleAndSubtitle} placeholder="Título" />
         <TextInput
@@ -227,7 +232,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
           value={subtitle}
           onChangeText={setSubtitle}
           onBlur={saveTitleAndSubtitle}
-          placeholder={page ? TEMPLATE_LABELS[page.template] : ""}
+          placeholder={page ? TEMPLATE_LABELS[page.template as CustomPageTemplate] ?? page.template : ""}
         />
 
         {page?.template === "galeria" ? (
@@ -290,7 +295,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
         ) : page ? (
           <View style={styles.fallbackCard}>
             <Text style={styles.fallbackText}>
-              La plantilla "{TEMPLATE_LABELS[page.template]}" todavía no tiene editor en el móvil — ábrela desde el dashboard web para
+              La plantilla "{TEMPLATE_LABELS[page.template as CustomPageTemplate] ?? page.template}" todavía no tiene editor en el móvil — ábrela desde el dashboard web para
               ver o cambiar su contenido. El título y el subtítulo sí se guardan desde aquí.
             </Text>
           </View>

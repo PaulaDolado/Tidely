@@ -3,16 +3,10 @@ import { View, Text, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ApiError } from "../api/client";
-import {
-  CustomPageSummary,
-  CustomPageTemplate,
-  createCustomPage,
-  deleteCustomPage,
-  listCustomPages,
-  moveCustomPage,
-  TEMPLATE_LABELS,
-} from "../api/customPages";
+import { runSync } from "../sync";
+import { listCustomPages, createCustomPageLocal, deleteCustomPageLocal, movePageLocal, defaultContentFor } from "../db/customPagesRepo";
+import { CustomPageTemplate, TEMPLATE_LABELS } from "../api/customPages";
+import { LocalCustomPage } from "../types";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { NewPageForm } from "../components/NewPageForm";
@@ -31,15 +25,15 @@ type Props = NativeStackScreenProps<PaginasStackParamList, "Lista">;
 
 export function PaginasListScreen({ navigation }: Props) {
   const { collapsed } = useSidebar();
-  const [pages, setPages] = useState<CustomPageSummary[]>([]);
+  const [pages, setPages] = useState<LocalCustomPage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   // Mismo patrón que el "✕" de "Tus páginas" en dashboard/src/components/AppShell.tsx
   // (`confirmingDeletePageId`) — el propio botón "Borrar" pide confirmar cambiando su texto en
   // vez de un diálogo aparte; sin hover/mouseleave en táctil para cancelarlo solo, así que se
   // cancela a los 3s si no se toca una segunda vez (ver el efecto de abajo).
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (confirmingDeleteId === null) return;
@@ -49,45 +43,51 @@ export function PaginasListScreen({ navigation }: Props) {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      // "galeria" no aparece aquí: ya tiene su propio apartado "Galería" en el menú principal
-      // (con una sola por cuenta, ver AppSidebar.openGallery) — listarla también en esta pantalla
-      // duplicaría la entrada.
-      setPages((await listCustomPages()).filter((p) => p.template !== "galeria"));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudieron cargar las páginas");
-    } finally {
-      setLoading(false);
-    }
+    // "galeria" no aparece aquí: ya tiene su propio apartado "Galería" en el menú principal
+    // (con una sola por cuenta, ver AppSidebar.openGallery) — listarla también en esta pantalla
+    // duplicaría la entrada.
+    setPages((await listCustomPages()).filter((p) => p.template !== "galeria"));
+    setLoading(false);
   }, []);
+
+  const sync = useCallback(async () => {
+    setSyncError(null);
+    const result = await runSync();
+    if (result.success) await reload();
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+  }, [reload]);
 
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload])
+      sync();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   const handleCreate = async (title: string, template: CustomPageTemplate) => {
-    const created = await createCustomPage(title, template);
+    const id = await createCustomPageLocal(title, template, defaultContentFor(template));
     setShowCreate(false);
     await reload();
-    navigation.navigate("Detalle", { id: created.id, title: created.title });
+    await sync();
+    navigation.navigate("Detalle", { id, title });
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirmingDeleteId !== id) {
       setConfirmingDeleteId(id);
       return;
     }
     setConfirmingDeleteId(null);
-    await deleteCustomPage(id);
+    await deleteCustomPageLocal(id);
     await reload();
+    await sync();
   };
 
-  const handleMove = async (id: number, direction: "up" | "down") => {
-    await moveCustomPage(id, direction);
+  const handleMove = async (id: string, direction: "up" | "down") => {
+    await movePageLocal(id, direction);
     await reload();
+    await sync();
   };
 
   return (
@@ -99,8 +99,9 @@ export function PaginasListScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
+
       <ScrollView contentContainerStyle={styles.content}>
-        {error && <Text style={styles.errorBanner}>{error}</Text>}
         {loading && pages.length === 0 ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
         ) : pages.length === 0 ? (
@@ -114,7 +115,7 @@ export function PaginasListScreen({ navigation }: Props) {
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.pageTitle}>{page.title}</Text>
-                <Text style={styles.pageMeta}>{page.subtitle || TEMPLATE_LABELS[page.template]}</Text>
+                <Text style={styles.pageMeta}>{page.subtitle || TEMPLATE_LABELS[page.template as CustomPageTemplate] || page.template}</Text>
               </View>
               <View style={styles.pageActions}>
                 <Pressable onPress={() => handleMove(page.id, "up")} disabled={index === 0} hitSlop={8}>

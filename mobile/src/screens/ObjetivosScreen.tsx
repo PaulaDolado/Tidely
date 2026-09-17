@@ -2,15 +2,19 @@ import { useCallback, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { ApiError } from "../api/client";
-import { addProgress, createGoal, deleteGoal, Goal, GoalPeriod, GoalStatus, listGoals, NewGoalInput } from "../api/goals";
+import { runSync } from "../sync";
+import { listGoals, createGoalLocal, deleteGoalLocal } from "../db/goalsRepo";
+import { createProgressLocal } from "../db/goalProgressRepo";
+import { LocalGoal } from "../types";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
-// Puerto directo de dashboard/src/pages/MetasPage.tsx — mismos campos, mismas pestañas, mismo
-// cálculo de "ritmo" (paceStatus). A diferencia de Agenda/Planificador, esta pantalla no cachea
-// nada en SQLite: Goal/GoalProgress no están en el contrato de sync offline (ver
-// src/api/goals.ts), así que cada acción pega directo a la API, igual que la propia web.
+// Puerto de dashboard/src/pages/MetasPage.tsx — mismos campos, mismas pestañas, mismo cálculo de
+// "ritmo" (paceStatus). Offline-first, igual que Agenda/Planificador: lee/escribe en SQLite
+// (goalsRepo/goalProgressRepo) y sincroniza con el backend vía runSync() — ver src/sync/.
+
+type GoalPeriod = "weekly" | "monthly" | "annual";
+type GoalStatus = "active" | "completed" | "expired" | "all";
 
 const STATUS_TABS: { value: GoalStatus; label: string }[] = [
   { value: "active", label: "Activos" },
@@ -27,7 +31,24 @@ const GOAL_PERIOD_LABELS: Record<GoalPeriod, string> = {
   annual: "Anual",
 };
 
-function percentOf(goal: Goal): number {
+/** Puerto de goalsService.defaultPeriodEnd en el backend (sin date-fns, no es dependencia del
+ * móvil): fin de la semana en curso (lunes a domingo), del mes, o del año, según el periodo. Solo
+ * hace falta al crear offline — si hay conexión el propio backend recalcularía igual al llegar el
+ * push, pero la fila local necesita un valor ya mientras tanto (ver createGoalLocal). */
+function defaultPeriodEnd(period: GoalPeriod, start: Date): Date {
+  if (period === "weekly") {
+    const day = start.getDay(); // 0 = domingo … 6 = sábado
+    const daysUntilSunday = day === 0 ? 0 : 7 - day;
+    const end = new Date(start);
+    end.setDate(start.getDate() + daysUntilSunday);
+    end.setHours(23, 59, 59, 999);
+    return end;
+  }
+  if (period === "monthly") return new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+  return new Date(start.getFullYear(), 11, 31, 23, 59, 59, 999);
+}
+
+function percentOf(goal: LocalGoal): number {
   return goal.targetValue > 0 ? Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100)) : 0;
 }
 
@@ -44,8 +65,8 @@ function calendarDaysBetween(from: Date, to: Date): number {
  * mismo margen (80% del ritmo esperado) que el backend usa para las alertas de "meta en riesgo"
  * (computeGoalRisk en src/services/goalsService.ts), puerto de
  * dashboard/src/pages/MetasPage.tsx:34-45. */
-function paceStatus(goal: Goal): "green" | "yellow" {
-  if (goal.completed) return "green";
+function paceStatus(goal: LocalGoal): "green" | "yellow" {
+  if (goal.completed === 1) return "green";
   const start = new Date(goal.periodStart);
   const end = new Date(goal.periodEnd);
   const now = new Date();
@@ -60,47 +81,67 @@ function paceStatus(goal: Goal): "green" | "yellow" {
 export function ObjetivosScreen() {
   const { collapsed } = useSidebar();
   const [status, setStatus] = useState<GoalStatus>("active");
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
+  const [goals, setGoals] = useState<LocalGoal[]>([]);
+  const [activeGoals, setActiveGoals] = useState<LocalGoal[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
   const [showCreate, setShowCreate] = useState(false);
 
   const reload = useCallback(async (currentStatus: GoalStatus) => {
     setLoading(true);
-    setError(null);
-    try {
-      const [list, active] = await Promise.all([listGoals(currentStatus), currentStatus === "active" ? Promise.resolve(null) : listGoals("active")]);
-      setGoals(list);
-      setActiveGoals(currentStatus === "active" ? list : (active ?? []));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudieron cargar los objetivos");
-    } finally {
-      setLoading(false);
-    }
+    const [list, active] = await Promise.all([listGoals(currentStatus), currentStatus === "active" ? Promise.resolve(null) : listGoals("active")]);
+    setGoals(list);
+    setActiveGoals(currentStatus === "active" ? list : (active ?? []));
+    setLoading(false);
   }, []);
+
+  const sync = useCallback(async () => {
+    setSyncing(true);
+    setSyncError(null);
+    const result = await runSync();
+    setSyncing(false);
+    if (result.success) await reload(status);
+    else setSyncError(result.error ?? "No se pudo sincronizar");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, reload]);
 
   useFocusEffect(
     useCallback(() => {
       reload(status);
+      sync();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [status])
   );
 
-  const handleCreate = async (input: NewGoalInput) => {
-    await createGoal(input);
+  const handleCreate = async (input: { title: string; period: GoalPeriod; targetValue: number; autoRenew: boolean }) => {
+    const periodStart = new Date();
+    await createGoalLocal({
+      title: input.title,
+      description: null,
+      period: input.period,
+      targetValue: input.targetValue,
+      bonusPoints: 10,
+      periodStart: periodStart.toISOString(),
+      periodEnd: defaultPeriodEnd(input.period, periodStart).toISOString(),
+      autoRenew: input.autoRenew,
+    });
     setShowCreate(false);
     await reload(status);
+    await sync();
   };
 
-  const handleDelete = async (id: number) => {
-    await deleteGoal(id);
+  const handleDelete = async (id: string) => {
+    await deleteGoalLocal(id);
     await reload(status);
+    await sync();
   };
 
-  const handleRegisterProgress = async (id: number, value: number) => {
-    await addProgress(id, value);
+  const handleRegisterProgress = async (id: string, value: number) => {
+    await createProgressLocal(id, { value, note: null, date: new Date().toISOString() });
     await reload(status);
+    await sync();
   };
 
   return (
@@ -112,9 +153,15 @@ export function ObjetivosScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {error && <Text style={styles.errorBanner}>{error}</Text>}
+      {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
+      {syncing && (
+        <View style={styles.syncBar}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.syncText}>Sincronizando…</Text>
+        </View>
+      )}
 
+      <ScrollView contentContainerStyle={styles.content}>
         <ProgressOverview goals={activeGoals} />
 
         <View style={styles.tabRow}>
@@ -153,7 +200,7 @@ export function ObjetivosScreen() {
   );
 }
 
-function ProgressOverview({ goals }: { goals: Goal[] }) {
+function ProgressOverview({ goals }: { goals: LocalGoal[] }) {
   return (
     <View style={styles.overviewCard}>
       <Text style={styles.overviewTitle}>Progreso de tus objetivos activos</Text>
@@ -186,7 +233,7 @@ function ProgressOverview({ goals }: { goals: Goal[] }) {
   );
 }
 
-function GoalCard({ goal, onDelete, onRegisterProgress }: { goal: Goal; onDelete: () => void; onRegisterProgress: (value: number) => void }) {
+function GoalCard({ goal, onDelete, onRegisterProgress }: { goal: LocalGoal; onDelete: () => void; onRegisterProgress: (value: number) => void }) {
   const [value, setValue] = useState("1");
   const percent = percentOf(goal);
 
@@ -201,12 +248,12 @@ function GoalCard({ goal, onDelete, onRegisterProgress }: { goal: Goal; onDelete
       <View style={styles.goalCardHeader}>
         <Text style={styles.goalTitle}>{goal.title}</Text>
         <View style={{ alignItems: "flex-end", gap: 4 }}>
-          {goal.completed && (
+          {goal.completed === 1 && (
             <View style={[styles.badge, { backgroundColor: colors.primaryTint }]}>
               <Text style={[styles.badgeText, { color: colors.primary }]}>✓ Completado</Text>
             </View>
           )}
-          {goal.expired && !goal.completed && (
+          {goal.expired === 1 && goal.completed !== 1 && (
             <View style={[styles.badge, { backgroundColor: colors.destructiveTint }]}>
               <Text style={[styles.badgeText, { color: colors.destructive }]}>Vencido</Text>
             </View>
@@ -218,14 +265,14 @@ function GoalCard({ goal, onDelete, onRegisterProgress }: { goal: Goal; onDelete
 
       <Text style={styles.goalMeta}>
         {GOAL_PERIOD_LABELS[goal.period]} · {goal.currentValue}/{goal.targetValue} · 🏆 {goal.bonusPoints} pts
-        {goal.autoRenew ? " · se renueva sola" : ""}
+        {goal.autoRenew === 1 ? " · se renueva sola" : ""}
       </Text>
 
       <View style={styles.progressTrackLarge}>
         <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: colors.primary }]} />
       </View>
 
-      {!goal.completed && !goal.expired && (
+      {goal.completed !== 1 && goal.expired !== 1 && (
         <View style={styles.progressForm}>
           <TextInput style={styles.progressInput} value={value} onChangeText={setValue} keyboardType="numeric" />
           <Pressable style={styles.progressButton} onPress={submit}>
@@ -239,6 +286,13 @@ function GoalCard({ goal, onDelete, onRegisterProgress }: { goal: Goal; onDelete
       </Pressable>
     </View>
   );
+}
+
+interface NewGoalInput {
+  title: string;
+  period: GoalPeriod;
+  targetValue: number;
+  autoRenew: boolean;
 }
 
 function NewGoalForm({ onSubmit, onCancel }: { onSubmit: (input: NewGoalInput) => Promise<void>; onCancel: () => void }) {
@@ -296,7 +350,9 @@ const styles = StyleSheet.create({
   newButton: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   newButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.background },
   content: { padding: 20, paddingTop: 8, gap: 16, paddingBottom: 40 },
-  errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive },
+  errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, paddingHorizontal: 20, paddingBottom: 8 },
+  syncBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
+  syncText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
   emptyText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, fontStyle: "italic" },
 
   overviewCard: {
