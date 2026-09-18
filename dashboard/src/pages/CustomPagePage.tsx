@@ -882,7 +882,7 @@ function KanbanTemplate({
 
   // Cualquier cambio sobre una tarjeta existente (texto, imagen, descripción o notas) pasa por
   // aquí — el diálogo de detalles (KanbanCardDialog) llama a esto con solo los campos que ha tocado.
-  const updateCard = (columnId: string, cardId: string, fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes">>) => {
+  const updateCard = (columnId: string, cardId: string, fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes" | "compact">>) => {
     onChange(
       columns.map((c) =>
         c.id === columnId
@@ -1013,7 +1013,7 @@ function KanbanTableView({
     onChange(columns.map((c) => (c.id === columnId ? { ...c, cards: c.cards.filter((card) => card.id !== cardId) } : c)));
   };
 
-  const updateCard = (columnId: string, cardId: string, fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes">>) => {
+  const updateCard = (columnId: string, cardId: string, fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes" | "compact">>) => {
     onChange(columns.map((c) => (c.id === columnId ? { ...c, cards: c.cards.map((card) => (card.id === cardId ? { ...card, ...fields } : card)) } : c)));
   };
 
@@ -1216,7 +1216,7 @@ function KanbanColumnView({
   onDeleteBlur: () => void;
   onAddCard: (text: string, description: string) => void;
   onRemoveCard: (cardId: string) => void;
-  onCardUpdate: (cardId: string, fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes">>) => void;
+  onCardUpdate: (cardId: string, fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes" | "compact">>) => void;
   onCardFieldUpdate: (cardId: string, fieldId: string, value: CustomFieldValue) => void;
   onAddField: (name: string, type: CustomFieldType, options?: string[]) => void;
 }) {
@@ -1354,7 +1354,7 @@ function KanbanCardItem({
   isDragged: boolean;
   onDragStart: () => void;
   onRemove: () => void;
-  onUpdate: (fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes">>) => void;
+  onUpdate: (fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes" | "compact">>) => void;
   onFieldUpdate: (fieldId: string, value: CustomFieldValue) => void;
   onAddField: (name: string, type: CustomFieldType, options?: string[]) => void;
 }) {
@@ -1372,24 +1372,51 @@ function KanbanCardItem({
         title="Haz clic para ver los detalles"
         className={`group cursor-grab rounded-xl border border-border bg-background p-3 text-sm transition-all active:cursor-grabbing ${isDragged ? "opacity-40" : ""}`}
       >
-        {card.image && <img src={card.image} alt="" className="mb-2 max-h-40 w-full rounded-lg object-cover" />}
+        {/* "Compactar" (ver KanbanCardDialog) pone la imagen a la izquierda como miniatura en vez
+            de a ancho completo encima del texto — sin efecto si la tarjeta no tiene imagen. */}
+        {card.compact && card.image ? (
+          <div className="flex items-start gap-2.5">
+            <img src={card.image} alt="" className="size-14 shrink-0 rounded-lg object-cover" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{card.text}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove();
+                  }}
+                  title="Eliminar tarjeta"
+                  className="shrink-0 cursor-pointer text-xs opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100"
+                >
+                  ✕
+                </button>
+              </div>
+              {card.description && <p className="mt-1.5 truncate text-xs text-muted-foreground">{card.description}</p>}
+            </div>
+          </div>
+        ) : (
+          <>
+            {card.image && <img src={card.image} alt="" className="mb-2 max-h-40 w-full rounded-lg object-cover" />}
 
-        <div className="flex items-start justify-between gap-2">
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{card.text}</span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            title="Eliminar tarjeta"
-            className="shrink-0 cursor-pointer text-xs opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100"
-          >
-            ✕
-          </button>
-        </div>
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{card.text}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                title="Eliminar tarjeta"
+                className="shrink-0 cursor-pointer text-xs opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100"
+              >
+                ✕
+              </button>
+            </div>
 
-        {card.description && <p className="mt-1.5 truncate text-xs text-muted-foreground">{card.description}</p>}
+            {card.description && <p className="mt-1.5 truncate text-xs text-muted-foreground">{card.description}</p>}
+          </>
+        )}
 
         {(card.notes || fieldDefs.length > 0) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1440,7 +1467,7 @@ function KanbanCardDialog({
   card: KanbanCard;
   fieldDefs: CustomFieldDef[];
   onClose: () => void;
-  onUpdate: (fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes">>) => void;
+  onUpdate: (fields: Partial<Pick<KanbanCard, "text" | "image" | "description" | "notes" | "compact">>) => void;
   onFieldUpdate: (fieldId: string, value: CustomFieldValue) => void;
   onAddField: (name: string, type: CustomFieldType, options?: string[]) => void;
   onRemove: () => void;
@@ -1561,6 +1588,18 @@ function KanbanCardDialog({
               className="cursor-pointer text-muted-foreground hover:text-destructive"
             >
               Quitar imagen
+            </button>
+          )}
+          {/* Solo tiene sentido con imagen puesta — ver KanbanCardItem para el layout resultante
+              (imagen a la izquierda como miniatura, texto a la derecha, en vez de a ancho
+              completo encima). */}
+          {card.image && (
+            <button
+              type="button"
+              onClick={() => onUpdate({ compact: !card.compact })}
+              className="cursor-pointer text-muted-foreground hover:text-foreground"
+            >
+              {card.compact ? "Expandir" : "Compactar"}
             </button>
           )}
           <input

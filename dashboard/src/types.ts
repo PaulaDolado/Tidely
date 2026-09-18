@@ -255,6 +255,10 @@ export interface Task {
   image: string | null;
   // Recuadro grande sin nombre del diálogo de detalles — texto libre aparte de `description`.
   notes: string | null;
+  // Vista "compacta" de la tarjeta en el tablero (ver TaskCard): imagen a la izquierda, título/
+  // descripción a la derecha, en vez de la imagen a ancho completo encima del texto. Sin efecto
+  // si la tarjeta no tiene imagen.
+  compact: boolean;
   status: TaskStatus;
   priority: TaskPriority;
   order: number;
@@ -449,6 +453,10 @@ export interface KanbanCard {
   // dashboard) — mismo campo/idea que Task.notes en el Planificador, pero aquí vive dentro del
   // propio JSON de CustomPage.content, igual que `image`.
   notes?: string | null;
+  // Vista "compacta" de la tarjeta en el tablero (ver KanbanCardItem): imagen a la izquierda,
+  // título/descripción a la derecha, en vez de la imagen a ancho completo encima del texto. Sin
+  // efecto si la tarjeta no tiene imagen. Vive en el propio JSON, igual que `image`/`notes`.
+  compact?: boolean;
   // Valores de las columnas personalizadas del tablero (ver CustomPageContentMap["kanban"].fieldDefs
   // más abajo), indexados por CustomFieldDef.id.
   fields?: CustomFieldValues;
