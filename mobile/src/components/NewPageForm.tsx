@@ -24,7 +24,10 @@ export function NewPageForm({
   onCancel: () => void;
 }) {
   const [template, setTemplate] = useState<CustomPageTemplate>("nota");
-  const [title, setTitle] = useState(TEMPLATE_LABELS.nota);
+  // Vacío hasta que el usuario escriba algo o elija una plantilla (ver selectTemplate) — con el
+  // nombre preguntado ANTES que la plantilla, no tiene sentido precargarlo con la etiqueta de
+  // "nota" (la plantilla por defecto) antes de que el usuario haya llegado a verla siquiera.
+  const [title, setTitle] = useState("");
   const [titleTouched, setTitleTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -44,15 +47,6 @@ export function NewPageForm({
     <ScrollView keyboardShouldPersistTaps="handled">
       <Text style={styles.modalTitle}>Nueva página</Text>
 
-      <Text style={styles.fieldLabel}>Plantilla</Text>
-      <View style={styles.chipRow}>
-        {CREATABLE_TEMPLATES.map((t) => (
-          <Pressable key={t} style={[styles.chip, template === t && styles.chipSelected]} onPress={() => selectTemplate(t)}>
-            <Text style={[styles.chipText, template === t && styles.chipTextSelected]}>{TEMPLATE_LABELS[t]}</Text>
-          </Pressable>
-        ))}
-      </View>
-
       <TextInput
         style={styles.input}
         placeholder="Título"
@@ -61,7 +55,17 @@ export function NewPageForm({
           setTitle(t);
           setTitleTouched(true);
         }}
+        autoFocus
       />
+
+      <Text style={styles.fieldLabel}>Plantilla</Text>
+      <View style={styles.chipRow}>
+        {CREATABLE_TEMPLATES.map((t) => (
+          <Pressable key={t} style={[styles.chip, template === t && styles.chipSelected]} onPress={() => selectTemplate(t)}>
+            <Text style={[styles.chipText, template === t && styles.chipTextSelected]}>{TEMPLATE_LABELS[t]}</Text>
+          </Pressable>
+        ))}
+      </View>
 
       <Pressable style={styles.saveButton} onPress={submit} disabled={saving}>
         <Text style={styles.saveButtonText}>{saving ? "Creando…" : "Crear página"}</Text>
