@@ -29,6 +29,10 @@ export const updateCustomPageSchema = Joi.object({
   // Vacío/null borra el subtítulo escrito por el usuario y vuelve a mostrar el icono+nombre de
   // la plantilla por defecto (ver CustomPagePage).
   subtitle: Joi.string().max(150).allow(null, ""),
+  // Vacío/null quita el icono propio y vuelve a mostrar el de la plantilla por defecto, mismo
+  // criterio que `subtitle`. Límite corto: un emoji (o un par compuesto, p.ej. banderas) nunca
+  // ocupa más de unos pocos puntos de código.
+  icon: Joi.string().max(8).allow(null, ""),
   content: Joi.object()
     .unknown(true)
     .custom((value, helpers) => {

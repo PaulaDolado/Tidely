@@ -141,6 +141,19 @@ describe("Custom Pages Endpoints", () => {
       expect(updated.body.content).toEqual(newContent);
     });
 
+    it("permite elegir un icono propio y quitarlo (vuelve a null)", async () => {
+      const created = await request(app).post("/custom-pages").set(authed()).send({ title: "Original", template: "nota" });
+      expect(created.body.icon).toBeNull();
+
+      const withIcon = await request(app).put(`/custom-pages/${created.body.id}`).set(authed()).send({ icon: "⭐" });
+      expect(withIcon.status).toBe(200);
+      expect(withIcon.body.icon).toBe("⭐");
+
+      const removed = await request(app).put(`/custom-pages/${created.body.id}`).set(authed()).send({ icon: null });
+      expect(removed.status).toBe(200);
+      expect(removed.body.icon).toBeNull();
+    });
+
     it("no permite editar una página de otro usuario", async () => {
       const created = await request(app).post("/custom-pages").set(authed()).send({ title: "Original", template: "nota" });
 

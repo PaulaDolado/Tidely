@@ -25,6 +25,11 @@ import {
 
 const FIELD_TYPE_LABELS: Record<CustomFieldType, string> = { text: "Texto", number: "Número", date: "Fecha", select: "Selección" };
 
+// Paleta rápida del selector de icono de la página (ver "Cambiar icono" en la cabecera) — los 8
+// de las plantillas más unos genéricos habituales; el campo "o escribe el tuyo" de más abajo
+// cubre cualquier otro emoji que no esté aquí.
+const PAGE_ICON_OPTIONS = ["📝", "🗂️", "🖼️", "💰", "📁", "🎯", "📅", "☀️", "⭐", "✅", "📌", "📚", "💡", "🔥", "❤️", "🏆"];
+
 const SAVE_DEBOUNCE_MS = 600;
 
 /**
@@ -51,6 +56,12 @@ export function CustomPagePage({
   // Cadena vacía = "no ha escrito ninguno todavía", no "borrar el de la plantilla" — el
   // placeholder del input (ver más abajo) es quien muestra icono+nombre por defecto en ese caso.
   const [subtitle, setSubtitle] = useState("");
+  // null = no ha elegido ninguno todavía, se muestra el de la plantilla (ver meta.icon más abajo)
+  // — mismo criterio que `subtitle`.
+  const [icon, setIcon] = useState<string | null>(null);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [customIconDraft, setCustomIconDraft] = useState("");
+  const iconPickerRef = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState<CustomPageContentMap[CustomPageTemplate] | null>(null);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -74,9 +85,20 @@ export function CustomPagePage({
       setTitle(page.title);
       setSubtitle(page.subtitle ?? "");
       lastSavedSubtitleRef.current = page.subtitle ?? "";
+      setIcon(page.icon);
       setContent(page.content);
     }
   }, [page]);
+
+  // Cierra la paleta de iconos al tocar fuera — mismo patrón que AnnualCalendarLegend.
+  useEffect(() => {
+    if (!iconPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (iconPickerRef.current && !iconPickerRef.current.contains(e.target as Node)) setIconPickerOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [iconPickerOpen]);
 
   const scheduleSave = (nextContent: CustomPageContentMap[CustomPageTemplate]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -135,6 +157,17 @@ export function CustomPagePage({
     lastSavedSubtitleRef.current = trimmed;
   };
 
+  // Elegir de la paleta o escribir uno propio guarda al momento (no hace falta perder el foco,
+  // a diferencia de subtitle/title); `null` quita el icono propio y vuelve a mostrar el de la
+  // plantilla — mismo criterio que vaciar el subtítulo.
+  const saveIcon = async (next: string | null) => {
+    if (!page) return;
+    setIcon(next);
+    setIconPickerOpen(false);
+    setCustomIconDraft("");
+    await api.put(`/custom-pages/${pageId}`, { icon: next });
+  };
+
   const removePage = async () => {
     await api.delete(`/custom-pages/${pageId}`);
     onDeleted();
@@ -159,10 +192,57 @@ export function CustomPagePage({
             }}
             className="w-full min-w-0 border-b border-transparent bg-transparent font-serif text-4xl outline-none focus:border-primary"
           />
-          <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <span aria-hidden="true" className="shrink-0">
-              {meta.icon}
-            </span>
+          <div className="relative mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <button
+              type="button"
+              title="Cambiar icono"
+              onClick={() => setIconPickerOpen((v) => !v)}
+              className="shrink-0 cursor-pointer rounded hover:bg-muted"
+            >
+              {icon ?? meta.icon}
+            </button>
+            {iconPickerOpen && (
+              <div
+                ref={iconPickerRef}
+                className="absolute left-0 top-full z-10 mt-1 w-64 rounded-2xl border border-border bg-card p-3 shadow-[var(--shadow-soft)]"
+              >
+                <div className="flex flex-wrap gap-1">
+                  {PAGE_ICON_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => saveIcon(opt)}
+                      className={`flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-base hover:bg-muted ${
+                        icon === opt ? "bg-primary/10 ring-1 ring-primary" : ""
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+                  <input
+                    value={customIconDraft}
+                    onChange={(e) => setCustomIconDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && customIconDraft.trim()) saveIcon(customIconDraft.trim());
+                    }}
+                    placeholder="O escribe el tuyo…"
+                    maxLength={8}
+                    className="field-input min-w-0 flex-1 text-sm"
+                  />
+                  {icon !== null && (
+                    <button
+                      type="button"
+                      onClick={() => saveIcon(null)}
+                      className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
+                    >
+                      Quitar
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             {/* Vacío por defecto — el placeholder es quien muestra "Kanban"/"Nota"/etc., para no
                 confundir "el usuario escribió esto" con "es solo el nombre de la plantilla". */}
             <input
@@ -198,42 +278,6 @@ export function CustomPagePage({
             {confirmingDelete ? "¿Confirmar eliminar?" : "Eliminar página"}
           </button>
 
-          {/* "+ Columna" va debajo de "Eliminar página" (no al final del tablero) — es una
-              acción sobre la página entera, como el propio borrado, no algo que dependa de
-              desplazarse hasta el final de las columnas. */}
-          {page.template === "kanban" && (
-            <>
-              <div className="flex items-center overflow-hidden rounded-full border border-border">
-                {(["kanban", "table"] as const).map((mode, index) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setKanbanView(mode)}
-                    className={`cursor-pointer px-3 py-2 text-xs font-medium transition-colors ${index > 0 ? "border-l border-border" : ""} ${
-                      kanbanView === mode ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {mode === "kanban" ? "Kanban" : "Tabla"}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => setManagingFields(true)}
-                title="Propiedades personalizadas"
-                className="cursor-pointer whitespace-nowrap rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-              >
-                + Propiedad
-              </button>
-              <KanbanAddColumnForm
-                onAdd={(columnTitle) => {
-                  const current = content as CustomPageContentMap["kanban"];
-                  updateContent({ columns: [...current.columns, { id: newId(), title: columnTitle, cards: [] }] });
-                }}
-              />
-            </>
-          )}
-
           {/* Igual criterio que "+ Columna" en kanban: crear va en la cabecera de la página, no
               dentro del propio collage. */}
           {page.template === "galeria" && (
@@ -243,6 +287,44 @@ export function CustomPagePage({
           )}
         </div>
       </div>
+
+      {/* Fila propia (no metida en la columna de "Eliminar página") para que el toggle
+          Kanban/Tabla y las acciones de "+ Propiedad" / "+ Columna" queden a la misma
+          altura, cada uno en un extremo. */}
+      {page.template === "kanban" && (
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div className="flex items-center overflow-hidden rounded-full border border-border">
+            {(["kanban", "table"] as const).map((mode, index) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setKanbanView(mode)}
+                className={`cursor-pointer px-3 py-2 text-xs font-medium transition-colors ${index > 0 ? "border-l border-border" : ""} ${
+                  kanbanView === mode ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {mode === "kanban" ? "Kanban" : "Tabla"}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setManagingFields(true)}
+              title="Propiedades personalizadas"
+              className="cursor-pointer whitespace-nowrap rounded-full border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+            >
+              + Propiedad
+            </button>
+            <KanbanAddColumnForm
+              onAdd={(columnTitle) => {
+                const current = content as CustomPageContentMap["kanban"];
+                updateContent({ columns: [...current.columns, { id: newId(), title: columnTitle, cards: [] }] });
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {page.template === "kanban" && managingFields && (
         <KanbanFieldsDialog

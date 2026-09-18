@@ -433,6 +433,10 @@ export interface CustomPageSummary {
   // Línea editable bajo el título (ver CustomPagePage) — null si el usuario no ha escrito una,
   // en cuyo caso se muestra el icono+nombre de la plantilla como valor por defecto.
   subtitle: string | null;
+  // Emoji propio de la página — null si el usuario no ha elegido uno, en cuyo caso se muestra el
+  // de la plantilla (CUSTOM_PAGE_TEMPLATE_META[template].icon) como valor por defecto, mismo
+  // criterio que `subtitle`.
+  icon: string | null;
   template: CustomPageTemplate;
   order: number;
   createdAt: string;

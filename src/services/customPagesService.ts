@@ -42,7 +42,7 @@ export async function listCustomPages(userId: number) {
   const pages = await prisma.customPage.findMany({
     where: { userId },
     orderBy: { order: "asc" },
-    select: { id: true, title: true, subtitle: true, template: true, order: true, createdAt: true, updatedAt: true },
+    select: { id: true, title: true, subtitle: true, icon: true, template: true, order: true, createdAt: true, updatedAt: true },
   });
   return { pages };
 }
@@ -76,6 +76,9 @@ interface UpdateCustomPageInput {
   // Cadena vacía se guarda como null (borra el subtítulo escrito por el usuario y vuelve al
   // icono+nombre de la plantilla por defecto, ver CustomPagePage) — no como "" literal.
   subtitle?: string | null;
+  // Mismo criterio que `subtitle`: cadena vacía se guarda como null (quita el icono propio y
+  // vuelve al de la plantilla por defecto).
+  icon?: string | null;
   content?: Prisma.InputJsonValue;
   order?: number;
 }
@@ -87,6 +90,7 @@ export async function updateCustomPage(userId: number, pageId: number, input: Up
     data: {
       ...(input.title !== undefined ? { title: input.title.trim() } : {}),
       ...(input.subtitle !== undefined ? { subtitle: input.subtitle?.trim() || null } : {}),
+      ...(input.icon !== undefined ? { icon: input.icon?.trim() || null } : {}),
       ...(input.content !== undefined ? { content: input.content } : {}),
       ...(input.order !== undefined ? { order: input.order } : {}),
     },

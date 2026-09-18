@@ -586,6 +586,10 @@ model CustomPage {
   // es null se muestra el icono+nombre de la plantilla como valor por defecto (ver meta.label en
   // customPageTemplates.ts), sin que eso quede guardado como si lo hubiera escrito él.
   subtitle  String?
+  // Emoji propio de la página (ver CustomPagePage) — libre, el usuario lo elige de una paleta o
+  // escribe cualquier otro; si es null se muestra el icono de la plantilla por defecto (ver
+  // meta.icon en customPageTemplates.ts), mismo criterio que `subtitle`.
+  icon      String?
   // "nota" | "kanban" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy"
   template  String
   order     Float    @default(0) // Float: permite reordenar offline, mismo motivo que Schedule.order.
