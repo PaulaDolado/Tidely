@@ -34,7 +34,9 @@ const DEFAULT_LIMIT = 50;
 // Selección mínima de quien creó el evento / de cada invitado aceptado — nunca el email ni nada
 // más de la cuenta ajena, solo lo justo para pintar el distintivo de "compartido" (ver
 // `computeSharing` más abajo). Mismo criterio que PUBLIC_USER_SELECT en eventInvitationService.ts.
-const SHARING_INCLUDE = {
+// Exportado: syncService.pull() lo reutiliza para que el móvil reciba el mismo `sharing` que ya
+// ve el dashboard, en vez de reimplementar el include/cálculo por su cuenta.
+export const SHARING_INCLUDE = {
   user: { select: { id: true, name: true, username: true } },
   invitations: {
     where: { status: "accepted" as const },
@@ -74,10 +76,18 @@ function computeSharing(event: EventWithSharingRaw, userId: number): EventSharin
 
 // Quita las relaciones crudas (`user`/`invitations`) que solo se pidieron para calcular
 // `sharing` — sin esto, la respuesta de la API filtraría la lista de invitaciones enteras de
-// cada evento (con su `status`, ids...) en vez del resumen ya limpio que es `sharing`.
-function withSharing<T extends EventWithSharingRaw>(event: T, userId: number) {
+// cada evento (con su `status`, ids...) en vez del resumen ya limpio que es `sharing`. Exportada
+// por el mismo motivo que SHARING_INCLUDE (ver syncService.pull).
+export function withSharing<T extends EventWithSharingRaw>(event: T, userId: number) {
   const { user: _user, invitations: _invitations, ...rest } = event;
   return { ...rest, sharing: computeSharing(event, userId) };
+}
+
+// Mismo criterio de "compartido conmigo" que `sharedWhere` más abajo, factorizado para que
+// syncService.pull() pueda aplicarlo también al tirar de eventos (y de sus excepciones) hacia el
+// móvil — sin esto, un evento ajeno aceptado nunca llegaría a sincronizarse offline.
+export function sharedEventsWhere(userId: number): Prisma.EventWhereInput {
+  return { invitations: { some: { inviteeId: userId, status: "accepted" } } };
 }
 
 /**
@@ -96,8 +106,7 @@ async function findEventsInRange(userId: number, start: Date, end: Date, filters
   // aplicarlo a un evento ajeno compartido conmigo (su categoryId apunta a una categoría de
   // QUIEN LO CREÓ, no a las mías), así que solo se combina con la condición de "eventos propios".
   const ownWhere: Prisma.EventWhereInput = filters.categoryId ? { userId, categoryId: filters.categoryId } : { userId };
-  const sharedWhere: Prisma.EventWhereInput = { invitations: { some: { inviteeId: userId, status: "accepted" } } };
-  const visibleWhere: Prisma.EventWhereInput = { OR: [ownWhere, sharedWhere] };
+  const visibleWhere: Prisma.EventWhereInput = { OR: [ownWhere, sharedEventsWhere(userId)] };
 
   const [nonRecurring, recurringTemplates] = await Promise.all([
     prisma.event.findMany({
@@ -304,12 +313,21 @@ export async function updateEvent(userId: number, eventId: number, input: Partia
 
 export async function deleteEvent(userId: number, eventId: number) {
   await assertOwnership(userId, eventId);
+  // Quien tenga una invitación ACEPTADA también tiene este evento sincronizado en su propio móvil
+  // (ver EventSharing/syncService.pull) — sin un tombstone A SU NOMBRE, además del que ya se
+  // manda al dueño, se quedaría para siempre en su calendario offline aunque el evento ya no
+  // exista. `EventInvitation.eventId` cae en cascada con el delete, así que hay que leerlas ANTES.
+  const acceptedInvitees = await prisma.eventInvitation.findMany({
+    where: { eventId, status: "accepted" },
+    select: { inviteeId: true },
+  });
   // Tombstone en la misma transacción que el delete (ver tombstoneService.ts) — para que el
   // móvil sepa en su próximo /sync/pull que este evento (y sus posibles excepciones, que caen
   // en cascada) desapareció.
   await prisma.$transaction([
     prisma.event.delete({ where: { id: eventId } }),
     recordTombstone(prisma, userId, "event", eventId),
+    ...acceptedInvitees.map((inv) => recordTombstone(prisma, inv.inviteeId, "event", eventId)),
   ]);
 }
 

@@ -3,7 +3,7 @@ import { getDb } from "./index";
 import { listExceptionsForEvents } from "./eventExceptionsRepo";
 import { EventOccurrence, expandRecurringEvent, RecurringEventLike } from "../utils/recurrence";
 import { parseJsonArray, toJsonArray } from "../utils/json";
-import { LocalEvent, RecurringPattern, ServerEvent } from "../types";
+import { EventSharing, LocalEvent, RecurringPattern, ServerEvent } from "../types";
 
 /** Vista "parseada" de una fila de `events` — arrays reales en vez de JSON en texto, booleano en
  * vez de 0/1 — para no repetir `JSON.parse`/`=== 1` en cada pantalla que lee eventos. */
@@ -20,6 +20,27 @@ export interface ParsedEvent {
   recurringPattern: RecurringPattern | null;
   reminderMinutesBefore: number[];
   guests: string[];
+  // Reconstruido a partir de las columnas planas sharingRole/sharingOwnerName/... (ver LocalEvent
+  // en types.ts) — `null` en el caso normal (evento sin compartir). AgendaScreen lo usa para
+  // pintar el distintivo "🤝" y, si `role === "invitee"`, para bloquear editar/borrar.
+  sharing: EventSharing | null;
+}
+
+function sharingOf(row: LocalEvent): EventSharing | null {
+  if (row.sharingRole === "invitee") {
+    if (row.sharingInvitationId == null || row.sharingOwnerName == null || row.sharingOwnerUsername == null) return null;
+    return {
+      role: "invitee",
+      invitationId: row.sharingInvitationId,
+      owner: { name: row.sharingOwnerName, username: row.sharingOwnerUsername },
+    };
+  }
+  // El rol "owner" no guarda localmente la lista de invitados (ver el comentario de LocalEvent en
+  // types.ts) — quien creó el evento la consulta en directo contra la API al abrir el editor (ver
+  // api/eventInvitations.ts), así que aquí basta con saber que SÍ está compartido para el
+  // distintivo, sin la lista completa.
+  if (row.sharingRole === "owner") return { role: "owner" };
+  return null;
 }
 
 export function parseEvent(row: LocalEvent): ParsedEvent {
@@ -36,6 +57,7 @@ export function parseEvent(row: LocalEvent): ParsedEvent {
     recurringPattern: row.recurringPattern,
     reminderMinutesBefore: parseJsonArray<number>(row.reminderMinutesBefore),
     guests: parseJsonArray<string>(row.guests),
+    sharing: sharingOf(row),
   };
 }
 
@@ -47,12 +69,19 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
   await db.withTransactionAsync(async () => {
     for (const e of events) {
       const id = String(e.id);
+      // Aplanado del `sharing` del servidor a las 4 columnas propias (ver el comentario de
+      // LocalEvent en types.ts) — mismo motivo que el resto de campos JSON de esta fila.
+      const sharing = e.sharing ?? null;
+      const sharingOwnerName = sharing?.role === "invitee" ? sharing.owner.name : null;
+      const sharingOwnerUsername = sharing?.role === "invitee" ? sharing.owner.username : null;
+      const sharingInvitationId = sharing?.role === "invitee" ? sharing.invitationId : null;
       await db.runAsync(
         `INSERT INTO events
            (id, title, description, type, categoryId, startTime, endTime, location, isRecurring,
             recurringPattern, reminderMinutesBefore, guests, source, googleEventId,
-            createdAt, updatedAt, synced, pendingOp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
+            createdAt, updatedAt, synced, pendingOp,
+            sharingRole, sharingOwnerName, sharingOwnerUsername, sharingInvitationId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title, description = excluded.description, type = excluded.type,
            categoryId = excluded.categoryId,
@@ -60,7 +89,9 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
            isRecurring = excluded.isRecurring, recurringPattern = excluded.recurringPattern,
            reminderMinutesBefore = excluded.reminderMinutesBefore, guests = excluded.guests,
            source = excluded.source, googleEventId = excluded.googleEventId, updatedAt = excluded.updatedAt,
-           synced = 1
+           synced = 1,
+           sharingRole = excluded.sharingRole, sharingOwnerName = excluded.sharingOwnerName,
+           sharingOwnerUsername = excluded.sharingOwnerUsername, sharingInvitationId = excluded.sharingInvitationId
          WHERE events.pendingOp IS NULL`,
         [
           id,
@@ -79,6 +110,10 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
           e.googleEventId,
           e.createdAt,
           e.updatedAt,
+          sharing?.role ?? null,
+          sharingOwnerName,
+          sharingOwnerUsername,
+          sharingInvitationId,
         ]
       );
     }

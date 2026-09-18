@@ -61,6 +61,32 @@ export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
 // `image`/`notes`/`customFields` de Task) llega en la respuesta real pero no se declara ni se
 // guarda.
 
+// Referencia mínima a otro usuario (nunca el email) — igual selección que PUBLIC_USER_SELECT en
+// el backend (eventInvitationService.ts) y PublicUserRef en dashboard/src/types.ts.
+export interface PublicUserRef {
+  id: number;
+  name: string;
+  username: string;
+}
+
+// Distintivo de "compartido" tal cual lo devuelve el servidor (GET /sync/pull), igual forma que
+// EventSharing en agendaService.ts (backend) y dashboard/src/types.ts — ver `EventSharing` más
+// abajo para la versión aplanada que de verdad se guarda en SQLite/usan las pantallas.
+export type ServerEventSharing =
+  | { role: "owner"; with: PublicUserRef[] }
+  | { role: "invitee"; owner: PublicUserRef; invitationId: number };
+
+// Versión aplanada de ServerEventSharing para SQLite/las pantallas: `owner` solo lleva nombre/
+// username (no `id`, que esta app no necesita ni guarda localmente — ver
+// LocalEvent.sharingOwnerName/Username en types.ts/eventsRepo.ts) y "owner" no guarda la lista de
+// invitados (quien creó el evento la consulta en directo contra la API si hace falta, ver
+// api/eventInvitations.ts). Si `role` es "invitee", el evento es de SOLO LECTURA: no se puede
+// editar ni borrar, solo aceptar/rechazar la invitación o quitárselo del calendario del todo (ver
+// AgendaScreen.tsx).
+export type EventSharing =
+  | { role: "owner" }
+  | { role: "invitee"; owner: { name: string; username: string }; invitationId: number };
+
 export interface ServerEvent {
   id: number;
   title: string;
@@ -80,6 +106,26 @@ export interface ServerEvent {
   googleEventId: string | null;
   createdAt: string;
   updatedAt: string;
+  // `null` en el caso normal (evento sin compartir) — ver ServerEventSharing arriba.
+  sharing?: ServerEventSharing | null;
+}
+
+// Fila de invitación tal cual la devuelve la API de invitaciones (ver api/eventInvitations.ts) —
+// no pasa por SQLite/sync, igual criterio que EventCategory/CalendarLegendCategory: se lee
+// directa de la API cada vez que hace falta, no se cachea offline.
+export interface EventInvitation {
+  id: number;
+  eventId: number;
+  inviterId: number;
+  inviteeId: number;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+  updatedAt: string;
+  // Presente en GET /agenda/events/:id/invitations (vista de quien creó el evento).
+  invitee?: PublicUserRef;
+  // Presentes en GET /agenda/invitations (vista de "lo que he recibido").
+  inviter?: PublicUserRef;
+  event?: { id: number; title: string; startTime: string; endTime: string; location: string | null; isRecurring: boolean };
 }
 
 export interface ServerEventException {
@@ -351,6 +397,16 @@ export interface LocalEvent {
   updatedAt: string;
   synced: 0 | 1;
   pendingOp: "update" | "delete" | null;
+  // Columnas planas del `sharing` recibido en el pull (ver ServerEvent.sharing) — se aplanan en
+  // vez de guardarse como un JSON anidado porque son pocas y simples, y así se pueden leer/filtrar
+  // directas en SQL si hiciera falta. `sharingRole` es null en el caso normal (sin compartir);
+  // `sharingOwnerName`/`sharingOwnerUsername`/`sharingInvitationId` solo se rellenan cuando
+  // `sharingRole = 'invitee'` (ver parseEvent en eventsRepo.ts, que las reconstruye en un único
+  // `sharing` para las pantallas, igual forma que EventSharing).
+  sharingRole: "owner" | "invitee" | null;
+  sharingOwnerName: string | null;
+  sharingOwnerUsername: string | null;
+  sharingInvitationId: number | null;
 }
 
 // Solo caché de lectura (el móvil no crea/edita excepciones en esta fase, ver README) — igual

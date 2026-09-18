@@ -166,6 +166,7 @@ describe("Event Invitations (compartir eventos entre usuarios)", () => {
       expect(inviteeDay.body.events[0].sharing).toEqual({
         role: "invitee",
         owner: expect.objectContaining({ username: ownerUsername }),
+        invitationId: invitation.body.id,
       });
 
       const ownerDay = await request(app).get("/agenda/day/2026-10-10").set(ownerAuth());
@@ -212,6 +213,85 @@ describe("Event Invitations (compartir eventos entre usuarios)", () => {
       expect(week2.body.events).toHaveLength(1);
       expect(week1.body.events[0].sharing.role).toBe("invitee");
       expect(week2.body.events[0].sharing.role).toBe("invitee");
+    });
+  });
+
+  // El móvil no llama a /agenda/day — se sincroniza offline vía /sync/pull (ver
+  // syncService.pull), que tiene su propio criterio de visibilidad (ownWhere/sharedEventsWhere)
+  // que debe coincidir con el de la Agenda web para que ambas plataformas vean lo mismo.
+  describe("Sincronización móvil (/sync/pull)", () => {
+    it("el invitado recibe el evento compartido en su próximo pull tras aceptar, con sharing.role=invitee", async () => {
+      const eventId = await createEvent();
+      const invitation = await request(app)
+        .post(`/agenda/events/${eventId}/invitations`)
+        .set(ownerAuth())
+        .send({ identifier: inviteeUsername });
+      await request(app).put(`/agenda/invitations/${invitation.body.id}`).set(inviteeAuth()).send({ status: "accepted" });
+
+      const pull = await request(app).get("/sync/pull").set(inviteeAuth());
+      expect(pull.body.events).toHaveLength(1);
+      expect(pull.body.events[0]).toMatchObject({
+        id: eventId,
+        sharing: { role: "invitee", owner: expect.objectContaining({ username: ownerUsername }), invitationId: invitation.body.id },
+      });
+    });
+
+    it("aceptar toca el updatedAt del evento para que un pull incremental (cursor ya avanzado) también lo recoja", async () => {
+      const eventId = await createEvent();
+      // El invitado ya venía sincronizando ANTES de que le invitaran — su cursor queda por
+      // delante del updatedAt original del evento, creado antes de esta llamada.
+      const inviteeCursor = (await request(app).get("/sync/pull").set(inviteeAuth())).body.serverTime;
+
+      const invitation = await request(app)
+        .post(`/agenda/events/${eventId}/invitations`)
+        .set(ownerAuth())
+        .send({ identifier: inviteeUsername });
+      await request(app).put(`/agenda/invitations/${invitation.body.id}`).set(inviteeAuth()).send({ status: "accepted" });
+
+      // Sin tocar `updatedAt` al aceptar, este pull incremental (since=cursor posterior a la
+      // creación del evento) no vería el evento — sigue sin haber cambiado desde su punto de vista.
+      const incrementalPull = await request(app).get("/sync/pull").set(inviteeAuth()).query({ since: inviteeCursor });
+      expect(incrementalPull.body.events).toHaveLength(1);
+      expect(incrementalPull.body.events[0].id).toBe(eventId);
+    });
+
+    it("quitarse un evento del calendario (DELETE /agenda/invitations/:id) deja tombstone para el invitado, no para el dueño", async () => {
+      const eventId = await createEvent();
+      const invitation = await request(app)
+        .post(`/agenda/events/${eventId}/invitations`)
+        .set(ownerAuth())
+        .send({ identifier: inviteeUsername });
+      await request(app).put(`/agenda/invitations/${invitation.body.id}`).set(inviteeAuth()).send({ status: "accepted" });
+
+      const inviteeCursor = (await request(app).get("/sync/pull").set(inviteeAuth())).body.serverTime;
+      const ownerCursor = (await request(app).get("/sync/pull").set(ownerAuth())).body.serverTime;
+
+      await request(app).delete(`/agenda/invitations/${invitation.body.id}`).set(inviteeAuth());
+
+      const inviteePull = await request(app).get("/sync/pull").set(inviteeAuth()).query({ since: inviteeCursor });
+      expect(inviteePull.body.tombstones).toHaveLength(1);
+      expect(inviteePull.body.tombstones[0]).toMatchObject({ entityType: "event", entityId: eventId });
+
+      // El dueño no pierde nada: el evento sigue siendo suyo, solo dejó de estar compartido.
+      const ownerPull = await request(app).get("/sync/pull").set(ownerAuth()).query({ since: ownerCursor });
+      expect(ownerPull.body.tombstones).toHaveLength(0);
+    });
+
+    it("borrar el evento entero deja tombstone tanto para el dueño como para cada invitado con invitación aceptada", async () => {
+      const eventId = await createEvent();
+      const invitation = await request(app)
+        .post(`/agenda/events/${eventId}/invitations`)
+        .set(ownerAuth())
+        .send({ identifier: inviteeUsername });
+      await request(app).put(`/agenda/invitations/${invitation.body.id}`).set(inviteeAuth()).send({ status: "accepted" });
+
+      const inviteeCursor = (await request(app).get("/sync/pull").set(inviteeAuth())).body.serverTime;
+
+      await request(app).delete(`/agenda/events/${eventId}`).set(ownerAuth());
+
+      const inviteePull = await request(app).get("/sync/pull").set(inviteeAuth()).query({ since: inviteeCursor });
+      expect(inviteePull.body.tombstones).toHaveLength(1);
+      expect(inviteePull.body.tombstones[0]).toMatchObject({ entityType: "event", entityId: eventId });
     });
   });
 

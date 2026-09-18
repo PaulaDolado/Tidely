@@ -34,7 +34,11 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       synced INTEGER NOT NULL DEFAULT 0,
-      pendingOp TEXT
+      pendingOp TEXT,
+      sharingRole TEXT,
+      sharingOwnerName TEXT,
+      sharingOwnerUsername TEXT,
+      sharingInvitationId INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS event_exceptions (
@@ -273,5 +277,16 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
     await db.execAsync(`ALTER TABLE events ADD COLUMN categoryId INTEGER;`);
   } catch {
     // Ya existía (o la tabla se acaba de crear con la columna incluida) — nada que hacer.
+  }
+
+  // Mismo criterio que categoryId arriba: columnas añadidas después de instalaciones reales
+  // (compartir eventos entre usuarios, ver EventInvitation) — un ALTER TABLE por columna porque
+  // SQLite no admite añadir varias en una sola sentencia.
+  for (const column of ["sharingRole TEXT", "sharingOwnerName TEXT", "sharingOwnerUsername TEXT", "sharingInvitationId INTEGER"]) {
+    try {
+      await db.execAsync(`ALTER TABLE events ADD COLUMN ${column};`);
+    } catch {
+      // Ya existía — nada que hacer.
+    }
   }
 }

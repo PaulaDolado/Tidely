@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { runSync } from "../sync";
-import { listExpandedEvents, createEventLocal, updateEventLocal, deleteEventLocal, ParsedEvent } from "../db/eventsRepo";
+import { listExpandedEvents, createEventLocal, updateEventLocal, deleteEventLocal, deleteEvent as deleteEventCache, ParsedEvent } from "../db/eventsRepo";
 import { EventOccurrence } from "../utils/recurrence";
 import {
   listEventCategories,
@@ -15,11 +15,19 @@ import {
   changeEventCategoryColor,
   deleteEventCategory,
 } from "../api/eventCategories";
+import {
+  listEventInvitations,
+  inviteToEvent,
+  listReceivedInvitations,
+  respondToInvitation,
+  removeInvitation,
+} from "../api/eventInvitations";
 import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
 import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
 import {
   CalendarColor,
   EventCategory,
+  EventInvitation,
   RECURRING_PATTERNS,
   RECURRING_PATTERN_LABELS,
   RecurringPattern,
@@ -118,6 +126,27 @@ export function AgendaScreen() {
   const [categories, setCategories] = useState<EventCategory[]>([]);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  // Evento ajeno cuya invitación aceptaste (ver ParsedEvent.sharing en eventsRepo.ts) — de solo
+  // lectura, así que NO comparte el modal/estado `form` de crear/editar (evitaría tener que guardar
+  // en todas partes "¿pero este campo se puede tocar?"): es un modal aparte, más simple.
+  const [sharedEventView, setSharedEventView] = useState<EventOccurrence<ParsedEvent> | null>(null);
+  const [leavingShared, setLeavingShared] = useState(false);
+  // Invitaciones a eventos de OTRA gente, todavía sin responder (ver PendingInvitationsBanner) —
+  // igual que las categorías, se leen directas de la API (no pasan por SQLite/sync).
+  const [pendingInvitations, setPendingInvitations] = useState<EventInvitation[]>([]);
+
+  const reloadPendingInvitations = useCallback(async () => {
+    try {
+      setPendingInvitations(await listReceivedInvitations("pending"));
+    } catch {
+      // Best-effort — un fallo aquí no debe romper el resto de la Agenda, ver el mismo criterio
+      // en reloadCategories.
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadPendingInvitations();
+  }, [reloadPendingInvitations]);
 
   const reloadCategories = useCallback(async () => {
     try {
@@ -165,6 +194,7 @@ export function AgendaScreen() {
     useCallback(() => {
       reload();
       sync();
+      reloadPendingInvitations();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [weekStart])
   );
@@ -182,11 +212,34 @@ export function AgendaScreen() {
   };
 
   const openCreate = () => setForm(defaultForm(selectedDateKey));
-  const openEdit = (occ: EventOccurrence<ParsedEvent>) => setForm(formToOccurrenceEditor(occ.event));
+  // Un evento compartido conmigo (role "invitee") abre el visor de solo lectura, no el formulario
+  // de edición — editarlo/borrarlo solo puede hacerlo quien lo creó (ver el mismo criterio en
+  // dashboard/src/pages/AgendaPage.tsx: EventDialog).
+  const openEdit = (occ: EventOccurrence<ParsedEvent>) => {
+    if (occ.event.sharing?.role === "invitee") setSharedEventView(occ);
+    else setForm(formToOccurrenceEditor(occ.event));
+  };
   const closeForm = () => {
     setForm(null);
     setPicker(null);
     setShowCategoryManager(false);
+  };
+
+  const leaveSharedEvent = async () => {
+    if (!sharedEventView || sharedEventView.event.sharing?.role !== "invitee") return;
+    setLeavingShared(true);
+    try {
+      await removeInvitation(sharedEventView.event.sharing.invitationId);
+      // Borrado optimista local: el servidor también deja un tombstone (ver
+      // eventInvitationService.removeInvitation) que el próximo pull confirmaría igual, pero sin
+      // esto el evento seguiría viéndose hasta ese pull.
+      await deleteEventCache(Number(sharedEventView.event.id));
+      setSharedEventView(null);
+      await reload();
+      sync();
+    } finally {
+      setLeavingShared(false);
+    }
   };
 
   const toggleReminder = (minutes: number) => {
@@ -257,6 +310,17 @@ export function AgendaScreen() {
       </View>
       {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
 
+      {pendingInvitations.length > 0 && (
+        <PendingInvitationsBanner
+          invitations={pendingInvitations}
+          onRespond={async (invitationId, status) => {
+            await respondToInvitation(invitationId, status);
+            await reloadPendingInvitations();
+            if (status === "accepted") sync();
+          }}
+        />
+      )}
+
       <View style={styles.weekNav}>
         <Pressable onPress={() => goToWeek(-1)}>
           <Text style={styles.navButton}>‹ Semana</Text>
@@ -299,6 +363,7 @@ export function AgendaScreen() {
               </View>
               {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
             </View>
+            {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
             {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
           </Pressable>
         ))}
@@ -442,6 +507,12 @@ export function AgendaScreen() {
                 onChangeText={(t) => form && setForm({ ...form, guestsText: t })}
               />
 
+              {/* Solo con un id de SERVIDOR real (numérico) — mientras el evento solo existe
+                  local (uuid, aún sin sincronizar) todavía no hay nada que invitar a compartir,
+                  igual motivo que en dashboard/src/pages/AgendaPage.tsx (EventInvitationsEditor
+                  vive en editar, no en crear). */}
+              {form?.id && /^\d+$/.test(form.id) && <EventInvitationsEditor eventId={Number(form.id)} />}
+
               <Pressable style={styles.saveButton} onPress={handleSave} disabled={saving}>
                 <Text style={styles.saveButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
               </Pressable>
@@ -454,6 +525,40 @@ export function AgendaScreen() {
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </Pressable>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Visor de solo lectura para un evento compartido conmigo (role "invitee", ver openEdit) —
+          modal aparte y más simple que el de crear/editar: ni título/hora/categoría/invitados son
+          míos para tocar, así que ni se muestra ese formulario. Único hueco: aceptar que es de
+          otra persona y quitármelo del calendario. */}
+      <Modal visible={sharedEventView !== null} animationType="slide" onRequestClose={() => setSharedEventView(null)} transparent>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            {sharedEventView && sharedEventView.event.sharing?.role === "invitee" && (
+              <>
+                <Text style={styles.modalTitle}>{sharedEventView.event.title}</Text>
+                <Text style={styles.sharedByText}>
+                  🤝 Compartido por {sharedEventView.event.sharing.owner.name} (@{sharedEventView.event.sharing.owner.username})
+                </Text>
+                <Text style={styles.sharedDetailText}>
+                  {sharedEventView.startTime.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}
+                  {"\n"}
+                  {sharedEventView.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
+                  {sharedEventView.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                </Text>
+                {sharedEventView.event.location ? <Text style={styles.sharedDetailText}>{sharedEventView.event.location}</Text> : null}
+                <Text style={styles.sharedNoticeText}>Solo puedes ver este evento — quien lo creó es quien puede editarlo o borrarlo.</Text>
+
+                <Pressable style={styles.leaveButton} onPress={leaveSharedEvent} disabled={leavingShared}>
+                  <Text style={styles.leaveButtonText}>{leavingShared ? "Quitando…" : "Quitar de mi calendario"}</Text>
+                </Pressable>
+                <Pressable style={styles.cancelButton} onPress={() => setSharedEventView(null)}>
+                  <Text style={styles.cancelButtonText}>Cerrar</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -497,6 +602,203 @@ export function AgendaScreen() {
     </SafeAreaView>
   );
 }
+
+/** Aviso con las invitaciones recibidas y todavía sin responder — puerto de
+ * PendingInvitationsBanner en dashboard/src/pages/AgendaPage.tsx. Una vez respondida (aceptada o
+ * rechazada) desaparece de aquí, igual criterio que la web. */
+function PendingInvitationsBanner({
+  invitations,
+  onRespond,
+}: {
+  invitations: EventInvitation[];
+  onRespond: (invitationId: number, status: "accepted" | "declined") => Promise<void>;
+}) {
+  const [respondingId, setRespondingId] = useState<number | null>(null);
+
+  const respond = async (invitationId: number, status: "accepted" | "declined") => {
+    setRespondingId(invitationId);
+    try {
+      await onRespond(invitationId, status);
+    } finally {
+      setRespondingId(null);
+    }
+  };
+
+  return (
+    <View style={invitationStyles.banner}>
+      <Text style={invitationStyles.bannerTitle}>🤝 Invitaciones pendientes</Text>
+      {invitations.map((inv) => (
+        <View key={inv.id} style={invitationStyles.bannerRow}>
+          <View style={invitationStyles.bannerInfo}>
+            <Text style={invitationStyles.bannerEventTitle} numberOfLines={1}>
+              {inv.event?.title}
+            </Text>
+            <Text style={invitationStyles.bannerSubtitle}>{inv.inviter?.name} te invitó</Text>
+          </View>
+          <View style={invitationStyles.bannerActions}>
+            <Pressable
+              onPress={() => respond(inv.id, "declined")}
+              disabled={respondingId === inv.id}
+              style={invitationStyles.declineButton}
+            >
+              <Text style={invitationStyles.declineButtonText}>Rechazar</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => respond(inv.id, "accepted")}
+              disabled={respondingId === inv.id}
+              style={invitationStyles.acceptButton}
+            >
+              <Text style={invitationStyles.acceptButtonText}>Aceptar</Text>
+            </Pressable>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Compartir un evento propio con otro usuario de Tidely — puerto de EventInvitationsEditor en
+ * dashboard/src/pages/AgendaPage.tsx. A diferencia de "Invitados" (nombres/emails sueltos, sin
+ * cuenta), esto invita a OTRO USUARIO DE VERDAD: el evento le aparece en su propio calendario en
+ * cuanto acepta (ver ServerEvent.sharing en types.ts). */
+function EventInvitationsEditor({ eventId }: { eventId: number }) {
+  const [invitations, setInvitations] = useState<EventInvitation[]>([]);
+  const [identifier, setIdentifier] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      setInvitations(await listEventInvitations(eventId));
+    } catch {
+      // Best-effort, igual criterio que reloadCategories en AgendaScreen.
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const invite = async () => {
+    const trimmed = identifier.trim();
+    if (!trimmed) return;
+    setSending(true);
+    setError(null);
+    try {
+      await inviteToEvent(eventId, trimmed);
+      setIdentifier("");
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo invitar.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const revoke = async (invitationId: number) => {
+    await removeInvitation(invitationId);
+    await reload();
+  };
+
+  return (
+    <View style={invitationStyles.editorWrap}>
+      <Text style={styles.fieldLabel}>Compartir con otro usuario de Tidely</Text>
+      {invitations.length > 0 && (
+        <View style={invitationStyles.chipRow}>
+          {invitations.map((inv) => (
+            <View key={inv.id} style={invitationStyles.chip}>
+              <Text style={invitationStyles.chipText}>
+                {inv.invitee?.name} · {INVITATION_STATUS_LABELS[inv.status]}
+              </Text>
+              <Pressable onPress={() => revoke(inv.id)} hitSlop={6}>
+                <Text style={invitationStyles.chipRemove}>✕</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+      <View style={invitationStyles.inviteRow}>
+        <TextInput
+          style={invitationStyles.inviteInput}
+          value={identifier}
+          onChangeText={setIdentifier}
+          placeholder="Usuario o email de Tidely"
+          placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="none"
+          onSubmitEditing={invite}
+        />
+        <Pressable onPress={invite} disabled={sending} style={invitationStyles.inviteButton}>
+          <Text style={invitationStyles.inviteButtonText}>Invitar</Text>
+        </Pressable>
+      </View>
+      {error && <Text style={styles.errorBanner}>{error}</Text>}
+    </View>
+  );
+}
+
+const INVITATION_STATUS_LABELS: Record<EventInvitation["status"], string> = {
+  pending: "Pendiente",
+  accepted: "Aceptada",
+  declined: "Rechazada",
+};
+
+const invitationStyles = StyleSheet.create({
+  banner: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: radius.card,
+    backgroundColor: colors.secondary,
+    gap: 8,
+  },
+  bannerTitle: { fontFamily: fonts.sansBold, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: colors.secondaryForeground },
+  bannerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: radius.input,
+    padding: 10,
+  },
+  bannerInfo: { flex: 1, minWidth: 0 },
+  bannerEventTitle: { fontFamily: fonts.sansSemiBold, fontSize: 13, color: colors.foreground },
+  bannerSubtitle: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
+  bannerActions: { flexDirection: "row", gap: 6 },
+  declineButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 6 },
+  declineButtonText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.mutedForeground },
+  acceptButton: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 6 },
+  acceptButtonText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.background },
+  editorWrap: { marginBottom: 12 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  chipText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
+  chipRemove: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.mutedForeground },
+  inviteRow: { flexDirection: "row", gap: 6 },
+  inviteInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.input,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.foreground,
+    backgroundColor: colors.card,
+  },
+  inviteButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 12, justifyContent: "center" },
+  inviteButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+});
 
 // Gestión de categorías de evento (añadir, renombrar, recolorear o borrar, incluidas las que
 // trae la cuenta por defecto) sin salir del formulario de creación/edición — puerto simplificado
@@ -844,4 +1146,9 @@ const styles = StyleSheet.create({
   deleteButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
+  sharedByText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginBottom: 16 },
+  sharedDetailText: { fontFamily: fonts.sans, fontSize: 14, color: colors.foreground, marginBottom: 8, lineHeight: 20 },
+  sharedNoticeText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 8, marginBottom: 20 },
+  leaveButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, padding: 14, alignItems: "center" },
+  leaveButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
 });

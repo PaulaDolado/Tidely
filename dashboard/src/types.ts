@@ -114,7 +114,9 @@ export interface PublicUserRef {
 
 export type EventSharing =
   | { role: "owner"; with: PublicUserRef[] }
-  | { role: "invitee"; owner: PublicUserRef };
+  // `invitationId` es el id de la fila EventInvitation (no del evento) — hace falta para
+  // DELETE /agenda/invitations/:id al "quitar de mi calendario" (ver EventDialog).
+  | { role: "invitee"; owner: PublicUserRef; invitationId: number };
 
 export interface EventInvitation {
   id: number;
@@ -377,7 +379,7 @@ export interface ProjectPage {
 
 export interface Notification {
   id: number;
-  type: "event_reminder" | "goal_at_risk" | "task_due";
+  type: "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation";
   title: string;
   message: string;
   relatedId: number | null;

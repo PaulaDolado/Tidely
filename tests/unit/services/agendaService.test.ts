@@ -67,8 +67,11 @@ describe("agendaService", () => {
 
       await agendaService.getDay(1, "2026-08-24", { categoryId: 3 });
 
+      // El filtro de categoría solo se combina con la rama de "eventos propios" del OR (ver
+      // sharedEventsWhere en agendaService.ts) — un evento ajeno compartido no tiene una
+      // categoryId que tenga sentido filtrar con las categorías de este usuario.
       const whereArg = prismaMock.event.findMany.mock.calls[0][0].where;
-      expect(whereArg.categoryId).toBe(3);
+      expect(whereArg.OR[0].categoryId).toBe(3);
     });
 
     it("no incluye categoryId en el where cuando no se indica filtro", async () => {
@@ -77,7 +80,7 @@ describe("agendaService", () => {
       await agendaService.getDay(1, "2026-08-24");
 
       const whereArg = prismaMock.event.findMany.mock.calls[0][0].where;
-      expect(whereArg.categoryId).toBeUndefined();
+      expect(whereArg.OR[0].categoryId).toBeUndefined();
     });
   });
 

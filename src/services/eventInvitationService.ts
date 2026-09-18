@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../utils/errorHandler";
+import { recordTombstone } from "./tombstoneService";
 
 // Igual selección que en las respuestas de agendaService (ver `sharing` en findEventsInRange):
 // solo lo mínimo para mostrar un nombre/usuario, nunca el email ni nada más de la cuenta ajena.
@@ -108,13 +109,39 @@ export async function respondToInvitation(userId: number, invitationId: number, 
   if (invitation.inviteeId !== userId) {
     throw new ForbiddenError("Solo el invitado puede responder a esta invitación");
   }
-  return prisma.eventInvitation.update({ where: { id: invitationId }, data: { status } });
+  // Si ya estaba "accepted" (el invitado cambia de idea y rechaza uno que había aceptado antes,
+  // aunque hoy no haya botón para eso en la UI, ver el comentario de arriba sobre transiciones
+  // libres) hace falta un tombstone: el evento ya se había sincronizado al móvil del invitado (ver
+  // syncService.pull), y sin esto se quedaría para siempre en su calendario offline aunque el
+  // servidor ya no lo considere compartido con él.
+  return prisma.$transaction(async (tx) => {
+    if (invitation.status === "accepted" && status !== "accepted") {
+      await recordTombstone(tx, userId, "event", invitation.eventId);
+    }
+    // Al aceptar, el evento pasa a estar visible para este usuario (ver sharedEventsWhere en
+    // agendaService.ts) — pero el pull del móvil es incremental (`updatedAt > cursor`, ver
+    // syncService.pull), y el evento pudo crearse mucho antes de que este usuario empezara a
+    // sincronizar. Tocar su `updatedAt` lo mete en la ventana del próximo pull sin necesitar un
+    // caso especial en el cliente para "un evento que no cambió pero ahora sí es visible para mí".
+    if (status === "accepted" && invitation.status !== "accepted") {
+      await tx.event.update({ where: { id: invitation.eventId }, data: { updatedAt: new Date() } });
+    }
+    return tx.eventInvitation.update({ where: { id: invitationId }, data: { status } });
+  });
 }
 
 /** Borra la invitación entera — el INVITADO la usa para quitarse el evento de su calendario del
  * todo (a diferencia de "declined", que conserva la fila); quien CREÓ el evento la usa para
  * revocar una invitación que ya no quiere mantener, esté en el estado que esté. */
 export async function removeInvitation(userId: number, invitationId: number) {
-  await findOwnInvitation(userId, invitationId); // ya comprueba que sea invitado o invitador
-  await prisma.eventInvitation.delete({ where: { id: invitationId } });
+  const invitation = await findOwnInvitation(userId, invitationId); // ya comprueba que sea invitado o invitador
+  await prisma.$transaction(async (tx) => {
+    // Mismo motivo que en respondToInvitation: si estaba aceptada, el invitado ya tiene el evento
+    // sincronizado en su móvil — sin el tombstone (a SU nombre, no al de quien borra) no se
+    // enteraría nunca de que ha dejado de estar compartido con él.
+    if (invitation.status === "accepted") {
+      await recordTombstone(tx, invitation.inviteeId, "event", invitation.eventId);
+    }
+    await tx.eventInvitation.delete({ where: { id: invitationId } });
+  });
 }

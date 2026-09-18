@@ -61,8 +61,19 @@ export async function pull(userId: number, since?: Date) {
     calendarDayMarks,
     customPages,
   ] = await Promise.all([
-    prisma.event.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
-    prisma.eventException.findMany({ where: { event: { userId }, updatedAt: { gt: cursor } } }),
+    // OR de "míos" + "compartidos conmigo y aceptados" (ver agendaService.sharedEventsWhere) —
+    // mismo criterio de visibilidad que la Agenda web (findEventsInRange), para que el móvil vea
+    // los mismos eventos compartidos, con el mismo distintivo `sharing` (ver el .map() de abajo).
+    prisma.event.findMany({
+      where: { OR: [{ userId }, agendaService.sharedEventsWhere(userId)], updatedAt: { gt: cursor } },
+      include: agendaService.SHARING_INCLUDE,
+    }),
+    // Mismo motivo: una excepción (mover/cancelar una ocurrencia suelta) de un evento recurrente
+    // compartido la puso quien lo creó, pero vale igual para quien lo tiene aceptado — sin
+    // incluirla aquí, el móvil del invitado expandiría la serie sin conocer esos ajustes.
+    prisma.eventException.findMany({
+      where: { event: { OR: [{ userId }, agendaService.sharedEventsWhere(userId)] }, updatedAt: { gt: cursor } },
+    }),
     prisma.task.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
     prisma.subtask.findMany({ where: { task: { userId }, updatedAt: { gt: cursor } } }),
     prisma.note.findMany({ where: { userId, updatedAt: { gt: cursor } } }),
@@ -87,7 +98,9 @@ export async function pull(userId: number, since?: Date) {
 
   return {
     serverTime,
-    events,
+    // `withSharing` también quita `user`/`invitations` (las relaciones crudas que solo se pidieron
+    // para calcularlo) — ver el mismo comentario en agendaService.ts.
+    events: events.map((e) => agendaService.withSharing(e, userId)),
     eventExceptions,
     tasks,
     subtasks,

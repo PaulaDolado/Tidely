@@ -199,6 +199,15 @@ export function AgendaPage({
     []
   );
   const categories = categoriesData?.categories ?? [];
+  // Invitaciones a eventos de OTRA gente, todavía sin responder (ver EventInvitationsEditor,
+  // que es la vista simétrica desde el lado del dueño del evento). Aparte del refresco normal de
+  // useFetch, se recarga a mano al aceptar/rechazar una (ver PendingInvitationsBanner) para que
+  // desaparezca de la lista sin esperar a la próxima carga de la página.
+  const { data: pendingInvitationsData, reload: reloadPendingInvitations } = useFetch(
+    () => api.get<{ invitations: EventInvitation[] }>("/agenda/invitations?status=pending"),
+    []
+  );
+  const pendingInvitations = pendingInvitationsData?.invitations ?? [];
 
   // Los días de la cuadrícula se calculan a partir de `selected` (una fecha de calendario,
   // sin ambigüedad de zona horaria) — NO a partir de `data.weekStart`/`monthStart`, que son
@@ -345,6 +354,17 @@ export function AgendaPage({
         }
       />
 
+      {pendingInvitations.length > 0 && (
+        <PendingInvitationsBanner
+          invitations={pendingInvitations}
+          onRespond={async (invitationId, status) => {
+            await api.put(`/agenda/invitations/${invitationId}`, { status });
+            reloadPendingInvitations();
+            if (status === "accepted") reload();
+          }}
+        />
+      )}
+
       {open && (
         <NewEventForm
           date={selected}
@@ -461,6 +481,12 @@ export function AgendaPage({
           }}
           onRestoreOccurrence={async () => {
             await api.delete(`/agenda/events/${editingEvent.id}/exceptions/${editingEvent.originalStartTime}`);
+            setEditingEvent(null);
+            reload();
+          }}
+          onLeaveInvitation={async () => {
+            if (editingEvent.sharing?.role !== "invitee") return;
+            await api.delete(`/agenda/invitations/${editingEvent.sharing.invitationId}`);
             setEditingEvent(null);
             reload();
           }}
@@ -1490,6 +1516,67 @@ function GuestsEditor({ value, onChange }: { value: string[]; onChange: (guests:
   );
 }
 
+// Aviso en lo alto de Agenda con las invitaciones a eventos de otros que aún no has aceptado ni
+// rechazado (ver la decisión de producto: "requiere aceptar primero" — no basta con ser invitado
+// para que el evento aparezca en tu calendario, ver findEventsInRange en el backend). Una vez
+// respondida (aceptada o rechazada) desaparece de aquí — el histórico de invitaciones rechazadas
+// no se enseña en ningún sitio del dashboard.
+function PendingInvitationsBanner({
+  invitations,
+  onRespond,
+}: {
+  invitations: EventInvitation[];
+  onRespond: (invitationId: number, status: "accepted" | "declined") => Promise<void>;
+}) {
+  const [respondingId, setRespondingId] = useState<number | null>(null);
+
+  const respond = async (invitationId: number, status: "accepted" | "declined") => {
+    setRespondingId(invitationId);
+    try {
+      await onRespond(invitationId, status);
+    } finally {
+      setRespondingId(null);
+    }
+  };
+
+  return (
+    <div className="mb-6 rounded-3xl border border-border bg-secondary/30 p-5">
+      <p className="mb-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">🤝 Invitaciones pendientes</p>
+      <div className="grid gap-2">
+        {invitations.map((inv) => (
+          <div key={inv.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{inv.event?.title}</p>
+              <p className="text-xs text-muted-foreground">
+                {inv.inviter?.name} te invitó
+                {inv.event && ` · ${new Date(inv.event.startTime).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}`}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                disabled={respondingId === inv.id}
+                onClick={() => respond(inv.id, "declined")}
+                className="cursor-pointer whitespace-nowrap rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Rechazar
+              </button>
+              <button
+                type="button"
+                disabled={respondingId === inv.id}
+                onClick={() => respond(inv.id, "accepted")}
+                className="cursor-pointer whitespace-nowrap rounded-full bg-foreground px-3 py-1.5 text-xs text-background transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const INVITATION_STATUS_LABELS: Record<EventInvitation["status"], string> = {
   pending: "Pendiente",
   accepted: "Aceptada",
@@ -1822,6 +1909,7 @@ function EventDialog({
   onDeleted,
   onSetException,
   onRestoreOccurrence,
+  onLeaveInvitation,
 }: {
   event: Event;
   categories: EventCategory[];
@@ -1831,6 +1919,7 @@ function EventDialog({
   onDeleted: () => Promise<void>;
   onSetException: (input: { originalStartTime?: string; action: "moved" | "cancelled"; newStartTime?: string; newEndTime?: string }) => Promise<void>;
   onRestoreOccurrence: () => Promise<void>;
+  onLeaveInvitation: () => Promise<void>;
 }) {
   const [title, setTitle] = useState(event.title);
   const [eventDate, setEventDate] = useState(localDateOf(event.startTime));
@@ -1846,11 +1935,59 @@ function EventDialog({
   const [guests, setGuests] = useState<string[]>(event.guests ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const buildTimes = () => ({
     startTime: new Date(`${eventDate}T${startTime}:00`).toISOString(),
     endTime: new Date(`${eventDate}T${endTime}:00`).toISOString(),
   });
+
+  // Evento ajeno cuya invitación aceptaste (ver EventSharing en types.ts) — de solo lectura:
+  // ni título/hora/categoría/invitados son tuyos para tocar, así que ni se muestra el formulario
+  // completo. Las únicas acciones posibles son aceptar que es de otro y quitártelo del calendario.
+  if (event.sharing?.role === "invitee") {
+    const owner = event.sharing.owner;
+    return (
+      <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-foreground/50 p-4" onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-3xl bg-card p-6 shadow-[var(--shadow-soft)] sm:p-8">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="font-serif text-xl">{event.title}</h2>
+            <button type="button" onClick={onClose} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+              ✕ Cerrar
+            </button>
+          </div>
+          <p className="mb-4 text-xs text-muted-foreground">🤝 Compartido por {owner.name} (@{owner.username})</p>
+          <div className="grid gap-2 text-sm text-muted-foreground">
+            <p>
+              {new Date(event.startTime).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
+              {localTimeOf(event.startTime)}–{localTimeOf(event.endTime)}
+            </p>
+            {event.location && <p>{event.location}</p>}
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Solo puedes ver este evento — quien lo creó es quien puede editarlo o borrarlo.
+          </p>
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              disabled={leaving}
+              onClick={async () => {
+                setLeaving(true);
+                try {
+                  await onLeaveInvitation();
+                } finally {
+                  setLeaving(false);
+                }
+              }}
+              className="cursor-pointer whitespace-nowrap rounded-full border border-border px-4 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {leaving ? "Quitando..." : "Quitar de mi calendario"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1938,6 +2075,7 @@ function EventDialog({
 
           <ReminderCheckboxes value={reminderMinutesBefore} onChange={setReminderMinutesBefore} />
           <GuestsEditor value={guests} onChange={setGuests} />
+          <EventInvitationsEditor eventId={event.id} />
         </div>
 
         {event.isRecurringInstance && (

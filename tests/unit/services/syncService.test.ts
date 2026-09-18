@@ -29,6 +29,16 @@ jest.mock("../../../src/services/agendaService", () => ({
   deleteEvent: jest.fn(),
   setEventException: jest.fn(),
   deleteEventException: jest.fn(),
+  // Usados por syncService.pull() para incluir eventos compartidos aceptados (ver
+  // agendaService.sharedEventsWhere/SHARING_INCLUDE/withSharing) — como valores reales (no
+  // jest.fn()) porque pull() los llama de forma síncrona para construir el `where`/`include` de
+  // Prisma y para mapear cada evento devuelto, no solo los invoca y descarta el resultado.
+  sharedEventsWhere: jest.fn((userId: number) => ({ invitations: { some: { inviteeId: userId, status: "accepted" } } })),
+  SHARING_INCLUDE: { user: { select: { id: true, name: true, username: true } }, invitations: true },
+  withSharing: jest.fn((event: Record<string, unknown>) => {
+    const { user: _user, invitations: _invitations, ...rest } = event;
+    return { ...rest, sharing: null };
+  }),
 }));
 
 jest.mock("../../../src/services/plannerService", () => ({
@@ -234,7 +244,8 @@ describe("syncService", () => {
 
       const result = await syncService.pull(1);
 
-      expect(result.events).toEqual([{ id: 1 }]);
+      // `withSharing` (mockeado arriba) añade `sharing` a cada evento devuelto.
+      expect(result.events).toEqual([{ id: 1, sharing: null }]);
       expect(result.tombstones).toEqual([{ id: 5, entityType: "task", entityId: 9 }]);
       expect(result.transactions).toEqual([{ id: 7 }]);
       expect(result.calendarDayMarks).toEqual([{ date: "2026-08-10", categoryId: 2 }]);
