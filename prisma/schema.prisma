@@ -419,6 +419,10 @@ model Task {
   // propósito (ver TaskDetailDialog en el dashboard): "todo lo demás" que no encaja en la
   // descripción corta — apuntes, contexto, lo que sea. @db.Text por la misma razón que `image`.
   notes       String?   @db.Text
+  // Vista "compacta" de la tarjeta en el tablero (ver TaskCard/TaskDetailDialog en el dashboard):
+  // imagen a la izquierda como miniatura, título/descripción a la derecha, en vez de la imagen a
+  // ancho completo encima del texto. Sin efecto si `image` es null.
+  compact     Boolean   @default(false)
   status      String    @default("todo") // "todo" | "in_progress" | "done"
   priority    String    @default("medium") // "low" | "medium" | "high"
   order       Float     @default(0)

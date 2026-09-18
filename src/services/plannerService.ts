@@ -16,6 +16,7 @@ interface TaskInputFields {
   description?: string | null;
   image?: string | null;
   notes?: string | null;
+  compact?: boolean;
   status?: string;
   priority?: string;
   order?: number;
@@ -231,6 +232,7 @@ export async function createTask(userId: number, input: CreateTaskInput) {
       description: input.description ?? null,
       image: input.image ?? null,
       notes: input.notes ?? null,
+      compact: input.compact ?? false,
       status,
       priority: input.priority ?? DEFAULT_PRIORITY,
       order,
@@ -273,6 +275,7 @@ export async function updateTask(userId: number, taskId: number, input: UpdateTa
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.image !== undefined ? { image: input.image || null } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.compact !== undefined ? { compact: input.compact } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
       ...(input.order !== undefined ? { order: input.order } : {}),

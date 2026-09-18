@@ -52,6 +52,10 @@ interface TaskFields {
   description?: string | null;
   image?: string | null;
   notes?: string | null;
+  // Vista "compacta" de la tarjeta en el tablero (ver TaskCard): imagen a la izquierda, título/
+  // descripción a la derecha, en vez de la imagen a ancho completo encima del texto. Sin efecto
+  // si la tarea no tiene imagen.
+  compact?: boolean;
   dueDate?: string | null;
   tags?: string[];
   estimatedMinutes?: number | null;
@@ -1653,25 +1657,53 @@ function TaskCard({
           isDragged ? "opacity-40" : ""
         } ${justFocused ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}
       >
-        {task.image && <img src={task.image} alt="" className="mb-2 max-h-32 w-full rounded-lg object-cover" />}
+        {/* "Compactar" (ver TaskDetailDialog) pone la imagen a la izquierda como miniatura en vez
+            de a ancho completo encima del texto — sin efecto si la tarea no tiene imagen. */}
+        {task.compact && task.image ? (
+          <div className="flex items-start gap-2.5">
+            <img src={task.image} alt="" className="size-14 shrink-0 rounded-lg object-cover" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <span className={`min-w-0 flex-1 text-sm ${task.status === "done" ? "text-muted-foreground line-through" : ""}`}>
+                  {task.title}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  className="shrink-0 cursor-pointer text-xs text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  aria-label="Eliminar tarea"
+                >
+                  ✕
+                </button>
+              </div>
+              {task.description && <p className="mt-1.5 truncate text-xs text-muted-foreground">{task.description}</p>}
+            </div>
+          </div>
+        ) : (
+          <>
+            {task.image && <img src={task.image} alt="" className="mb-2 max-h-32 w-full rounded-lg object-cover" />}
 
-        <div className="flex items-start justify-between gap-2">
-          <span className={`min-w-0 flex-1 text-sm ${task.status === "done" ? "text-muted-foreground line-through" : ""}`}>
-            {task.title}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="shrink-0 cursor-pointer text-xs text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-            aria-label="Eliminar tarea"
-          >
-            ✕
-          </button>
-        </div>
+            <div className="flex items-start justify-between gap-2">
+              <span className={`min-w-0 flex-1 text-sm ${task.status === "done" ? "text-muted-foreground line-through" : ""}`}>
+                {task.title}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="shrink-0 cursor-pointer text-xs text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                aria-label="Eliminar tarea"
+              >
+                ✕
+              </button>
+            </div>
 
-        {task.description && <p className="mt-1.5 truncate text-xs text-muted-foreground">{task.description}</p>}
+            {task.description && <p className="mt-1.5 truncate text-xs text-muted-foreground">{task.description}</p>}
+          </>
+        )}
 
         {/* Insignias compactas */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1904,6 +1936,18 @@ function TaskDetailDialog({
                   className="cursor-pointer text-muted-foreground hover:text-destructive"
                 >
                   Quitar imagen
+                </button>
+              )}
+              {/* Solo tiene sentido con imagen puesta — ver TaskCard para el layout resultante
+                  (imagen a la izquierda como miniatura, título/descripción a la derecha, en vez
+                  de a ancho completo encima). */}
+              {task.image && (
+                <button
+                  type="button"
+                  onClick={() => onUpdate({ compact: !task.compact })}
+                  className="cursor-pointer text-muted-foreground hover:text-foreground"
+                >
+                  {task.compact ? "Expandir" : "Compactar"}
                 </button>
               )}
               <input

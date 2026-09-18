@@ -91,6 +91,9 @@ export const createTaskSchema = Joi.object({
   description: Joi.string().max(2000).allow(null, ""),
   image: imageSchema,
   notes: notesSchema,
+  // Vista "compacta" de la tarjeta en el tablero (imagen a la izquierda, texto a la derecha) —
+  // sin efecto si la tarea no tiene imagen, ver TaskCard/TaskDetailDialog en el dashboard.
+  compact: Joi.boolean(),
   status: Joi.string().valid(...STATUSES),
   priority: Joi.string().valid(...PRIORITIES),
   order: Joi.number(),
@@ -106,6 +109,7 @@ export const updateTaskSchema = Joi.object({
   description: Joi.string().max(2000).allow(null, ""),
   image: imageSchema,
   notes: notesSchema,
+  compact: Joi.boolean(),
   status: Joi.string().valid(...STATUSES),
   priority: Joi.string().valid(...PRIORITIES),
   order: Joi.number(),

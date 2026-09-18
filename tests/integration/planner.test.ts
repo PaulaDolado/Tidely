@@ -144,6 +144,16 @@ describe("Planner Endpoints", () => {
       expect(response.status).toBe(200);
       expect(response.body.dueDate).toBeNull();
     });
+
+    it("crea con compact=false por defecto y permite activar la vista compacta", async () => {
+      const task = await request(app).post("/planner/tasks").set(authed()).send({ title: "Tarea" });
+      expect(task.body.compact).toBe(false);
+
+      const response = await request(app).put(`/planner/tasks/${task.body.id}`).set(authed()).send({ compact: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body.compact).toBe(true);
+    });
   });
 
   describe("POST /planner/tasks/:id/time", () => {
