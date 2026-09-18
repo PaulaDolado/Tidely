@@ -135,6 +135,18 @@ async function listAllTransactions(): Promise<LocalTransaction[]> {
   return db.getAllAsync<LocalTransaction>("SELECT * FROM transactions WHERE pendingOp IS NULL OR pendingOp != 'delete'");
 }
 
+/** Categorías usadas por alguna meta de ahorro/inversión — puerto de
+ * financeService.getGoalCategories en el backend. Aportar/retirar de una meta no es un ingreso/
+ * gasto "real" (ver el comentario en getMonthlyBalanceLocal), así que estas categorías se tratan
+ * aparte en los agregados de abajo. Sin filtrar por pendingOp: igual que el backend (que no tiene
+ * concepto de meta "borrada pero todavía no confirmada"), una meta pendiente de borrar localmente
+ * sigue marcando su categoría como "de meta" hasta que el borrado se confirme. */
+async function getGoalCategoriesLocal(): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ category: string }>("SELECT DISTINCT category FROM savings_goals");
+  return rows.map((r) => r.category);
+}
+
 function sumByType(rows: LocalTransaction[]): { income: number; expense: number; balance: number } {
   let income = 0;
   let expense = 0;
@@ -145,6 +157,14 @@ function sumByType(rows: LocalTransaction[]): { income: number; expense: number;
   return { income, expense, balance: income - expense };
 }
 
+/** Neto aportado (income) menos retirado/corregido (expense) a metas de ahorro — puerto de
+ * financeService.getGoalContributionsNet. */
+function goalContributionsNet(rows: LocalTransaction[]): number {
+  let net = 0;
+  for (const t of rows) net += t.type === "income" ? t.amount : -t.amount;
+  return net;
+}
+
 export interface MonthlyBalance {
   month: number;
   year: number;
@@ -153,13 +173,22 @@ export interface MonthlyBalance {
   balance: number;
 }
 
+/** Mismo criterio que financeService.sumByType en el backend: lo aportado a una meta de ahorro/
+ * inversión este mes resta de Ingresos (y por tanto de Balance) en vez de sumar como si fuera
+ * dinero nuevo — apartar dinero que ya contaba como ingreso no es ganar más. Sigue contando en
+ * Ahorro/Inversión vía savingsGoalsRepo.listSavingsGoals, que no pasa por aquí. */
 export async function getMonthlyBalanceLocal(month: number, year: number): Promise<MonthlyBalance> {
-  const all = await listAllTransactions();
+  const [all, goalCategories] = await Promise.all([listAllTransactions(), getGoalCategoriesLocal()]);
   const inMonth = all.filter((t) => {
     const d = new Date(t.date);
     return d.getFullYear() === year && d.getMonth() === month - 1;
   });
-  return { month, year, ...sumByType(inMonth) };
+  const real = inMonth.filter((t) => !goalCategories.includes(t.category));
+  const goalTx = inMonth.filter((t) => goalCategories.includes(t.category));
+
+  const { income: rawIncome, expense } = sumByType(real);
+  const income = rawIncome - goalContributionsNet(goalTx);
+  return { month, year, income, expense, balance: income - expense };
 }
 
 export interface FinanceAnalytics {
@@ -171,24 +200,39 @@ export interface FinanceAnalytics {
 }
 
 /** Mismo cálculo que financeService.getAnalytics en el backend: top 5 categorías de gasto del
- * mes de referencia + tendencia de los últimos 6 meses (incluido el de referencia). */
+ * mes de referencia + tendencia de los últimos 6 meses (incluido el de referencia). Las
+ * categorías de meta de ahorro/inversión no cuentan ni para la tendencia de ingresos/gastos ni
+ * para el top de categorías (ver getMonthlyBalanceLocal) — se restan del ingreso del mes que
+ * corresponda en vez de mostrarse como movimiento normal. */
 export async function getAnalyticsLocal(month?: number, year?: number): Promise<FinanceAnalytics> {
   const now = new Date();
   const refMonth = month ?? now.getMonth() + 1;
   const refYear = year ?? now.getFullYear();
-  const all = await listAllTransactions();
+  const [all, goalCategories] = await Promise.all([listAllTransactions(), getGoalCategoriesLocal()]);
 
   const monthKey = (y: number, m: number) => `${y}-${m}`;
   const buckets = new Map<string, { month: number; year: number; income: number; expense: number }>();
+  const goalNetByBucket = new Map<string, number>();
   for (let i = 5; i >= 0; i -= 1) {
     const d = new Date(refYear, refMonth - 1 - i, 1);
-    buckets.set(monthKey(d.getFullYear(), d.getMonth()), { month: d.getMonth() + 1, year: d.getFullYear(), income: 0, expense: 0 });
+    const key = monthKey(d.getFullYear(), d.getMonth());
+    buckets.set(key, { month: d.getMonth() + 1, year: d.getFullYear(), income: 0, expense: 0 });
+    goalNetByBucket.set(key, 0);
   }
 
   const categoryTotals = new Map<string, number>();
   for (const t of all) {
     const d = new Date(t.date);
-    const bucket = buckets.get(monthKey(d.getFullYear(), d.getMonth()));
+    const key = monthKey(d.getFullYear(), d.getMonth());
+
+    if (goalCategories.includes(t.category)) {
+      if (goalNetByBucket.has(key)) {
+        goalNetByBucket.set(key, goalNetByBucket.get(key)! + (t.type === "income" ? t.amount : -t.amount));
+      }
+      continue;
+    }
+
+    const bucket = buckets.get(key);
     if (bucket) {
       if (t.type === "income") bucket.income += t.amount;
       else bucket.expense += t.amount;
@@ -197,6 +241,7 @@ export async function getAnalyticsLocal(month?: number, year?: number): Promise<
       categoryTotals.set(t.category, (categoryTotals.get(t.category) ?? 0) + t.amount);
     }
   }
+  for (const [key, bucket] of buckets) bucket.income -= goalNetByBucket.get(key) ?? 0;
 
   const topCategories = [...categoryTotals.entries()]
     .map(([category, total]) => ({ category, total }))
