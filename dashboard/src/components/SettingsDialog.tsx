@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Theme, THEME_OPTIONS, useTheme } from "../context/ThemeContext";
+import { FontSize, FONT_SIZE_OPTIONS, useFontSize } from "../context/FontSizeContext";
 import { api, ApiError } from "../api/client";
 import { EnabledSection, ENABLED_SECTIONS, MenuLayout, SECTION_DESCRIPTIONS, SECTION_LABELS, User } from "../types";
 
@@ -118,6 +119,43 @@ export function ThemePicker() {
             >
               <span className="h-full flex-1 rounded-md" style={{ backgroundColor: preview.card }} />
               <span className="size-3.5 shrink-0 rounded-full" style={{ backgroundColor: preview.primary }} />
+            </span>
+            <span className={`block text-xs font-medium ${selected ? "text-primary" : "text-foreground"}`}>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Igual criterio que ThemePicker: aplica al instante vía useFontSize, sin botón "Guardar" — el
+// tamaño de letra es tan de "apariencia" como el tema, así que se comporta igual. La muestra "Aa"
+// de cada tarjeta crece de verdad con `fontSize` (font-size en rem, no un valor fijo) para que se
+// vea la diferencia real entre opciones antes de elegir, no solo leerla en la etiqueta.
+const FONT_SIZE_PREVIEW_REM: Record<FontSize, number> = { normal: 1, grande: 1.125, xl: 1.25 };
+
+function FontSizePicker() {
+  const { fontSize, setFontSize } = useFontSize();
+
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {FONT_SIZE_OPTIONS.map((option) => {
+        const selected = fontSize === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setFontSize(option.value)}
+            aria-pressed={selected}
+            className={`cursor-pointer rounded-2xl border p-3 text-center transition-colors ${
+              selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/30"
+            }`}
+          >
+            <span
+              className="mb-1 flex h-10 items-center justify-center font-serif"
+              style={{ fontSize: `${FONT_SIZE_PREVIEW_REM[option.value]}rem` }}
+            >
+              Aa
             </span>
             <span className={`block text-xs font-medium ${selected ? "text-primary" : "text-foreground"}`}>{option.label}</span>
           </button>
@@ -266,6 +304,10 @@ function GeneralSection() {
           Elige cómo se ve Tidely. "Sistema" mantiene el aspecto actual y sigue el modo claro/oscuro de tu dispositivo.
         </p>
         <ThemePicker />
+
+        <p className="mb-1 mt-6 text-xs font-bold uppercase tracking-widest text-muted-foreground">Tamaño de letra</p>
+        <p className="mb-4 text-sm text-muted-foreground">Agranda el texto (y el resto de la interfaz con él) si te cuesta leerlo.</p>
+        <FontSizePicker />
 
         <p className="mb-1 mt-6 text-xs font-bold uppercase tracking-widest text-muted-foreground">Diseño del menú</p>
         <p className="mb-4 text-sm text-muted-foreground">

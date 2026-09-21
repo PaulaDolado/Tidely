@@ -314,6 +314,17 @@
     font-family: var(--font-sans);
   }
 
+  /* Ajustes → General → Apariencia → "Tamaño de letra" (ver FontSizeContext.tsx) — cambia el
+     `font-size` base de <html>, del que cuelgan (en `rem`) todos los `text-*`/`p-*`/`gap-*`... de
+     Tailwind, así que escala proporcionalmente TODA la interfaz, no solo el texto suelto. */
+  html[data-font-size="grande"] {
+    font-size: 112.5%;
+  }
+
+  html[data-font-size="xl"] {
+    font-size: 125%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
