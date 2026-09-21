@@ -220,7 +220,8 @@ recompilar), asegúrate de que `dashboard/.env` apunte a tu API ya desplegada an
 ## Publicar una versión nueva (.apk + .msi, automático)
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) compila y publica el `.apk`
-(EAS) y el `.msi` (Tauri) como assets de un GitHub Release, cada vez que empujas un tag `v*`:
+(`expo prebuild` + Gradle, sin pasar por EAS) y el `.msi` (Tauri) como assets de un GitHub
+Release, cada vez que empujas un tag `v*`:
 
 ```bash
 git tag v1.0.1
@@ -237,9 +238,14 @@ enlace a mano cada vez:
 Son justo las URLs que usa el menú "Descargar la aplicación" del dashboard (ver
 `MOBILE_APK_URL`/`DESKTOP_MSI_URL` en `dashboard/src/components/AppShell.tsx`).
 
-Configuración única, antes del primer tag: en **Settings → Secrets and variables → Actions** del
-repo, un secreto `EXPO_TOKEN` con un [token de acceso de tu cuenta de
-Expo](https://expo.dev/accounts/[cuenta]/settings/access-tokens) — lo usa `eas build` en el
-workflow para autenticarse sin login interactivo (sin él, el job `build-android` falla con un
-error de autenticación). El job `build-windows` no necesita ningún secreto aparte: usa el
-`GITHUB_TOKEN` que ya provee Actions para publicar el Release.
+No requiere ningún secreto ni cuenta externa (ni de Expo ni de Apple/Google): `build-android`
+genera el proyecto nativo con `expo prebuild` (operación local del CLI) y compila con
+`./gradlew assembleRelease` tal cual, firmado con el keystore de "debug" que trae el propio
+proyecto generado — válido para instalar directamente (sideload/QR), no para publicar en Play
+Store. `build-windows` tampoco necesita secretos: usa el `GITHUB_TOKEN` que ya provee Actions
+para publicar el Release.
+
+Si en algún momento prefieres volver a EAS Build (por ejemplo para compilar también iOS, que esto
+no cubre — Gradle solo sirve para Android), la sección "App móvil con EAS Build" de arriba sigue
+siendo válida para compilar a mano; adaptar `release.yml` para usarla de nuevo requeriría añadir
+un secreto `EXPO_TOKEN` (token de acceso de tu cuenta de Expo) al job.

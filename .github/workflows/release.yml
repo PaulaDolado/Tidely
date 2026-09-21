@@ -1,7 +1,7 @@
 # Publica una versión nueva de la app móvil (.apk) y de escritorio (.msi) como GitHub Release, al
 # empujar un tag "v*" (p.ej. `git tag v1.0.1 && git push origin v1.0.1`) — no en cada push a main,
-# a propósito: compilar el .msi (Rust) y el .apk (cola de EAS) tarda varios minutos cada uno, así
-# que solo tiene sentido cuando de verdad hay una versión nueva que publicar, no en cada commit.
+# a propósito: compilar el .msi (Rust) y el .apk (Gradle) tarda varios minutos cada uno, así que
+# solo tiene sentido cuando de verdad hay una versión nueva que publicar, no en cada commit.
 #
 # El asset de cada Release se llama SIEMPRE igual (Tidely.apk / Tidely-Setup.msi,
 # independientemente del tag) para que la URL "latest" de GitHub sea estable entre versiones:
@@ -11,10 +11,13 @@
 # DESKTOP_MSI_URL en dashboard/src/components/AppShell.tsx) — apuntan siempre a la versión más
 # reciente sin tener que tocar código en cada release.
 #
-# Requiere UNA vez, en Settings → Secrets and variables → Actions → New repository secret:
-#   EXPO_TOKEN = un token de acceso de tu cuenta de Expo (expo.dev → Account settings →
-#   Access tokens) — lo usa `eas build` para autenticarse sin login interactivo. Sin él, el job
-#   build-android falla con un error de autenticación.
+# El .apk se compila con Gradle directamente (expo prebuild + ./gradlew assembleRelease), NO con
+# EAS Build — a propósito, para no depender de ninguna cuenta/token de Expo: `expo prebuild` es
+# una operación local del CLI (genera el proyecto nativo `android/` a partir de app.json), no
+# toca ningún servicio de Expo. El .apk queda firmado con el keystore de "debug" que trae el
+# propio proyecto generado (así firma por defecto `assembleRelease` en cualquier proyecto
+# React Native si no se configura un keystore de release propio) — válido para instalar
+# directamente (sideload/QR), no para publicarlo en Play Store.
 name: Publicar release (APK + MSI)
 
 on:
@@ -38,33 +41,52 @@ jobs:
           cache: "npm"
           cache-dependency-path: mobile/package-lock.json
 
+      # React Native 0.86 (Expo SDK 57) necesita JDK 17 para compilar el proyecto Android.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Cachea dependencias de Gradle entre ejecuciones (equivalente al cache: "npm" de arriba,
+      # pero para el build nativo) — sin esto, cada release volvería a descargar/compilar todo el
+      # árbol de Gradle desde cero.
+      - uses: gradle/actions/setup-gradle@v4
+
       - name: Instalar dependencias
         working-directory: mobile
         run: npm ci
 
-      # `--wait` bloquea hasta que el build en la nube de EAS termina (puede tardar varios
-      # minutos); `--json` imprime el resultado como JSON en vez de la salida "bonita" para humanos
-      # — así el siguiente paso puede sacar la URL del .apk sin tener que parsear texto libre.
-      - name: Compilar el APK en EAS
+      # Genera el proyecto nativo `android/` a partir de app.json (gitignored, se regenera en
+      # cada run) — es un comando local del CLI de Expo, no requiere sesión ni token de ninguna
+      # cuenta. `EXPO_PUBLIC_API_URL` tiene que estar puesta YA aquí (no solo en el paso de
+      # compilar): Metro la incrusta en el JS del bundle cuando Gradle invoca el bundling, así que
+      # tiene que seguir exportada en el paso siguiente también.
+      - name: Generar el proyecto nativo de Android
         working-directory: mobile
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eas-cli build --platform android --profile preview --non-interactive --wait --json > build-result.json
+          EXPO_PUBLIC_API_URL: https://tidely-api-pa09.onrender.com
+        run: npx expo prebuild --platform android --non-interactive
 
-      # `eas build --json` devuelve un array cuando compila (a diferencia de `build:view`, que
-      # devuelve un único objeto) — el `if type=="array"` de abajo aguanta cualquiera de las dos
-      # formas, por si el CLI cambia de criterio en una versión futura.
-      - name: Descargar el .apk generado
-        working-directory: mobile
+      # Por si el proyecto pide una API level del SDK que el runner no trae por defecto — no-op
+      # (con licencias ya aceptadas) si todo lo necesario ya está instalado.
+      - name: Aceptar licencias del Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Compilar el APK
+        working-directory: mobile/android
+        env:
+          EXPO_PUBLIC_API_URL: https://tidely-api-pa09.onrender.com
         run: |
-          URL=$(jq -r 'if type=="array" then .[0].artifacts.buildUrl else .artifacts.buildUrl end' build-result.json)
-          echo "APK URL: $URL"
-          curl -fL -o Tidely.apk "$URL"
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Renombrar el APK
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk Tidely.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: mobile/Tidely.apk
+          path: Tidely.apk
 
   build-windows:
     runs-on: windows-latest
