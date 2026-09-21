@@ -216,3 +216,30 @@ Como esta app apunta a un backend remoto (`VITE_API_URL` ya embebido en el build
 tiempo de compilación, igual que en la versión web — no hay forma de cambiarlo después sin
 recompilar), asegúrate de que `dashboard/.env` apunte a tu API ya desplegada antes de correr
 `tauri:build` para producción, no a `localhost`.
+
+## Publicar una versión nueva (.apk + .msi, automático)
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) compila y publica el `.apk`
+(EAS) y el `.msi` (Tauri) como assets de un GitHub Release, cada vez que empujas un tag `v*`:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+El asset de cada Release se llama siempre `Tidely.apk`/`Tidely-Setup.msi` (nunca cambia con la
+versión), así que la URL "latest" de GitHub es estable entre releases y no hay que tocar ningún
+enlace a mano cada vez:
+
+- `https://github.com/<owner>/<repo>/releases/latest/download/Tidely.apk`
+- `https://github.com/<owner>/<repo>/releases/latest/download/Tidely-Setup.msi`
+
+Son justo las URLs que usa el menú "Descargar la aplicación" del dashboard (ver
+`MOBILE_APK_URL`/`DESKTOP_MSI_URL` en `dashboard/src/components/AppShell.tsx`).
+
+Configuración única, antes del primer tag: en **Settings → Secrets and variables → Actions** del
+repo, un secreto `EXPO_TOKEN` con un [token de acceso de tu cuenta de
+Expo](https://expo.dev/accounts/[cuenta]/settings/access-tokens) — lo usa `eas build` en el
+workflow para autenticarse sin login interactivo (sin él, el job `build-android` falla con un
+error de autenticación). El job `build-windows` no necesita ningún secreto aparte: usa el
+`GITHUB_TOKEN` que ya provee Actions para publicar el Release.

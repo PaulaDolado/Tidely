@@ -1,0 +1,140 @@
+# Publica una versión nueva de la app móvil (.apk) y de escritorio (.msi) como GitHub Release, al
+# empujar un tag "v*" (p.ej. `git tag v1.0.1 && git push origin v1.0.1`) — no en cada push a main,
+# a propósito: compilar el .msi (Rust) y el .apk (cola de EAS) tarda varios minutos cada uno, así
+# que solo tiene sentido cuando de verdad hay una versión nueva que publicar, no en cada commit.
+#
+# El asset de cada Release se llama SIEMPRE igual (Tidely.apk / Tidely-Setup.msi,
+# independientemente del tag) para que la URL "latest" de GitHub sea estable entre versiones:
+#   https://github.com/<owner>/<repo>/releases/latest/download/Tidely.apk
+#   https://github.com/<owner>/<repo>/releases/latest/download/Tidely-Setup.msi
+# Esas dos URLs son las que usa el menú de descarga del dashboard (ver MOBILE_APK_URL/
+# DESKTOP_MSI_URL en dashboard/src/components/AppShell.tsx) — apuntan siempre a la versión más
+# reciente sin tener que tocar código en cada release.
+#
+# Requiere UNA vez, en Settings → Secrets and variables → Actions → New repository secret:
+#   EXPO_TOKEN = un token de acceso de tu cuenta de Expo (expo.dev → Account settings →
+#   Access tokens) — lo usa `eas build` para autenticarse sin login interactivo. Sin él, el job
+#   build-android falla con un error de autenticación.
+name: Publicar release (APK + MSI)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: mobile
+        run: npm ci
+
+      # `--wait` bloquea hasta que el build en la nube de EAS termina (puede tardar varios
+      # minutos); `--json` imprime el resultado como JSON en vez de la salida "bonita" para humanos
+      # — así el siguiente paso puede sacar la URL del .apk sin tener que parsear texto libre.
+      - name: Compilar el APK en EAS
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli build --platform android --profile preview --non-interactive --wait --json > build-result.json
+
+      # `eas build --json` devuelve un array cuando compila (a diferencia de `build:view`, que
+      # devuelve un único objeto) — el `if type=="array"` de abajo aguanta cualquiera de las dos
+      # formas, por si el CLI cambia de criterio en una versión futura.
+      - name: Descargar el .apk generado
+        working-directory: mobile
+        run: |
+          URL=$(jq -r 'if type=="array" then .[0].artifacts.buildUrl else .artifacts.buildUrl end' build-result.json)
+          echo "APK URL: $URL"
+          curl -fL -o Tidely.apk "$URL"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: mobile/Tidely.apk
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Cachea el registro de crates + `target/` entre ejecuciones (misma idea que cache: "npm" de
+      # arriba, pero para Rust) — sin esto, cada release recompilaría TODAS las dependencias de
+      # Tauri desde cero (bastantes minutos más), en vez de solo lo que haya cambiado.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dashboard/src-tauri
+
+      - name: Instalar dependencias
+        working-directory: dashboard
+        run: npm ci
+
+      # El build de Tauri empaqueta `dashboard/dist`, que a su vez incrusta VITE_API_URL en tiempo
+      # de compilación (no se puede cambiar después sin recompilar, ver comentario en
+      # dashboard/.env.example) — tiene que apuntar a la API ya desplegada, nunca a localhost.
+      - name: Apuntar el build a la API de producción
+        working-directory: dashboard
+        shell: bash
+        run: echo "VITE_API_URL=https://tidely-api-pa09.onrender.com" > .env
+
+      - name: Compilar el instalador de Windows
+        working-directory: dashboard
+        run: npm run tauri:build
+
+      - name: Renombrar el instalador
+        shell: bash
+        run: |
+          msi=$(find dashboard/src-tauri/target/release/bundle/msi -name "*.msi" | head -n1)
+          cp "$msi" Tidely-Setup.msi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-msi
+          path: Tidely-Setup.msi
+
+  release:
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-msi
+          path: dist
+
+      # `files:` con nombres fijos (Tidely.apk/Tidely-Setup.msi) — es justo lo que hace que la URL
+      # ".../releases/latest/download/..." sea estable entre versiones, ver el comentario de arriba
+      # del todo. `generate_release_notes: true` rellena el cuerpo del Release solo, a partir de
+      # los commits desde el tag anterior.
+      - name: Crear el Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Tidely.apk
+            dist/Tidely-Setup.msi
+          generate_release_notes: true

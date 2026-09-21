@@ -881,11 +881,13 @@ export function AppShell({
   );
 }
 
-// Enlaces a los últimos builds publicados (ver DownloadAppMenu más abajo) — hay que actualizarlos
-// a mano cada vez que se publica un build nuevo (ver DEPLOYMENT.md → "App móvil con Expo/EAS" y
-// "App de escritorio con Tauri"): no hay todavía un pipeline que los mantenga solos.
-const MOBILE_APK_URL = "https://expo.dev/artifacts/eas/9uywH7s4_t9ahXYDuTcE1VJow7A_DdQDG1Cuo3QLWbY.apk";
-const DESKTOP_MSI_URL = "https://pauladolado.github.io/Tidely/downloads/Tidely_0.1.0_x64_en-US.msi";
+// Enlaces "latest" de GitHub Releases (ver .github/workflows/release.yml) — apuntan siempre al
+// asset del Release más reciente sin tener que tocar esta URL en cada versión nueva, porque el
+// workflow publica cada .apk/.msi con este mismo nombre de archivo pase lo que pase con el tag.
+// Publicar una versión nueva es `git tag vX.Y.Z && git push origin vX.Y.Z` — el workflow compila
+// y sube ambos solo, no hay nada más que actualizar a mano.
+const MOBILE_APK_URL = "https://github.com/PaulaDolado/Tidely/releases/latest/download/Tidely.apk";
+const DESKTOP_MSI_URL = "https://github.com/PaulaDolado/Tidely/releases/latest/download/Tidely-Setup.msi";
 
 // Código QR generado en el propio navegador (paquete `qrcode`, sin llamar a ningún servicio
 // externo) a partir de MOBILE_APK_URL — fondo blanco opaco a propósito (no transparente): el
