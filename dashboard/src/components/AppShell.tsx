@@ -7,6 +7,7 @@ import { AgendaResponse, CustomPageSummary, CustomPageTemplate, EnabledSection, 
 import { CUSTOM_PAGE_TEMPLATES } from "../utils/customPageTemplates";
 import clipClosedUrl from "../assets/clipClosed.png";
 import clipOpenUrl from "../assets/clipOpen.png";
+import QRCode from "qrcode";
 
 export type StaticTab =
   | "hoy"
@@ -880,14 +881,74 @@ export function AppShell({
   );
 }
 
+// Enlaces a los últimos builds publicados (ver DownloadAppMenu más abajo) — hay que actualizarlos
+// a mano cada vez que se publica un build nuevo (ver DEPLOYMENT.md → "App móvil con Expo/EAS" y
+// "App de escritorio con Tauri"): no hay todavía un pipeline que los mantenga solos.
+const MOBILE_APK_URL = "https://expo.dev/artifacts/eas/9uywH7s4_t9ahXYDuTcE1VJow7A_DdQDG1Cuo3QLWbY.apk";
+const DESKTOP_MSI_URL = "https://pauladolado.github.io/Tidely/downloads/Tidely_0.1.0_x64_en-US.msi";
+
+// Código QR generado en el propio navegador (paquete `qrcode`, sin llamar a ningún servicio
+// externo) a partir de MOBILE_APK_URL — fondo blanco opaco a propósito (no transparente): el
+// popover usa `bg-card`, que en el tema oscuro es prácticamente negro, y un QR sin fondo propio
+// se volvería ilegible encima.
+function MobileAppPanel() {
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(MOBILE_APK_URL, { margin: 1, width: 180, color: { dark: "#000000ff", light: "#ffffffff" } })
+      .then((url) => {
+        if (!cancelled) setQrUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center gap-2 pt-1">
+      <div className="flex size-32 items-center justify-center rounded-xl border border-border bg-white p-1.5">
+        {qrUrl ? (
+          <img src={qrUrl} alt="Código QR para descargar la app móvil" className="size-full" />
+        ) : (
+          <div className="size-full animate-pulse rounded-lg bg-muted" />
+        )}
+      </div>
+      <a href={MOBILE_APK_URL} target="_blank" rel="noreferrer" className="text-center text-xs font-medium text-primary hover:underline">
+        Escanea o descarga el APK
+      </a>
+    </div>
+  );
+}
+
+// Ilustración simple de un portátil (no es el icono outline del resto de la app a propósito —
+// aquí hace de imagen/ilustración, no de icono de UI) + el botón de descarga real del .msi.
+function DesktopAppPanel() {
+  return (
+    <div className="flex flex-col items-center gap-2 pt-1">
+      <svg viewBox="0 0 64 48" className="h-14 w-20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="10" y="2" width="44" height="30" rx="3" fill="none" stroke="currentColor" strokeWidth="2" className="text-border" />
+        <rect x="16" y="8" width="32" height="18" rx="1.5" className="fill-muted" />
+        <circle cx="32" cy="17" r="6" className="fill-primary" />
+        <rect x="2" y="34" width="60" height="6" rx="3" className="fill-muted" />
+      </svg>
+      <a href={DESKTOP_MSI_URL} className="btn-dark w-full text-center text-xs">
+        ⬇️ Descargar para Windows
+      </a>
+    </div>
+  );
+}
+
 /**
  * Icono de descarga junto al nombre de usuario (donde antes vivía el botón "Salir"): al pasar el
- * ratón por encima despliega un popover con las dos variantes futuras de la app (móvil/
- * escritorio). Ninguna tiene todavía enlace real — la app nativa no existe aún — así que ambas
- * opciones están deshabilitadas y solo informan de que están "Próximamente"; cuando exista un
- * build descargable basta con quitar `disabled` y añadir el `href`/`onClick` real de cada una.
+ * ratón por encima despliega un popover con pestañas "Mobile App"/"Desktop App" — móvil enseña un
+ * código QR que apunta al APK (se escanea con la cámara del móvil), escritorio un botón directo
+ * al instalador .msi. Ver MOBILE_APK_URL/DESKTOP_MSI_URL arriba para dónde viven esos builds.
  */
 function DownloadAppMenu() {
+  const [tab, setTab] = useState<"mobile" | "desktop">("mobile");
+
   return (
     <div className="group relative shrink-0">
       <button
@@ -904,23 +965,28 @@ function DownloadAppMenu() {
           poco margen por encima, así que un popover hacia arriba quedaría muy pegado al borde. */}
       {/* `pl-1` (padding), no `ml-1` (margin) — mismo motivo que el popover de "Cerrar sesión":
           un margen deja un hueco muerto que rompe el hover al cruzarlo hacia el popover. */}
-      <div className="invisible absolute bottom-0 left-full z-10 w-48 space-y-1 rounded-2xl border border-border bg-card py-2 pl-3 pr-2 opacity-0 shadow-[var(--shadow-soft)] transition-opacity group-hover:visible group-hover:opacity-100">
-        <p className="px-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Descargar app</p>
-        <button
-          disabled
-          title="Próximamente"
-          className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
-        >
-          📱 Aplicación móvil
-        </button>
-        <button
-          disabled
-          title="Próximamente"
-          className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
-        >
-          🖥️ Aplicación de escritorio
-        </button>
-        <p className="px-2 pb-1 text-[10px] text-muted-foreground">Próximamente — aún sin build descargable</p>
+      <div className="invisible absolute bottom-0 left-full z-10 w-56 space-y-3 rounded-2xl border border-border bg-card p-3 opacity-0 shadow-[var(--shadow-soft)] transition-opacity group-hover:visible group-hover:opacity-100">
+        <div className="flex rounded-full bg-muted p-0.5 text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setTab("mobile")}
+            className={`flex-1 cursor-pointer rounded-full px-2 py-1 transition-colors ${
+              tab === "mobile" ? "bg-card text-foreground shadow-[var(--shadow-soft)]" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Mobile App
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("desktop")}
+            className={`flex-1 cursor-pointer rounded-full px-2 py-1 transition-colors ${
+              tab === "desktop" ? "bg-card text-foreground shadow-[var(--shadow-soft)]" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Desktop App
+          </button>
+        </div>
+        {tab === "mobile" ? <MobileAppPanel /> : <DesktopAppPanel />}
       </div>
     </div>
   );

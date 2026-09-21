@@ -34,6 +34,12 @@
           "backgroundColor": "#F7F4F1"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "53f47287-3a1c-4057-a710-b7e69aa125f3"
+      }
+    },
+    "owner": "pauladolado"
   }
 }
