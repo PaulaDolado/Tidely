@@ -312,6 +312,31 @@ export function AppShell({
   // tarjetas del Planificador/Kanban (ver PlanificadorPage/CustomPagePage), aplicado aquí a los
   // apartados del menú en vez de a las tarjetas.
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
+  // Qué separador pintar mientras se arrastra: "before"/"after" de qué apartado — se recalcula en
+  // cada onDragOver a partir de si el cursor está en la mitad de arriba o de abajo del apartado
+  // sobrevolado (ver dragOverEdge más abajo), para que el separador salte al lado correcto según
+  // por dónde se entre. Puramente visual (no participa en el cálculo del nuevo orden al soltar,
+  // ver dropReorder): eso se recalcula fresco en el propio onDrop, igual que `dragged` viene de
+  // dataTransfer y no de este estado — por el mismo motivo, closures obsoletos.
+  const [dropIndicator, setDropIndicator] = useState<{ key: string; edge: "before" | "after" } | null>(null);
+
+  // Con qué mitad del elemento (arriba/abajo) se está sobrevolando — arriba = "soltar antes de
+  // este apartado", abajo = "soltar después". Misma fórmula usada tanto para pintar el separador
+  // (onDragOver, aproximado) como para decidir dónde insertar de verdad al soltar (onDrop, con la
+  // posición real del cursor en ESE instante) — se recalculan por separado a propósito, ver el
+  // comentario de dropIndicator.
+  function dragOverEdge(e: React.DragEvent): "before" | "after" {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientY - rect.top < rect.height / 2 ? "before" : "after";
+  }
+
+  // El separador en sí: un borde de 2px del lado que toque (arriba = se suelta antes de este
+  // apartado, abajo = después) — nunca en el propio apartado arrastrado, arrastrarlo sobre sí
+  // mismo no es un movimiento real (ver el `dragged === targetKey` de dropReorder).
+  function dropIndicatorClass(key: string): string {
+    if (!dropIndicator || dropIndicator.key !== key || draggedKey === key) return "";
+    return dropIndicator.edge === "before" ? "border-t-2 border-t-primary" : "border-b-2 border-b-primary";
+  }
 
   // `scope` es el grupo visible donde se soltó (el nav fijo, "Tus páginas", o la lista única en
   // modo compacto) — reordena solo DENTRO de ese grupo, dejando intacta la posición relativa de
@@ -326,8 +351,9 @@ export function AppShell({
   // verdad (React agrupa la actualización) se leería `null` y el reordenamiento no haría nada.
   // dataTransfer es la propia API nativa de drag-and-drop pensada justo para esto: viaja con el
   // evento, no con el componente.
-  function dropReorder(scope: MenuEntry[], targetKey: string, dragged: string) {
+  function dropReorder(scope: MenuEntry[], targetKey: string, edge: "before" | "after", dragged: string) {
     setDraggedKey(null);
+    setDropIndicator(null);
     if (!dragged || dragged === targetKey) return;
     const scopeKeys = new Set(scope.map((e) => e.key as string));
     if (!scopeKeys.has(dragged)) return;
@@ -339,7 +365,7 @@ export function AppShell({
     const withoutDragged = scopeSeq.filter((k) => k !== dragged);
     const targetIdx = withoutDragged.indexOf(targetKey);
     if (targetIdx === -1) return;
-    withoutDragged.splice(targetIdx, 0, dragged);
+    withoutDragged.splice(edge === "after" ? targetIdx + 1 : targetIdx, 0, dragged);
     let si = 0;
     const nextOrder = remembered.map((k) => (scopeKeys.has(k) ? withoutDragged[si++] : k));
     updateUser({ menuOrder: nextOrder });
@@ -360,13 +386,24 @@ export function AppShell({
           e.dataTransfer.effectAllowed = "move";
           setDraggedKey(entry.key);
         }}
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          // `edge` se calcula AQUÍ, no dentro del updater de abajo — `currentTarget` de un evento
+          // del DOM deja de ser válido en cuanto termina de despacharse, y React puede invocar el
+          // updater más tarde (diferido), momento en el que `e` ya estaría "vacío" y esto
+          // reventaría con un TypeError al leer getBoundingClientRect de null.
+          const edge = dragOverEdge(e);
+          setDropIndicator((prev) => (prev?.key === entry.key && prev.edge === edge ? prev : { key: entry.key, edge }));
+        }}
         onDrop={(e) => {
           e.preventDefault();
-          dropReorder(scope, entry.key, e.dataTransfer.getData("text/plain"));
+          dropReorder(scope, entry.key, dragOverEdge(e), e.dataTransfer.getData("text/plain"));
         }}
-        onDragEnd={() => setDraggedKey(null)}
-        className={`cursor-grab ${draggedKey === entry.key ? "opacity-40" : ""}`}
+        onDragEnd={() => {
+          setDraggedKey(null);
+          setDropIndicator(null);
+        }}
+        className={`cursor-grab ${draggedKey === entry.key ? "opacity-40" : ""} ${dropIndicatorClass(entry.key)}`}
       >
         <div className="flex items-center">
           <button
@@ -430,18 +467,25 @@ export function AppShell({
           e.dataTransfer.effectAllowed = "move";
           setDraggedKey("galeria");
         }}
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          const edge = dragOverEdge(e);
+          setDropIndicator((prev) => (prev?.key === "galeria" && prev.edge === edge ? prev : { key: "galeria", edge }));
+        }}
         onDrop={(e) => {
           e.preventDefault();
-          dropReorder(scope, "galeria", e.dataTransfer.getData("text/plain"));
+          dropReorder(scope, "galeria", dragOverEdge(e), e.dataTransfer.getData("text/plain"));
         }}
-        onDragEnd={() => setDraggedKey(null)}
+        onDragEnd={() => {
+          setDraggedKey(null);
+          setDropIndicator(null);
+        }}
         onClick={onOpenGallery}
         className={`w-full min-w-0 cursor-grab truncate rounded-lg px-3 py-2 text-left transition-colors ${
           galleryTab && activeTab === galleryTab
             ? "bg-primary/10 font-medium text-primary"
             : "text-muted-foreground hover:bg-foreground/5"
-        } ${draggedKey === "galeria" ? "opacity-40" : ""}`}
+        } ${draggedKey === "galeria" ? "opacity-40" : ""} ${dropIndicatorClass("galeria")}`}
       >
         Galería
       </button>
@@ -454,19 +498,26 @@ export function AppShell({
     return (
       <div
         key={page.id}
-        className={`group relative ${draggedKey === tab ? "opacity-40" : ""}`}
+        className={`group relative ${draggedKey === tab ? "opacity-40" : ""} ${dropIndicatorClass(tab)}`}
         draggable={!isRenaming}
         onDragStart={(e) => {
           e.dataTransfer.setData("text/plain", tab);
           e.dataTransfer.effectAllowed = "move";
           setDraggedKey(tab);
         }}
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          const edge = dragOverEdge(e);
+          setDropIndicator((prev) => (prev?.key === tab && prev.edge === edge ? prev : { key: tab, edge }));
+        }}
         onDrop={(e) => {
           e.preventDefault();
-          dropReorder(scope, tab, e.dataTransfer.getData("text/plain"));
+          dropReorder(scope, tab, dragOverEdge(e), e.dataTransfer.getData("text/plain"));
         }}
-        onDragEnd={() => setDraggedKey(null)}
+        onDragEnd={() => {
+          setDraggedKey(null);
+          setDropIndicator(null);
+        }}
       >
         {isRenaming ? (
           <input
