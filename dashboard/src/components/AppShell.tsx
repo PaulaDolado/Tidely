@@ -52,6 +52,18 @@ interface NavItem {
   section?: EnabledSection;
 }
 
+// Un elemento reordenable/agrupable del menú: un apartado fijo (NAV, con sus posibles `children`
+// intactos — el orden manual solo reordena el nivel superior, no desarma Agenda/Finanzas), la
+// "Galería" (apartado fijo pero técnicamente una página personalizada de plantilla "galeria", ver
+// el comentario junto a `galleryPage` más abajo) o una página propia de "Tus páginas". `key` es lo
+// que se guarda en User.menuOrder (ver SettingsDialog/AppShell → useAuth().updateUser) — "galeria"
+// es una clave fija a propósito, para que el orden elegido no se pierda si la página de galería
+// aún no existe (se crea sola la primera vez que se abre, ver onOpenGallery).
+type MenuEntry =
+  | { key: string; kind: "nav"; navItem: NavItem }
+  | { key: "galeria"; kind: "gallery" }
+  | { key: CustomTabId; kind: "page"; page: CustomPageSummary };
+
 const NAV: NavItem[] = [
   { key: "hoy", label: "Hoy" },
   {
@@ -144,7 +156,7 @@ export function AppShell({
   onOpenGallery,
   children,
 }: AppShellProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   // Antes de completar el asistente de bienvenida (o para cuentas creadas antes de que existiera,
   // ver default en schema.prisma) `user.enabledSections` siempre viene relleno con los 7 — este
   // `?? ENABLED_SECTIONS` es solo para el instante inicial en el que `user` puede no haber
@@ -266,6 +278,267 @@ export function AppShell({
   const galleryTab = galleryPage ? customPageTab(galleryPage.id) : null;
   const otherPages = customPages.filter((p) => p.template !== "galeria");
 
+  // "default" separa apartados fijos y "Tus páginas" en dos grupos (como siempre); "compact" los
+  // junta en una sola lista sin la cabecera "Tus páginas" — ver Ajustes → General → Apariencia.
+  const menuLayout = user?.menuLayout ?? "default";
+  const menuOrder = user?.menuOrder ?? [];
+
+  const navEntries: MenuEntry[] = visibleNav.map((item) => ({ key: item.key, kind: "nav", navItem: item }));
+  const galleryEntries: MenuEntry[] = showGallery ? [{ key: "galeria", kind: "gallery" }] : [];
+  const pageEntries: MenuEntry[] = otherPages.map((page) => ({ key: customPageTab(page.id), kind: "page", page }));
+  const allEntries = [...navEntries, ...galleryEntries, ...pageEntries];
+
+  // Coloca antes los que el usuario ya ordenó manualmente (por posición en menuOrder), y el resto
+  // detrás en su orden habitual (NAV primero, Galería, páginas propias) — así un apartado nuevo
+  // (recién activado en "Apartados del menú", o una página recién creada) aparece al final en vez
+  // de saltar a una posición arbitraria solo por no estar todavía en menuOrder.
+  function sortByMenuOrder(entries: MenuEntry[]): MenuEntry[] {
+    const indexOf = (key: string) => {
+      const i = menuOrder.indexOf(key);
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    return entries
+      .map((entry, i) => ({ entry, i }))
+      .sort((a, b) => indexOf(a.entry.key) - indexOf(b.entry.key) || a.i - b.i)
+      .map(({ entry }) => entry);
+  }
+
+  const mainGroup = sortByMenuOrder([...navEntries, ...galleryEntries]);
+  const pagesGroup = sortByMenuOrder(pageEntries);
+  const compactGroup = sortByMenuOrder(allEntries);
+
+  // Arrastrar-y-soltar (mantener pulsado un apartado para reordenarlo, ver Ajustes → General →
+  // Apariencia) — mismo mecanismo nativo (draggable + onDragStart/Over/Drop) que ya usan las
+  // tarjetas del Planificador/Kanban (ver PlanificadorPage/CustomPagePage), aplicado aquí a los
+  // apartados del menú en vez de a las tarjetas.
+  const [draggedKey, setDraggedKey] = useState<string | null>(null);
+
+  // `scope` es el grupo visible donde se soltó (el nav fijo, "Tus páginas", o la lista única en
+  // modo compacto) — reordena solo DENTRO de ese grupo, dejando intacta la posición relativa de
+  // los apartados del otro grupo, para que arrastrar en "Tus páginas" en modo por defecto no
+  // pueda colar una página en medio del menú fijo (mezclarlos solo pasa en modo compacto, donde
+  // scope ya es la lista entera).
+  //
+  // `dragged` viene de `e.dataTransfer` (puesto en onDragStart), NO del estado `draggedKey` — ese
+  // estado solo pinta el apartado arrastrado semitransparente (necesita re-render), pero leerlo
+  // aquí sería un closure potencialmente obsoleto: `onDrop` es la función tal cual se creó en el
+  // render de cuando empezó el arrastre, así que si `setDraggedKey` aún no se había aplicado de
+  // verdad (React agrupa la actualización) se leería `null` y el reordenamiento no haría nada.
+  // dataTransfer es la propia API nativa de drag-and-drop pensada justo para esto: viaja con el
+  // evento, no con el componente.
+  function dropReorder(scope: MenuEntry[], targetKey: string, dragged: string) {
+    setDraggedKey(null);
+    if (!dragged || dragged === targetKey) return;
+    const scopeKeys = new Set(scope.map((e) => e.key as string));
+    if (!scopeKeys.has(dragged)) return;
+    const base = allEntries.map((e) => e.key as string);
+    const known = new Set(base);
+    const remembered = menuOrder.filter((k) => known.has(k));
+    for (const k of base) if (!remembered.includes(k)) remembered.push(k);
+    const scopeSeq = remembered.filter((k) => scopeKeys.has(k));
+    const withoutDragged = scopeSeq.filter((k) => k !== dragged);
+    const targetIdx = withoutDragged.indexOf(targetKey);
+    if (targetIdx === -1) return;
+    withoutDragged.splice(targetIdx, 0, dragged);
+    let si = 0;
+    const nextOrder = remembered.map((k) => (scopeKeys.has(k) ? withoutDragged[si++] : k));
+    updateUser({ menuOrder: nextOrder });
+    api.put("/auth/me/menu", { menuOrder: nextOrder }).catch(() => {});
+  }
+
+  // `scope` es el grupo (mainGroup/pagesGroup/compactGroup, ver arriba) al que pertenece esta
+  // entrada — se lo pasamos tal cual a dropReorder, no hace falta que cada botón lo recalcule.
+  function renderNavEntry(entry: Extract<MenuEntry, { kind: "nav" }>, scope: MenuEntry[]) {
+    const item = entry.navItem;
+    const sectionCollapsed = collapsedSections.has(item.key);
+    return (
+      <div
+        key={item.key}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", entry.key);
+          e.dataTransfer.effectAllowed = "move";
+          setDraggedKey(entry.key);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          dropReorder(scope, entry.key, e.dataTransfer.getData("text/plain"));
+        }}
+        onDragEnd={() => setDraggedKey(null)}
+        className={`cursor-grab ${draggedKey === entry.key ? "opacity-40" : ""}`}
+      >
+        <div className="flex items-center">
+          <button
+            onClick={() => onTabChange(item.key)}
+            className={`w-full min-w-0 flex-1 truncate rounded-lg px-3 py-2 text-left transition-colors ${
+              activeTab === item.key
+                ? "bg-primary/10 font-medium text-primary"
+                : "text-muted-foreground hover:bg-foreground/5"
+            }`}
+          >
+            {item.label}
+          </button>
+          {/* Aparte del botón de arriba a propósito: ese navega a la página del propio apartado
+              (Agenda/Finanzas también son vistas en sí mismas), este solo pliega/despliega sus
+              subapartados — mezclar los dos gestos en un único botón haría imposible hacer cada
+              cosa por separado. */}
+          {item.children && (
+            <button
+              type="button"
+              onClick={() => toggleSection(item.key)}
+              title={sectionCollapsed ? `Mostrar subapartados de ${item.label}` : `Ocultar subapartados de ${item.label}`}
+              className="shrink-0 cursor-pointer rounded-lg p-2 text-xs text-muted-foreground transition-transform hover:bg-foreground/5"
+            >
+              <span className={`inline-block transition-transform ${sectionCollapsed ? "-rotate-90" : ""}`} aria-hidden="true">
+                ▾
+              </span>
+            </button>
+          )}
+        </div>
+        {item.children && !sectionCollapsed && (
+          <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-border pl-3">
+            {item.children.map((child) => (
+              <button
+                key={child.key}
+                onClick={() => onTabChange(child.key)}
+                className={`w-full truncate rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
+                  activeTab === child.key
+                    ? "bg-primary/10 font-medium text-primary"
+                    : "text-muted-foreground hover:bg-foreground/5"
+                }`}
+              >
+                {child.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // "Galería" es un apartado del menú principal (como Hoy/Agenda/...), pero por debajo sigue
+  // siendo una página personalizada de plantilla "galeria" — este callback busca la del usuario
+  // (o la crea si es la primera vez) y navega a ella.
+  function renderGalleryEntry(scope: MenuEntry[]) {
+    return (
+      <button
+        key="galeria"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", "galeria");
+          e.dataTransfer.effectAllowed = "move";
+          setDraggedKey("galeria");
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          dropReorder(scope, "galeria", e.dataTransfer.getData("text/plain"));
+        }}
+        onDragEnd={() => setDraggedKey(null)}
+        onClick={onOpenGallery}
+        className={`w-full min-w-0 cursor-grab truncate rounded-lg px-3 py-2 text-left transition-colors ${
+          galleryTab && activeTab === galleryTab
+            ? "bg-primary/10 font-medium text-primary"
+            : "text-muted-foreground hover:bg-foreground/5"
+        } ${draggedKey === "galeria" ? "opacity-40" : ""}`}
+      >
+        Galería
+      </button>
+    );
+  }
+
+  function renderPageEntry(page: CustomPageSummary, scope: MenuEntry[]) {
+    const tab = customPageTab(page.id);
+    const isRenaming = renamingPageId === page.id;
+    return (
+      <div
+        key={page.id}
+        className={`group relative ${draggedKey === tab ? "opacity-40" : ""}`}
+        draggable={!isRenaming}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", tab);
+          e.dataTransfer.effectAllowed = "move";
+          setDraggedKey(tab);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          dropReorder(scope, tab, e.dataTransfer.getData("text/plain"));
+        }}
+        onDragEnd={() => setDraggedKey(null)}
+      >
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={async () => {
+              const trimmed = renameValue.trim();
+              setRenamingPageId(null);
+              if (trimmed && trimmed !== page.title) await onRenameCustomPage(page.id, trimmed);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") setRenamingPageId(null);
+            }}
+            className="w-full rounded-lg border border-primary bg-background px-3 py-2 text-left text-sm outline-none"
+          />
+        ) : (
+          <button
+            onClick={() => onTabChange(tab)}
+            className={`w-full cursor-grab truncate rounded-lg px-3 py-2 pr-14 text-left transition-colors ${
+              activeTab === tab ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-foreground/5"
+            }`}
+          >
+            {page.title}
+          </button>
+        )}
+        {!isRenaming && (
+          <span className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              type="button"
+              title="Renombrar página"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenamingPageId(page.id);
+                setRenameValue(page.title);
+              }}
+              className="cursor-pointer rounded p-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              title={confirmingDeletePageId === page.id ? "Confirmar eliminar" : "Eliminar página"}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (confirmingDeletePageId === page.id) {
+                  setConfirmingDeletePageId(null);
+                  await onDeleteCustomPage(page.id);
+                } else {
+                  setConfirmingDeletePageId(page.id);
+                }
+              }}
+              onMouseLeave={() => setConfirmingDeletePageId((id) => (id === page.id ? null : id))}
+              className={`cursor-pointer rounded p-1.5 text-xs ${
+                confirmingDeletePageId === page.id ? "font-bold text-destructive" : "text-muted-foreground hover:text-destructive"
+              }`}
+            >
+              ✕
+            </button>
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  function renderEntry(entry: MenuEntry, scope: MenuEntry[]) {
+    if (entry.kind === "gallery") return renderGalleryEntry(scope);
+    if (entry.kind === "page") return renderPageEntry(entry.page, scope);
+    return renderNavEntry(entry, scope);
+  }
+
   return (
     <div className="flex min-h-screen bg-background font-sans text-foreground">
       {/* Clon invisible del nav, sin ancho forzado, solo para medir cuánto ocupa el apartado
@@ -310,161 +583,41 @@ export function AppShell({
               </div>
 
               <div className="capsule-scrollbar min-h-0 flex-1 space-y-10 overflow-y-auto px-8 pb-6">
-              <nav className="flex flex-col gap-1">
-                {visibleNav.map((item) => {
-                  const sectionCollapsed = collapsedSections.has(item.key);
-                  return (
-                    <div key={item.key}>
-                      <div className="flex items-center">
-                        <button
-                          onClick={() => onTabChange(item.key)}
-                          className={`w-full min-w-0 flex-1 truncate rounded-lg px-3 py-2 text-left transition-colors ${
-                            activeTab === item.key
-                              ? "bg-primary/10 font-medium text-primary"
-                              : "text-muted-foreground hover:bg-foreground/5"
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                        {/* Aparte del botón de arriba a propósito: ese navega a la página del
-                            propio apartado (Agenda/Finanzas también son vistas en sí mismas), este
-                            solo pliega/despliega sus subapartados — mezclar los dos gestos en un
-                            único botón haría imposible hacer cada cosa por separado. */}
-                        {item.children && (
-                          <button
-                            type="button"
-                            onClick={() => toggleSection(item.key)}
-                            title={sectionCollapsed ? `Mostrar subapartados de ${item.label}` : `Ocultar subapartados de ${item.label}`}
-                            className="shrink-0 cursor-pointer rounded-lg p-2 text-xs text-muted-foreground transition-transform hover:bg-foreground/5"
-                          >
-                            <span className={`inline-block transition-transform ${sectionCollapsed ? "-rotate-90" : ""}`} aria-hidden="true">
-                              ▾
-                            </span>
-                          </button>
-                        )}
-                      </div>
-                      {item.children && !sectionCollapsed && (
-                        <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-border pl-3">
-                          {item.children.map((child) => (
-                            <button
-                              key={child.key}
-                              onClick={() => onTabChange(child.key)}
-                              className={`w-full truncate rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
-                                activeTab === child.key
-                                  ? "bg-primary/10 font-medium text-primary"
-                                  : "text-muted-foreground hover:bg-foreground/5"
-                              }`}
-                            >
-                              {child.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Apartado del menú principal, no una página personalizada más de "Tus páginas"
-                    — por debajo sigue siendo una (plantilla "galeria"), pero el usuario no ve ese
-                    paso intermedio: onOpenGallery busca la existente o crea la primera. */}
-                {showGallery && (
+              {menuLayout === "compact" ? (
+                // Compacto: apartados fijos y "Tus páginas" en una sola lista, sin cabecera — ver
+                // Ajustes → General → Apariencia. El orden manual (mantener pulsado y arrastrar)
+                // aquí puede mezclar cualquier apartado con cualquier otro.
+                <nav className="flex flex-col gap-1">
+                  {compactGroup.map((entry) => renderEntry(entry, compactGroup))}
                   <button
-                    onClick={onOpenGallery}
-                    className={`w-full min-w-0 truncate rounded-lg px-3 py-2 text-left transition-colors ${
-                      galleryTab && activeTab === galleryTab
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "text-muted-foreground hover:bg-foreground/5"
-                    }`}
+                    onClick={() => setShowCreatePage(true)}
+                    className="w-full cursor-pointer truncate rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
                   >
-                    Galería
+                    + Nueva página
                   </button>
-                )}
-              </nav>
+                </nav>
+              ) : (
+                <>
+                  <nav className="flex flex-col gap-1">{mainGroup.map((entry) => renderEntry(entry, mainGroup))}</nav>
 
-              <div className="flex flex-col gap-1">
-                {otherPages.length > 0 && (
-                  <p className="px-3 pb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Tus páginas</p>
-                )}
-                {otherPages.map((page) => {
-                  const tab = customPageTab(page.id);
-                  const isRenaming = renamingPageId === page.id;
-                  return (
-                    <div key={page.id} className="group relative">
-                      {isRenaming ? (
-                        <input
-                          autoFocus
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onBlur={async () => {
-                            const trimmed = renameValue.trim();
-                            setRenamingPageId(null);
-                            if (trimmed && trimmed !== page.title) await onRenameCustomPage(page.id, trimmed);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                            if (e.key === "Escape") setRenamingPageId(null);
-                          }}
-                          className="w-full rounded-lg border border-primary bg-background px-3 py-2 text-left text-sm outline-none"
-                        />
-                      ) : (
-                        <button
-                          onClick={() => onTabChange(tab)}
-                          className={`w-full truncate rounded-lg px-3 py-2 pr-14 text-left transition-colors ${
-                            activeTab === tab ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-foreground/5"
-                          }`}
-                        >
-                          {page.title}
-                        </button>
-                      )}
-                      {!isRenaming && (
-                        <span className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                          <button
-                            type="button"
-                            title="Renombrar página"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRenamingPageId(page.id);
-                              setRenameValue(page.title);
-                            }}
-                            className="cursor-pointer rounded p-1.5 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            ✎
-                          </button>
-                          <button
-                            type="button"
-                            title={confirmingDeletePageId === page.id ? "Confirmar eliminar" : "Eliminar página"}
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (confirmingDeletePageId === page.id) {
-                                setConfirmingDeletePageId(null);
-                                await onDeleteCustomPage(page.id);
-                              } else {
-                                setConfirmingDeletePageId(page.id);
-                              }
-                            }}
-                            onMouseLeave={() => setConfirmingDeletePageId((id) => (id === page.id ? null : id))}
-                            className={`cursor-pointer rounded p-1.5 text-xs ${
-                              confirmingDeletePageId === page.id ? "font-bold text-destructive" : "text-muted-foreground hover:text-destructive"
-                            }`}
-                          >
-                            ✕
-                          </button>
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                  <div className="flex flex-col gap-1">
+                    {pagesGroup.length > 0 && (
+                      <p className="px-3 pb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Tus páginas</p>
+                    )}
+                    {pagesGroup.map((entry) => renderEntry(entry, pagesGroup))}
 
-                {/* Translúcido a propósito (border punteado + fondo primary/5) para distinguirlo
-                    del resto del menú, que son botones sólidos u opacos — es una acción de "crear
-                    algo nuevo", no una pestaña ya existente. */}
-                <button
-                  onClick={() => setShowCreatePage(true)}
-                  className="w-full cursor-pointer truncate rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-                >
-                  + Nueva página
-                </button>
-              </div>
+                    {/* Translúcido a propósito (border punteado + fondo primary/5) para
+                        distinguirlo del resto del menú, que son botones sólidos u opacos — es una
+                        acción de "crear algo nuevo", no una pestaña ya existente. */}
+                    <button
+                      onClick={() => setShowCreatePage(true)}
+                      className="w-full cursor-pointer truncate rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+                    >
+                      + Nueva página
+                    </button>
+                  </div>
+                </>
+              )}
               </div>
 
               <div className="shrink-0 space-y-4 border-t border-border p-8 pt-6">

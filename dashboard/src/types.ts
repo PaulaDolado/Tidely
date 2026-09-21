@@ -27,7 +27,18 @@ export interface User {
   // Si ya completó el asistente de bienvenida — false solo justo tras registrarse una cuenta
   // nueva (ver DashboardPage: mientras sea false, se muestra el asistente en vez de la app).
   onboardingCompleted?: boolean;
+  // Diseño del menú lateral, elegible en Ajustes → General → Apariencia (ver SettingsDialog y
+  // AppShell.tsx): "default" separa los apartados fijos de "Tus páginas" en dos grupos, "compact"
+  // los muestra todos juntos sin esa cabecera. Opcional en el tipo por el mismo motivo que
+  // enabledSections (parches parciales de updateUser); /auth/me siempre lo manda.
+  menuLayout?: MenuLayout;
+  // Orden manual de los apartados del menú (arrastrar manteniendo pulsado, ver AppShell.tsx) —
+  // array de claves de apartado ("hoy", "agenda", "galeria", ids "custom-N"...). Los apartados
+  // que faltan aquí se colocan al final en su orden implícito habitual.
+  menuOrder?: string[];
 }
+
+export type MenuLayout = "default" | "compact";
 
 // Mismos 7 valores que ENABLED_SECTIONS en src/validators/authValidators.ts (backend) — "Hoy" y
 // "Agenda" no son opcionales, así que no están aquí.

@@ -10,6 +10,7 @@ import {
   changePasswordSchema,
   verifyEmailSchema,
   completeOnboardingSchema,
+  updateMenuPreferencesSchema,
 } from "../validators/authValidators";
 
 const router = Router();
@@ -110,7 +111,7 @@ router.post("/verify-email", validate(verifyEmailSchema), authController.verifyE
  *     summary: Perfil del usuario autenticado
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: "{ id, email, username, name, lastName, timezone, emailVerified, nextUsernameChangeAllowedAt, enabledSections, onboardingCompleted }" }
+ *       200: { description: "{ id, email, username, name, lastName, timezone, emailVerified, nextUsernameChangeAllowedAt, enabledSections, onboardingCompleted, menuLayout, menuOrder }" }
  *   put:
  *     tags: [Auth]
  *     summary: Actualizar nombre, apellido, username, email y/o timezone
@@ -136,6 +137,32 @@ router.put(
   authMiddleware,
   validate(completeOnboardingSchema),
   authController.completeOnboarding
+);
+
+/**
+ * @openapi
+ * /auth/me/menu:
+ *   put:
+ *     tags: [Auth]
+ *     summary: Guarda el diseño del menú (por defecto/compacto) y/o el orden manual de sus apartados
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               menuLayout: { type: string, enum: [default, compact] }
+ *               menuOrder: { type: array, items: { type: string } }
+ *     responses:
+ *       200: { description: Perfil actualizado }
+ */
+router.put(
+  "/me/menu",
+  authMiddleware,
+  validate(updateMenuPreferencesSchema),
+  authController.updateMenuPreferences
 );
 
 /**

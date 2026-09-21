@@ -52,6 +52,17 @@ model User {
   // el asistente de sopetón; `register()` en authService.ts lo pone a `false` explícitamente solo
   // para cuentas nuevas, que es cuando de verdad debe aparecer.
   onboardingCompleted Boolean @default(true)
+  // Diseño del menú lateral, elegible en Ajustes → General → Apariencia (ver AppShell.tsx):
+  // "default" separa los apartados fijos de "Tus páginas" (personalizadas) en dos grupos; en
+  // "compact" se muestran todos juntos, sin la cabecera "Tus páginas". String en vez de un enum
+  // Prisma, mismo criterio que el resto del schema (ver p.ej. Event.recurringPattern).
+  menuLayout String @default("default")
+  // Orden manual de los apartados del menú (arrastrar manteniendo pulsado, ver AppShell.tsx) —
+  // array de claves de apartado ("hoy", "agenda", ids "custom-N" de páginas propias...). Vacío
+  // por defecto: sin este campo, el menú usa el orden implícito de NAV + fecha de creación de las
+  // páginas, igual que siempre. Los apartados que no aparecen aquí (nuevos, o de antes de elegir
+  // un orden) se colocan al final en ese mismo orden implícito.
+  menuOrder String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

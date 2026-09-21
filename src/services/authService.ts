@@ -50,6 +50,8 @@ function toProfile(user: {
   timezone: string;
   enabledSections: string[];
   onboardingCompleted: boolean;
+  menuLayout: string;
+  menuOrder: string[];
 }) {
   return {
     id: user.id,
@@ -60,6 +62,11 @@ function toProfile(user: {
     // dashboard/src/pages/DashboardPage.tsx) — una vez completado (o si la cuenta ya existía
     // antes de este campo, ver default en schema.prisma) no se vuelve a mostrar solo.
     onboardingCompleted: user.onboardingCompleted,
+    // "default" | "compact" — ver Ajustes → General → Apariencia (SettingsDialog) y el render del
+    // menú lateral (AppShell.tsx).
+    menuLayout: user.menuLayout,
+    // Orden manual de los apartados del menú (arrastrar manteniendo pulsado en AppShell.tsx).
+    menuOrder: user.menuOrder,
     name: user.name,
     lastName: user.lastName,
     timezone: user.timezone,
@@ -231,6 +238,21 @@ export async function completeOnboarding(userId: number, enabledSections: string
   const user = await prisma.user.update({
     where: { id: userId },
     data: { enabledSections, onboardingCompleted: true },
+  });
+  return toProfile(user);
+}
+
+// Guarda el diseño del menú (por defecto/compacto, ver Ajustes → General → Apariencia) y/o el
+// orden manual de sus apartados (arrastrar manteniendo pulsado en AppShell.tsx) — ambos campos
+// opcionales, a diferencia de completeOnboarding: aquí SÍ puede llegar solo uno de los dos (p.ej.
+// reordenar un apartado no toca menuLayout, y cambiar de compacto a por defecto no toca el orden).
+export async function updateMenuPreferences(
+  userId: number,
+  patch: { menuLayout?: string; menuOrder?: string[] }
+) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: patch,
   });
   return toProfile(user);
 }

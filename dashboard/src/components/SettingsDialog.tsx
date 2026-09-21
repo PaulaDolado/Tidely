@@ -2,7 +2,7 @@ import { FormEvent, ReactNode, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Theme, THEME_OPTIONS, useTheme } from "../context/ThemeContext";
 import { api, ApiError } from "../api/client";
-import { EnabledSection, ENABLED_SECTIONS, SECTION_DESCRIPTIONS, SECTION_LABELS, User } from "../types";
+import { EnabledSection, ENABLED_SECTIONS, MenuLayout, SECTION_DESCRIPTIONS, SECTION_LABELS, User } from "../types";
 
 // Diálogo de ajustes: se abre al hacer click en el nombre del usuario en la barra lateral (ver
 // AppShell). Antes esto era "ProfileDialog" — un único formulario de cuenta — ahora es un panel
@@ -213,6 +213,48 @@ function SectionsPicker() {
   );
 }
 
+const MENU_LAYOUT_OPTIONS: { value: MenuLayout; label: string; description: string }[] = [
+  { value: "default", label: "Por defecto", description: "Los apartados fijos y \"Tus páginas\" se ven en dos grupos separados." },
+  { value: "compact", label: "Compacto", description: "Todo el menú en una sola lista, sin distinguir \"Tus páginas\"." },
+];
+
+// Igual criterio que ThemePicker: aplica al instante (sin botón "Guardar" aparte) — optimista vía
+// updateUser primero, para que el menú lateral cambie sin esperar a la red, y el PUT a
+// /auth/me/menu va detrás sin bloquear la UI (si falla, se reintentará solo al cambiarlo de
+// nuevo; no merece su propio manejo de error para una preferencia tan menor).
+function MenuLayoutPicker() {
+  const { user, updateUser } = useAuth();
+  const layout = user?.menuLayout ?? "default";
+
+  const choose = (value: MenuLayout) => {
+    if (value === layout) return;
+    updateUser({ menuLayout: value });
+    api.put("/auth/me/menu", { menuLayout: value }).catch(() => {});
+  };
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {MENU_LAYOUT_OPTIONS.map((option) => {
+        const selected = layout === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => choose(option.value)}
+            aria-pressed={selected}
+            className={`cursor-pointer rounded-xl border p-3 text-left transition-colors ${
+              selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/30"
+            }`}
+          >
+            <span className={`block text-sm font-medium ${selected ? "text-primary" : "text-foreground"}`}>{option.label}</span>
+            <span className="block text-xs text-muted-foreground">{option.description}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function GeneralSection() {
   return (
     <div className="space-y-8">
@@ -224,6 +266,12 @@ function GeneralSection() {
           Elige cómo se ve Tidely. "Sistema" mantiene el aspecto actual y sigue el modo claro/oscuro de tu dispositivo.
         </p>
         <ThemePicker />
+
+        <p className="mb-1 mt-6 text-xs font-bold uppercase tracking-widest text-muted-foreground">Diseño del menú</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Mantén pulsado un apartado del menú lateral para arrastrarlo y cambiar su orden.
+        </p>
+        <MenuLayoutPicker />
       </div>
     </div>
   );

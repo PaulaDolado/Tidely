@@ -69,3 +69,12 @@ export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeri
 export const completeOnboardingSchema = Joi.object({
   enabledSections: Joi.array().items(Joi.string().valid(...ENABLED_SECTIONS)).unique().required(),
 });
+
+// Ambos campos opcionales (a diferencia de completeOnboardingSchema): reordenar un apartado no
+// manda menuLayout, y cambiar de diseño no manda menuOrder — pero al menos uno de los dos tiene
+// que venir, si no la petición no cambiaría nada.
+export const updateMenuPreferencesSchema = Joi.object({
+  menuLayout: Joi.string().valid("default", "compact"),
+  menuOrder: Joi.array().items(Joi.string()),
+})
+  .or("menuLayout", "menuOrder");
