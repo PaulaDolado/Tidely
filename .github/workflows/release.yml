@@ -72,21 +72,35 @@ jobs:
       - name: Aceptar licencias del Android SDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      - name: Compilar el APK
+      # Un .apk por arquitectura en vez de uno "universal" con las 4 a la vez — reduce bastante el
+      # tamaño de descarga (un móvil normal solo necesita UNA). `-PreactNativeArchitectures=<abi>`
+      # es la propiedad que ya trae el propio gradle.properties generado (ver el comentario junto a
+      # `reactNativeArchitectures` ahí) para filtrar qué librerías nativas empaquetar; `clean` entre
+      # cada arquitectura evita que la caché incremental de Gradle deje colada alguna librería de
+      # la vuelta anterior. `Tidely.apk` (sin sufijo) es una copia de arm64-v8a — la arquitectura de
+      # prácticamente cualquier móvil Android de los últimos ~8 años — y es la que usa el QR/enlace
+      # por defecto del dashboard (ver MOBILE_APK_URL en AppShell.tsx); las demás quedan también
+      # publicadas en el Release por si alguien las necesita.
+      - name: Compilar un .apk por arquitectura
         working-directory: mobile/android
         env:
           EXPO_PUBLIC_API_URL: https://tidely-api-pa09.onrender.com
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
-
-      - name: Renombrar el APK
-        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk Tidely.apk
+          mkdir -p ../../dist-apks
+          for arch in armeabi-v7a arm64-v8a x86 x86_64; do
+            echo "== Compilando $arch =="
+            ./gradlew assembleRelease -PreactNativeArchitectures=$arch --no-daemon
+            apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+            cp "$apk" "../../dist-apks/Tidely-$arch.apk"
+            ./gradlew clean --no-daemon
+          done
+          cp ../../dist-apks/Tidely-arm64-v8a.apk ../../dist-apks/Tidely.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: Tidely.apk
+          name: android-apks
+          path: dist-apks/*.apk
 
   build-windows:
     runs-on: windows-latest
@@ -141,7 +155,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: android-apk
+          name: android-apks
           path: dist
 
       - uses: actions/download-artifact@v4
@@ -157,6 +171,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Tidely.apk
+            dist/*.apk
             dist/Tidely-Setup.msi
           generate_release_notes: true

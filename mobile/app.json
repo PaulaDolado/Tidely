@@ -15,7 +15,11 @@
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.tidely.app"
+      "package": "com.tidely.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#F8EFD8"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

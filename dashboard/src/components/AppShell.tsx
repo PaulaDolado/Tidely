@@ -917,7 +917,20 @@ function MobileAppPanel() {
           <div className="size-full animate-pulse rounded-lg bg-muted" />
         )}
       </div>
-      <a href={MOBILE_APK_URL} target="_blank" rel="noreferrer" className="text-center text-xs font-medium text-primary hover:underline">
+      {/* `download` sugiere el nombre de archivo al navegador — el servidor (GitHub Releases) ya
+          manda un `Content-Disposition: attachment; filename=Tidely.apk` correcto, pero algunos
+          navegadores/gestores de descarga de Android (sobre todo el mini-navegador que abre
+          directamente el lector de QR del sistema) lo ignoran en redirecciones cross-origin y
+          usan el último segmento de la URL firmada de turno — este atributo es el único margen
+          adicional que tenemos desde el HTML para pedirlo, aunque no todos los navegadores lo
+          respeten tampoco en descargas cross-origin. */}
+      <a
+        href={MOBILE_APK_URL}
+        download="Tidely.apk"
+        target="_blank"
+        rel="noreferrer"
+        className="text-center text-xs font-medium text-primary hover:underline"
+      >
         Escanea o descarga el APK
       </a>
     </div>
