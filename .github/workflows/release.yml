@@ -75,12 +75,17 @@ jobs:
       # Un .apk por arquitectura en vez de uno "universal" con las 4 a la vez — reduce bastante el
       # tamaño de descarga (un móvil normal solo necesita UNA). `-PreactNativeArchitectures=<abi>`
       # es la propiedad que ya trae el propio gradle.properties generado (ver el comentario junto a
-      # `reactNativeArchitectures` ahí) para filtrar qué librerías nativas empaquetar; `clean` entre
-      # cada arquitectura evita que la caché incremental de Gradle deje colada alguna librería de
-      # la vuelta anterior. `Tidely.apk` (sin sufijo) es una copia de arm64-v8a — la arquitectura de
-      # prácticamente cualquier móvil Android de los últimos ~8 años — y es la que usa el QR/enlace
-      # por defecto del dashboard (ver MOBILE_APK_URL en AppShell.tsx); las demás quedan también
-      # publicadas en el Release por si alguien las necesita.
+      # `reactNativeArchitectures` ahí) para filtrar qué librerías nativas empaquetar — Gradle ya
+      # detecta el cambio de esa propiedad como una entrada distinta y reconstruye lo que haga
+      # falta solo, SIN necesidad de `./gradlew clean` entre cada arquitectura: un `clean` de por
+      # medio rompe el build nativo (CMake intenta reconfigurar para saber qué borrar y ya no
+      # encuentra los .cpp generados por el codegen, que un `clean` normal SÍ borra) — así fue
+      # como falló el primer intento de este job.
+      #
+      # `Tidely.apk` (sin sufijo) es una copia de arm64-v8a — la arquitectura de prácticamente
+      # cualquier móvil Android de los últimos ~8 años — y es la que usa el QR/enlace por defecto
+      # del dashboard (ver MOBILE_APK_URL en AppShell.tsx); las demás quedan también publicadas en
+      # el Release por si alguien las necesita.
       - name: Compilar un .apk por arquitectura
         working-directory: mobile/android
         env:
@@ -93,9 +98,14 @@ jobs:
             ./gradlew assembleRelease -PreactNativeArchitectures=$arch --no-daemon
             apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
             cp "$apk" "../../dist-apks/Tidely-$arch.apk"
-            ./gradlew clean --no-daemon
           done
           cp ../../dist-apks/Tidely-arm64-v8a.apk ../../dist-apks/Tidely.apk
+
+      # Verificación rápida en el propio log: cada .apk debe traer SOLO su carpeta lib/<abi>/, no
+      # las 4 — si Gradle no hubiera reconstruido de verdad al cambiar la propiedad (el riesgo de
+      # quitar el `clean` de arriba), aquí se vería enseguida.
+      - name: Verificar qué arquitecturas trae cada .apk
+        run: for f in dist-apks/*.apk; do echo "== $f =="; unzip -l "$f" | grep '^.*lib/' | awk '{print $4}' | cut -d/ -f2 | sort -u; done
 
       - uses: actions/upload-artifact@v4
         with:
