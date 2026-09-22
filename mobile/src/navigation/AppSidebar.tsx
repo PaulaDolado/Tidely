@@ -26,6 +26,8 @@ import { api, ApiError } from "../api/client";
 import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
 import { NewPageForm } from "../components/NewPageForm";
 import { AppearanceSettings } from "../components/AppearanceSettings";
+import { AccountSettings } from "../components/AccountSettings";
+import { GlobalSearch, SearchPick } from "../components/GlobalSearch";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
 import { EnabledSection, ENABLED_SECTIONS } from "../types";
 
@@ -281,6 +283,10 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const [labelWidths, setLabelWidths] = useState<Record<string, number>>({});
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Igual criterio que el menú "Cuenta"/"General" de la web (SettingsDialog.tsx) — aquí
+  // simplificado a solo estas dos, las únicas con funcionalidad real de momento (el resto son
+  // texto estático/placeholders en la propia web, ver el comentario de cabecera del fichero).
+  const [settingsSection, setSettingsSection] = useState<"cuenta" | "apariencia">("cuenta");
   const [customPages, setCustomPages] = useState<CustomPageSummary[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -452,6 +458,16 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
     }
   };
 
+  // Qué hacer al elegir un resultado de GlobalSearch — ver el tipo SearchPick y su comentario en
+  // GlobalSearch.tsx para el porqué de que solo "project" salte al detalle exacto por id.
+  const handleSearchPick = (pick: SearchPick) => {
+    if (pick.type === "event") navigation.navigate("Agenda", { focusDate: pick.startTime.slice(0, 10) });
+    else if (pick.type === "task") navigation.navigate("Planificador");
+    else if (pick.type === "note") navigation.navigate("Hoy");
+    else navigation.navigate("Proyectos", { screen: "Detalle", params: { id: String(pick.id), title: pick.title } });
+    setCollapsed(true);
+  };
+
   const topOffset = insets.top + 16;
 
   return (
@@ -522,6 +538,8 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         <ScrollView style={{ paddingTop: topOffset }} contentContainerStyle={styles.scrollContent}>
           <Text style={styles.brand}>Tidely</Text>
 
+          <GlobalSearch onPick={handleSearchPick} />
+
           <View style={styles.nav}>
             {orderedNav.map((item) => (
               <DraggableNavRow
@@ -586,9 +604,10 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-          {/* Mismo gesto que la web (AppShell.tsx): tocar el nombre abre Ajustes — de momento solo
-              "Apariencia" (ver AppearanceSettings), el resto de secciones del diálogo web
-              (Cuenta, políticas...) todavía no tienen pantalla propia en mobile. */}
+          {/* Mismo gesto que la web (AppShell.tsx): tocar el nombre abre Ajustes — "Cuenta" y
+              "Apariencia" (ver AccountSettings/AppearanceSettings y settingsSection más arriba);
+              el resto de secciones del diálogo web (políticas, invitar, ayuda) son solo texto
+              estático o placeholders incluso ahí, así que no aportan nada real que portar todavía. */}
           <Pressable style={styles.footerUser} onPress={() => setShowSettings(true)} hitSlop={8}>
             <Text numberOfLines={1} style={styles.userName}>
               {user?.name}
@@ -628,20 +647,39 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
 
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.settingsHeader}>
-              <Text style={styles.settingsTitle}>Ajustes</Text>
-              <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>
-                <Text style={styles.settingsClose}>Cerrar</Text>
-              </Pressable>
-            </View>
-            {/* AppearanceSettings ya no es solo el selector de tema (ver Apariencia > tamaño de
-                letra/diseño del menú, añadidos después) — sin scroll propio, "Diseño del menú"
-                quedaría cortado por el `maxHeight: "88%"` de modalSheet en pantallas pequeñas. */}
-            <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} keyboardShouldPersistTaps="handled">
-              <AppearanceSettings />
-            </ScrollView>
-          </Pressable>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.settingsHeader}>
+                <Text style={styles.settingsTitle}>Ajustes</Text>
+                <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>
+                  <Text style={styles.settingsClose}>Cerrar</Text>
+                </Pressable>
+              </View>
+
+              {/* Igual idea que el menú de la izquierda del diálogo de Ajustes en la web, aplanado
+                  a dos pestañas (ver el comentario de settingsSection más arriba). */}
+              <View style={styles.settingsTabs}>
+                {(["cuenta", "apariencia"] as const).map((section) => (
+                  <Pressable
+                    key={section}
+                    onPress={() => setSettingsSection(section)}
+                    style={[styles.settingsTab, settingsSection === section && styles.settingsTabActive]}
+                  >
+                    <Text style={[styles.settingsTabLabel, settingsSection === section && styles.settingsTabLabelActive]}>
+                      {section === "cuenta" ? "Cuenta" : "Apariencia"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* AppearanceSettings ya no es solo el selector de tema (ver Apariencia > tamaño de
+                  letra/diseño del menú, añadidos después) — sin scroll propio, "Diseño del menú"
+                  quedaría cortado por el `maxHeight: "88%"` de modalSheet en pantallas pequeñas. */}
+              <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} keyboardShouldPersistTaps="handled">
+                {settingsSection === "cuenta" ? <AccountSettings /> : <AppearanceSettings />}
+              </ScrollView>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </>
@@ -863,6 +901,27 @@ function createStyles(colors: ColorPalette) {
     fontFamily: fonts.sansMedium,
     fontSize: 12,
     color: colors.mutedForeground,
+  },
+  settingsTabs: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 16,
+  },
+  settingsTab: {
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  settingsTabActive: {
+    backgroundColor: colors.foreground,
+  },
+  settingsTabLabel: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.mutedForeground,
+  },
+  settingsTabLabelActive: {
+    color: colors.background,
   },
   });
 }

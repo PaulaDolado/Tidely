@@ -112,11 +112,29 @@ function formToOccurrenceEditor(event: ParsedEvent): EventForm {
   };
 }
 
-export function AgendaScreen() {
+// `route` opcional y tipado a mano (no RouteProp<RootTabParamList, "Agenda">) para no tener que
+// importar el param list desde App.tsx (que a su vez importa esta pantalla) — solo hace falta
+// leer `focusDate`, no el resto del tipado de navegación.
+export function AgendaScreen({ route }: { route?: { params?: { focusDate?: string } } } = {}) {
   const { collapsed } = useSidebar();
   const insets = useSafeAreaInsets();
   const [weekStart, setWeekStart] = useState(() => mondayOfWeek(new Date()));
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyOf(new Date()));
+
+  // Búsqueda global (ver GlobalSearch.tsx/AppSidebar.tsx): al llegar con un `focusDate` en los
+  // parámetros de navegación, salta a la semana y al día de ese evento en vez de dejar la vista
+  // en "hoy". No abre el propio diálogo de edición: los eventos son locales/SQLite en el móvil,
+  // con un id distinto al que devuelve la búsqueda (que es el id del servidor) — resolverlo a la
+  // instancia local añadiría bastante más complejidad para un beneficio menor, y esto ya deja al
+  // usuario viendo el día correcto con el evento a la vista.
+  const focusDate = route?.params?.focusDate;
+  useEffect(() => {
+    if (!focusDate) return;
+    const date = new Date(focusDate);
+    if (Number.isNaN(date.getTime())) return;
+    setWeekStart(mondayOfWeek(date));
+    setSelectedDateKey(dateKeyOf(date));
+  }, [focusDate]);
   const [occurrences, setOccurrences] = useState<EventOccurrence<ParsedEvent>[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);

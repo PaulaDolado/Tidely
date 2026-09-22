@@ -34,8 +34,18 @@ export type MenuLayout = "default" | "compact";
 export interface User {
   id: number;
   email: string;
+  // `username` es un alias de login independiente del email (ver LoginScreen.tsx) — el backend
+  // siempre lo manda, así que va sin `?` a diferencia de los campos de onboarding/menú de abajo
+  // (esos sí son parches parciales de updateUser). Mismo criterio que dashboard/src/types.ts.
+  username: string;
   name: string;
+  lastName?: string | null;
   timezone?: string;
+  // El registro/login no exige el email verificado — solo se avisa (ver AccountSettings.tsx).
+  emailVerified: boolean;
+  // Fecha (ISO) a partir de la cual se puede volver a cambiar el username — null si nunca se
+  // cambió o si el cooldown de 15 días ya pasó. Ver AccountSettings.tsx.
+  nextUsernameChangeAllowedAt?: string | null;
   // Elegidos en el asistente de bienvenida tras registrarse (ver OnboardingScreen.tsx) — controla
   // qué apartados opcionales aparecen en el menú (ver AppSidebar.tsx). Opcional en el tipo porque
   // `updateUser()` en AuthContext hace parches parciales; en la práctica /auth/me siempre lo manda.

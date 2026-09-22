@@ -22,7 +22,7 @@ import { ObjetivosScreen } from "./src/screens/ObjetivosScreen";
 import { FinanzasScreen } from "./src/screens/FinanzasScreen";
 import { MetasAhorroScreen } from "./src/screens/MetasAhorroScreen";
 import { PaginasScreen, PaginasStackParamList } from "./src/screens/PaginasScreen";
-import { ProyectosScreen } from "./src/screens/ProyectosScreen";
+import { ProyectosScreen, ProyectosStackParamList } from "./src/screens/ProyectosScreen";
 import { ENABLED_SECTIONS } from "./src/types";
 
 // Mantiene la splash nativa visible hasta que las fuentes (ver más abajo) terminen de cargar —
@@ -47,7 +47,9 @@ SplashScreen.preventAutoHideAsync();
 // — ver PaginasScreen.tsx / ProyectosScreen.tsx.
 export type RootTabParamList = {
   Hoy: undefined;
-  Agenda: undefined;
+  // `focusDate` opcional (YYYY-MM-DD): lo usa la búsqueda global para abrir Agenda ya en el día
+  // del evento encontrado, en vez del día actual — ver GlobalSearch.tsx/AgendaScreen.tsx.
+  Agenda: { focusDate?: string } | undefined;
   Planificador: undefined;
   Horario: undefined;
   Objetivos: undefined;
@@ -57,7 +59,10 @@ export type RootTabParamList = {
   // "Detalle" tras crear una página desde el diálogo "+ Nueva página" del menú, en vez de dejar
   // que el usuario aterrice siempre en "Lista" — ver AppSidebar.tsx.
   Páginas: NavigatorScreenParams<PaginasStackParamList> | undefined;
-  Proyectos: undefined;
+  // NavigatorScreenParams igual que Páginas: la búsqueda global puede saltar directo al cuaderno
+  // de un proyecto por id (Proyectos no pasa por SQLite, así que su id es siempre el del servidor)
+  // — ver GlobalSearch.tsx/AppSidebar.tsx.
+  Proyectos: NavigatorScreenParams<ProyectosStackParamList> | undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();

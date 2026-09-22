@@ -15,6 +15,7 @@ interface AuthContextValue {
   // diseño/orden del menú...) — mismo criterio que dashboard/src/context/AuthContext.tsx: no relee
   // /auth/me entero, solo mezcla lo que ya se sabe que cambió.
   updateUser: (patch: Partial<User>) => void;
+  resendVerification: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -106,8 +107,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // El propio email de verificación siempre apunta a la página web (dashboard/src/pages/
+  // VerifyEmailPage.tsx) sin importar desde qué cliente se pidió reenviarlo — confirmar un email
+  // es una acción sin estado que no necesita una pantalla propia en el móvil, solo este botón de
+  // "reenviar" (ver AccountSettings.tsx). El siguiente /auth/me (o login) ya recoge
+  // `emailVerified: true` una vez confirmado desde el navegador.
+  const resendVerification = useCallback(async () => {
+    await api.post("/auth/resend-verification", {});
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, ready, loading, error, login, register, logout, updateUser }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, ready, loading, error, login, register, logout, updateUser, resendVerification }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 
