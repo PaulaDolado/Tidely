@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
+import { Text } from "./AppText";
 import { useNavigation } from "@react-navigation/native";
 import { listRecentEntries, RecentProjectEntry } from "../api/projects";
 import { colors, fonts, radius } from "../theme";

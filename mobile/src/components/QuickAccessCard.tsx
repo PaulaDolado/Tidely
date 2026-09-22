@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, Text, Pressable, TextInput, Modal, ScrollView, StyleSheet, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, Modal, ScrollView, StyleSheet, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import {

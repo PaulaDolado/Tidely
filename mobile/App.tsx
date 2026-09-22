@@ -9,9 +9,11 @@ import { useFonts, Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outf
 import { InstrumentSerif_400Regular } from "@expo-google-fonts/instrument-serif";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
 import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
+import { FontSizeProvider } from "./src/context/FontSizeContext";
 import { AppSidebar } from "./src/navigation/AppSidebar";
 import { SidebarProvider } from "./src/navigation/SidebarContext";
 import { LoginScreen } from "./src/screens/LoginScreen";
+import { OnboardingScreen } from "./src/screens/OnboardingScreen";
 import { HoyScreen } from "./src/screens/HoyScreen";
 import { AgendaScreen } from "./src/screens/AgendaScreen";
 import { PlanificadorScreen } from "./src/screens/PlanificadorScreen";
@@ -21,6 +23,7 @@ import { FinanzasScreen } from "./src/screens/FinanzasScreen";
 import { MetasAhorroScreen } from "./src/screens/MetasAhorroScreen";
 import { PaginasScreen, PaginasStackParamList } from "./src/screens/PaginasScreen";
 import { ProyectosScreen } from "./src/screens/ProyectosScreen";
+import { ENABLED_SECTIONS } from "./src/types";
 
 // Mantiene la splash nativa visible hasta que las fuentes (ver más abajo) terminen de cargar —
 // llamada en scope global, no dentro de un componente, tal y como pide la propia documentación
@@ -75,6 +78,16 @@ function Root() {
 
   if (!user) return <LoginScreen />;
 
+  // Solo `false` justo tras registrarse una cuenta nueva (ver types.ts) — cuentas ya existentes
+  // (o el propio login, que no lo toca) tienen esto en `true`, así que nunca ven el asistente de
+  // nuevo. Mismo criterio que dashboard/src/App.tsx.
+  if (user.onboardingCompleted === false) return <OnboardingScreen />;
+
+  // `?? ENABLED_SECTIONS` solo para el instante en que `user.enabledSections` pudiera faltar (una
+  // sesión guardada de antes de que este campo existiera) — el backend siempre lo manda relleno
+  // en la práctica. Mismo criterio que dashboard/src/components/AppShell.tsx.
+  const enabledSections = new Set(user.enabledSections ?? ENABLED_SECTIONS);
+
   return (
     // SidebarProvider por fuera del Navigator: AppSidebar (el tabBar) y todas las pantallas
     // (hermanas suyas dentro del Navigator, no hijas) necesitan leer/escribir el mismo "¿está
@@ -90,13 +103,13 @@ function Root() {
         >
           <Tab.Screen name="Hoy" component={HoyScreen} />
           <Tab.Screen name="Agenda" component={AgendaScreen} />
-          <Tab.Screen name="Planificador" component={PlanificadorScreen} />
-          <Tab.Screen name="Horario" component={HorarioScreen} />
-          <Tab.Screen name="Objetivos" component={ObjetivosScreen} />
-          <Tab.Screen name="Finanzas" component={FinanzasScreen} />
-          <Tab.Screen name="Ahorro" component={MetasAhorroScreen} />
+          {enabledSections.has("planificador") && <Tab.Screen name="Planificador" component={PlanificadorScreen} />}
+          {enabledSections.has("horario") && <Tab.Screen name="Horario" component={HorarioScreen} />}
+          {enabledSections.has("objetivos") && <Tab.Screen name="Objetivos" component={ObjetivosScreen} />}
+          {enabledSections.has("finanzas") && <Tab.Screen name="Finanzas" component={FinanzasScreen} />}
+          {enabledSections.has("metasAhorro") && <Tab.Screen name="Ahorro" component={MetasAhorroScreen} />}
           <Tab.Screen name="Páginas" component={PaginasScreen} />
-          <Tab.Screen name="Proyectos" component={ProyectosScreen} />
+          {enabledSections.has("proyectos") && <Tab.Screen name="Proyectos" component={ProyectosScreen} />}
         </Tab.Navigator>
       </NavigationContainer>
     </SidebarProvider>
@@ -125,10 +138,12 @@ export default function App() {
   return (
     <SafeAreaProvider onLayout={onLayoutRootView}>
       <ThemeProvider>
-        <AuthProvider>
-          <Root />
-          <ThemedStatusBar />
-        </AuthProvider>
+        <FontSizeProvider>
+          <AuthProvider>
+            <Root />
+            <ThemedStatusBar />
+          </AuthProvider>
+        </FontSizeProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { Alert, View, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";

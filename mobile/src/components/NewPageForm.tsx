@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Text, TextInput } from "./AppText";
 import { CUSTOM_PAGE_TEMPLATES, CustomPageTemplate, TEMPLATE_LABELS } from "../api/customPages";
 import { colors, fonts, radius } from "../theme";
 

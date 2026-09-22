@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView } from "react-native";
+import { Text, TextInput } from "../components/AppText";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
 // está deprecado, este es el reemplazo recomendado.
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Text } from "./AppText";
 import { runSync } from "../sync";
 import { listHabits, listHabitLogsForHabit, toggleHabitToday } from "../db/habitsRepo";
 import { LocalHabit } from "../types";

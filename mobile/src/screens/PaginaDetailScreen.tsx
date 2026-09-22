@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Image, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Image, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";

@@ -4,7 +4,6 @@ import {
   Animated,
   Easing,
   View,
-  Text,
   Pressable,
   Image,
   ScrollView,
@@ -13,17 +12,22 @@ import {
   useWindowDimensions,
   Platform,
   KeyboardAvoidingView,
+  PanResponder,
+  GestureResponderEvent,
+  PanResponderGestureState,
 } from "react-native";
+import { Text } from "../components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useAuth } from "../auth/AuthContext";
 import { useSidebar } from "./SidebarContext";
 import { useTheme } from "../context/ThemeContext";
-import { ApiError } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
 import { NewPageForm } from "../components/NewPageForm";
 import { AppearanceSettings } from "../components/AppearanceSettings";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
+import { EnabledSection, ENABLED_SECTIONS } from "../types";
 
 // Sidebar lateral para móvil — reemplaza la barra de pestañas inferior (bottom-tabs) por un menú
 // lateral colapsable, puerto de dashboard/src/components/AppShell.tsx (<aside> de escritorio) en
@@ -71,6 +75,9 @@ interface NavItem {
   route: string; // debe coincidir con un name de <Tab.Screen> en App.tsx
   label: string;
   children?: NavItem[];
+  // Qué apartado de user.enabledSections activa este item — sin esto (Hoy, Agenda) el item nunca
+  // se filtra, no es opcional. Mismo criterio que NavItem.section en AppShell.tsx (web).
+  section?: EnabledSection;
 }
 
 // Mismo árbol que NAV en dashboard/src/components/AppShell.tsx (Agenda agrupa Planificador y
@@ -90,18 +97,53 @@ const NAV: NavItem[] = [
     route: "Agenda",
     label: "Agenda",
     children: [
-      { route: "Planificador", label: "Planificador" },
-      { route: "Horario", label: "Horario" },
+      { route: "Planificador", label: "Planificador", section: "planificador" },
+      { route: "Horario", label: "Horario", section: "horario" },
     ],
   },
-  { route: "Objetivos", label: "Objetivos" },
+  { route: "Objetivos", label: "Objetivos", section: "objetivos" },
   {
     route: "Finanzas",
     label: "Finanzas",
-    children: [{ route: "Ahorro", label: "Metas de ahorro" }],
+    section: "finanzas",
+    children: [{ route: "Ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
   },
-  { route: "Proyectos", label: "Proyectos" },
+  { route: "Proyectos", label: "Proyectos", section: "proyectos" },
 ];
+
+// Poda NAV según los apartados que el usuario activó (asistente de bienvenida o Ajustes) — mismo
+// criterio que filterNav en dashboard/src/components/AppShell.tsx: un item SIN `section` (Hoy,
+// Agenda) nunca se filtra; uno CON `section` desaparece si no está en `enabledSections`, y sus
+// `children` se filtran igual. Si tras filtrar un item se queda sin hijos, `children` pasa a
+// `undefined` (no `[]`) para que la flecha de plegar/desplegar no se pinte sin nada que plegar.
+function filterNav(nav: NavItem[], enabledSections: Set<string>): NavItem[] {
+  return nav
+    .filter((item) => !item.section || enabledSections.has(item.section))
+    .map((item) => {
+      const children = item.children ? filterNav(item.children, enabledSections) : undefined;
+      return { ...item, children: children && children.length > 0 ? children : undefined };
+    });
+}
+
+// Reordena los apartados principales según el orden guardado (arrastrar y soltar, ver
+// moveNavItem/PanResponder más abajo) — mismo criterio que reorderByKeys en AppShell.tsx: una
+// clave guardada que ya no existe (apartado desactivado) se ignora sola, y un apartado que el
+// usuario todavía no ha reordenado nunca cae al final, en el orden de siempre.
+function reorderNav(items: NavItem[], order: string[]): NavItem[] {
+  const remaining = new Map(items.map((item) => [item.route, item]));
+  const ordered: NavItem[] = [];
+  for (const key of order) {
+    const item = remaining.get(key);
+    if (item) {
+      ordered.push(item);
+      remaining.delete(key);
+    }
+  }
+  for (const item of items) {
+    if (remaining.has(item.route)) ordered.push(item);
+  }
+  return ordered;
+}
 
 // Clave de medición para el botón "+ Nueva página" (ver measureContainer) — no es una `route` de
 // verdad, así que no puede compartir claves con NAV/App.tsx.
@@ -115,9 +157,123 @@ const WIDTH_PADDING = 24 + 40;
 // Extra que suman el indentado + borde de los subapartados (ml-3 pl-3 border, ver childList).
 const CHILD_INDENT = 28;
 
+// Fila de apartado con mango de arrastre para reordenar — extraída aparte porque necesita su
+// propio PanResponder (un hook por instancia, no se puede crear dentro de un .map() del
+// componente padre). El botón principal sigue navegando con un toque normal; solo el mango (≡)
+// escucha el gesto de arrastre, así los dos gestos (tocar para ir, mantener+mover para reordenar)
+// no compiten por el mismo área táctil.
+function DraggableNavRow({
+  item,
+  isActive,
+  activeRoute,
+  sectionCollapsed,
+  onToggleSection,
+  onPress,
+  onChildPress,
+  isDragging,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  styles,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  activeRoute: string;
+  sectionCollapsed: boolean;
+  onToggleSection: () => void;
+  onPress: () => void;
+  onChildPress: (route: string) => void;
+  isDragging: boolean;
+  onDragStart: (route: string) => void;
+  onDragMove: (route: string, dy: number) => void;
+  onDragEnd: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  // No useNativeDriver aquí (a diferencia de `progress` del panel): PanResponder ya entrega `dy`
+  // en el hilo de JS, y mezclar drivers dentro del mismo Animated.Value da warnings.
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  // El PanResponder se crea UNA sola vez (useRef, más abajo) — pero onDragStart/onDragMove/
+  // onDragEnd vienen del padre y son una función NUEVA en cada uno de sus renders (dependen de
+  // liveOrder/draggingRoute). Sin este ref intermedio, los callbacks del PanResponder se quedarían
+  // cerrados para siempre sobre las versiones de la primera vez que se montó esta fila (closure
+  // obsoleto clásico) y el reordenado nunca llegaría a guardarse de verdad tras el primer arrastre.
+  const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd });
+  callbacksRef.current = { onDragStart, onDragMove, onDragEnd };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragStart(item.route);
+      },
+      onPanResponderMove: (_evt: GestureResponderEvent, gesture: PanResponderGestureState) => {
+        dragY.setValue(gesture.dy);
+        callbacksRef.current.onDragMove(item.route, gesture.dy);
+      },
+      onPanResponderRelease: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragEnd();
+      },
+      onPanResponderTerminate: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragEnd();
+      },
+    })
+  ).current;
+
+  return (
+    <Animated.View style={isDragging ? { transform: [{ translateY: dragY }], zIndex: 50, elevation: 8, opacity: 0.96 } : undefined}>
+      <View style={styles.navRow}>
+        <Pressable onPress={onPress} style={[styles.navButton, isActive && styles.navButtonActive]}>
+          <Text numberOfLines={1} style={[styles.navLabel, isActive && styles.navLabelActive]}>
+            {item.label}
+          </Text>
+        </Pressable>
+        {/* Aparte a propósito del botón de arriba, igual que en AppShell.tsx: uno navega a la
+            página del apartado, el otro solo pliega/despliega sus hijos. */}
+        {item.children && (
+          <Pressable
+            onPress={onToggleSection}
+            hitSlop={8}
+            accessibilityLabel={sectionCollapsed ? `Mostrar subapartados de ${item.label}` : `Ocultar subapartados de ${item.label}`}
+            style={styles.chevronButton}
+          >
+            <Text style={[styles.chevron, sectionCollapsed && styles.chevronCollapsed]}>▾</Text>
+          </Pressable>
+        )}
+        <View {...panResponder.panHandlers} hitSlop={8} style={styles.dragHandle}>
+          <Text style={styles.dragHandleIcon}>≡</Text>
+        </View>
+      </View>
+
+      {item.children && !sectionCollapsed && (
+        <View style={styles.childList}>
+          {item.children.map((child) => {
+            const childActive = activeRoute === child.route;
+            return (
+              <Pressable
+                key={child.route}
+                onPress={() => onChildPress(child.route)}
+                style={[styles.childButton, childActive && styles.navButtonActive]}
+              >
+                <Text numberOfLines={1} style={[styles.childLabel, childActive && styles.navLabelActive]}>
+                  {child.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+    </Animated.View>
+  );
+}
+
 export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const { collapsed, setCollapsed } = useSidebar();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -135,6 +291,63 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
 
   const measuredMax = Math.max(0, ...Object.values(labelWidths));
   const sidebarWidth = Math.min(Math.max(DEFAULT_WIDTH, measuredMax + WIDTH_PADDING), maxWidth);
+
+  // "compact" agrupa todo sin la cabecera "Tus páginas" — mismo criterio que menuLayout en
+  // dashboard/src/components/AppShell.tsx.
+  const compact = user?.menuLayout === "compact";
+
+  // Apartados visibles según lo elegido en el asistente de bienvenida/Ajustes, y en el orden
+  // guardado (arrastrar el ≡ de cada uno, ver DraggableNavRow) — `liveOrder` es null salvo
+  // mientras se está arrastrando, momento en el que manda sobre el orden guardado para dar
+  // feedback visual instantáneo sin esperar a la respuesta del PUT.
+  const enabledSections = useMemo(() => new Set(user?.enabledSections ?? ENABLED_SECTIONS), [user?.enabledSections]);
+  const visibleNav = useMemo(() => filterNav(NAV, enabledSections), [enabledSections]);
+  const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
+  const orderedNav = useMemo(
+    () => reorderNav(visibleNav, liveOrder ?? user?.menuOrder ?? []),
+    [visibleNav, liveOrder, user?.menuOrder]
+  );
+
+  const [draggingRoute, setDraggingRoute] = useState<string | null>(null);
+  // Índice de partida y orden "base" del gesto (capturados una vez al empezar a arrastrar, ver
+  // handleDragStart) — todo el cálculo de handleDragMove parte siempre de estos dos valores fijos
+  // y del `dy` TOTAL que da PanResponder (no incremental), para no acumular error entre eventos.
+  const dragStartIndexRef = useRef(0);
+  const dragBaseOrderRef = useRef<string[]>([]);
+  // Alto de fila usado para traducir "cuánto se ha movido el dedo" a "cuántas posiciones" — no
+  // hace falta que sea exacto (measureLabel ya da anchos, no altos): con el padding vertical fijo
+  // de navButton (10+10) más el alto de línea de fontSize 15, ~44-48px es buena aproximación.
+  const dragRowHeightRef = useRef(46);
+
+  const handleDragStart = (route: string) => {
+    dragStartIndexRef.current = orderedNav.findIndex((item) => item.route === route);
+    dragBaseOrderRef.current = orderedNav.map((item) => item.route);
+    setDraggingRoute(route);
+  };
+
+  const handleDragMove = (route: string, dy: number) => {
+    const shift = Math.round(dy / dragRowHeightRef.current);
+    const targetIndex = Math.min(Math.max(dragStartIndexRef.current + shift, 0), dragBaseOrderRef.current.length - 1);
+    const without = dragBaseOrderRef.current.filter((r) => r !== route);
+    without.splice(targetIndex, 0, route);
+    setLiveOrder(without);
+  };
+
+  const handleDragEnd = async () => {
+    setDraggingRoute(null);
+    const finalOrder = liveOrder;
+    if (!finalOrder) return;
+    try {
+      const profile = await api.put<{ menuOrder: string[] }>("/auth/me/menu", { menuOrder: finalOrder });
+      updateUser({ menuOrder: profile.menuOrder });
+    } catch {
+      // Sin conexión, sesión caducada... el orden visual ya cambió (liveOrder), pero no queda
+      // guardado — se revierte solo la próxima vez que `user.menuOrder` mande el render (por
+      // ejemplo al reabrir la app), no hace falta un aviso para un reordenado puramente estético.
+    } finally {
+      setLiveOrder(null);
+    }
+  };
 
   // 0 = escondido del todo, 1 = desplegado — se anima con `Animated.timing` (ver el efecto de
   // abajo) en vez de saltar directamente, para el efecto de cajón deslizante que se pidió en vez
@@ -285,7 +498,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         {/* Clon invisible del menú, fuera de pantalla, solo para medir el ancho natural del
             apartado más largo sin cortarse — mismo truco que measureRef en AppShell.tsx. */}
         <View style={styles.measureContainer} pointerEvents="none">
-          {NAV.map((item) => (
+          {visibleNav.map((item) => (
             <View key={item.route}>
               <Text style={styles.measureLabel} onLayout={(e) => onMeasureLabel(item.route, e.nativeEvent.layout.width)}>
                 {item.label}
@@ -310,71 +523,45 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           <Text style={styles.brand}>Tidely</Text>
 
           <View style={styles.nav}>
-            {NAV.map((item) => {
-              const sectionCollapsed = collapsedSections.has(item.route);
-              const isActive = activeRoute === item.route;
-              return (
-                <View key={item.route}>
-                  <View style={styles.navRow}>
-                    <Pressable onPress={() => goTo(item.route)} style={[styles.navButton, isActive && styles.navButtonActive]}>
-                      <Text numberOfLines={1} style={[styles.navLabel, isActive && styles.navLabelActive]}>
-                        {item.label}
-                      </Text>
-                    </Pressable>
-                    {/* Aparte a propósito del botón de arriba, igual que en AppShell.tsx: uno
-                        navega a la página del apartado, el otro solo pliega/despliega sus hijos. */}
-                    {item.children && (
-                      <Pressable
-                        onPress={() => toggleSection(item.route)}
-                        hitSlop={8}
-                        accessibilityLabel={sectionCollapsed ? `Mostrar subapartados de ${item.label}` : `Ocultar subapartados de ${item.label}`}
-                        style={styles.chevronButton}
-                      >
-                        <Text style={[styles.chevron, sectionCollapsed && styles.chevronCollapsed]}>▾</Text>
-                      </Pressable>
-                    )}
-                  </View>
-
-                  {item.children && !sectionCollapsed && (
-                    <View style={styles.childList}>
-                      {item.children.map((child) => {
-                        const childActive = activeRoute === child.route;
-                        return (
-                          <Pressable
-                            key={child.route}
-                            onPress={() => goTo(child.route)}
-                            style={[styles.childButton, childActive && styles.navButtonActive]}
-                          >
-                            <Text numberOfLines={1} style={[styles.childLabel, childActive && styles.navLabelActive]}>
-                              {child.label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
+            {orderedNav.map((item) => (
+              <DraggableNavRow
+                key={item.route}
+                item={item}
+                isActive={activeRoute === item.route}
+                activeRoute={activeRoute}
+                sectionCollapsed={collapsedSections.has(item.route)}
+                onToggleSection={() => toggleSection(item.route)}
+                onPress={() => goTo(item.route)}
+                onChildPress={goTo}
+                isDragging={draggingRoute === item.route}
+                onDragStart={handleDragStart}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
+                styles={styles}
+              />
+            ))}
 
             {/* Apartado del menú principal, no una página personalizada más de "Tus páginas" —
                 mismo criterio que el botón "Galería" de dashboard/src/components/AppShell.tsx:
                 por debajo sigue siendo una página de plantilla "galeria", pero openGallery busca
                 la existente o crea la primera, así que el usuario no ve ese paso intermedio. */}
-            <Pressable onPress={openGallery} style={styles.navButton}>
-              <Text numberOfLines={1} style={styles.navLabel}>
-                Galería
-              </Text>
-            </Pressable>
+            {enabledSections.has("galeria") && (
+              <Pressable onPress={openGallery} style={styles.navButton}>
+                <Text numberOfLines={1} style={styles.navLabel}>
+                  Galería
+                </Text>
+              </Pressable>
+            )}
 
             {/* "Tus páginas" — mismo criterio que dashboard/src/components/AppShell.tsx: cada
                 página creada aparece aquí, tocarla navega directo a su detalle. Sin renombrar/
                 borrar inline (eso ya se puede hacer entrando en el detalle de la página, ver
                 PaginaDetailScreen.tsx) — el pedido era solo que se vieran en el menú. Excluye
-                "galeria": esa ya tiene su propio hueco arriba, listarla aquí también duplicaría. */}
+                "galeria": esa ya tiene su propio hueco arriba, listarla aquí también duplicaría.
+                El título se oculta en modo "compact" (ver menuLayout), igual que en AppShell.tsx. */}
             {otherPages.length > 0 && (
               <>
-                <Text style={styles.navSectionLabel}>Tus páginas</Text>
+                {!compact && <Text style={styles.navSectionLabel}>Tus páginas</Text>}
                 {otherPages.map((page) => (
                   <Pressable key={page.id} onPress={() => openPage(page)} style={styles.navButton}>
                     <Text numberOfLines={1} style={styles.navLabel}>
@@ -441,14 +628,19 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
 
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)}>
-          <Pressable style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.settingsHeader}>
               <Text style={styles.settingsTitle}>Ajustes</Text>
               <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>
                 <Text style={styles.settingsClose}>Cerrar</Text>
               </Pressable>
             </View>
-            <AppearanceSettings />
+            {/* AppearanceSettings ya no es solo el selector de tema (ver Apariencia > tamaño de
+                letra/diseño del menú, añadidos después) — sin scroll propio, "Diseño del menú"
+                quedaría cortado por el `maxHeight: "88%"` de modalSheet en pantallas pequeñas. */}
+            <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} keyboardShouldPersistTaps="handled">
+              <AppearanceSettings />
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -554,6 +746,17 @@ function createStyles(colors: ColorPalette) {
   },
   chevronCollapsed: {
     transform: [{ rotate: "-90deg" }],
+  },
+  // Mango de arrastre (≡) para reordenar apartados — ver DraggableNavRow. Área táctil generosa
+  // (hitSlop suma encima) para no depender de acertar sobre 3 líneas finas con el dedo.
+  dragHandle: {
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+  },
+  dragHandleIcon: {
+    fontSize: 16,
+    color: colors.mutedForeground,
+    opacity: 0.6,
   },
   childList: {
     marginLeft: 12,

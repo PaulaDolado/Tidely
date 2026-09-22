@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndicator, Modal, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, ActivityIndicator, Modal, Platform, KeyboardAvoidingView } from "react-native";
+import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";

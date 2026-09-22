@@ -1,4 +1,5 @@
-import { Pressable, Text, StyleSheet } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
+import { Text } from "./AppText";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { colors, fonts } from "../theme";
 

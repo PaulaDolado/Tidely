@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, ActivityIndicator, Linking } from "react-native";
+import { View, Pressable, FlatList, StyleSheet, ActivityIndicator, Linking } from "react-native";
+import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { useAuth } from "../auth/AuthContext";

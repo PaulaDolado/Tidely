@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Text } from "./AppText";
 import Svg, { G, Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { listGoals, Goal } from "../api/goals";

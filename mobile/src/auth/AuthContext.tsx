@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
 import { api, setTokens, setAuthCallbacks } from "../api/client";
-import { loadStoredAuth, persistAuth, persistTokens, clearAuth } from "./storage";
+import { loadStoredAuth, persistAuth, persistTokens, persistUser, clearAuth } from "./storage";
 import { AuthResponse, User } from "../types";
 
 interface AuthContextValue {
@@ -11,6 +11,10 @@ interface AuthContextValue {
   login: (identifier: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string, name: string, timezone?: string) => Promise<void>;
   logout: () => Promise<void>;
+  // Parchea el usuario en memoria tras un PUT que ya confirmó el cambio en el backend (onboarding,
+  // diseño/orden del menú...) — mismo criterio que dashboard/src/context/AuthContext.tsx: no relee
+  // /auth/me entero, solo mezcla lo que ya se sabe que cambió.
+  updateUser: (patch: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -93,7 +97,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  return <AuthContext.Provider value={{ user, ready, loading, error, login, register, logout }}>{children}</AuthContext.Provider>;
+  const updateUser = useCallback((patch: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      void persistUser(next);
+      return next;
+    });
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, ready, loading, error, login, register, logout, updateUser }}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {

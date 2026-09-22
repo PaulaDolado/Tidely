@@ -47,6 +47,13 @@ export async function persistTokens(token: string, refreshToken: string): Promis
   await Promise.all([SecureStore.setItemAsync(TOKEN_KEY, token), SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken)]);
 }
 
+/** Solo actualiza el usuario guardado (tras updateUser) — los tokens no cambian. Sin esto, un
+ * parche aplicado en memoria (onboarding, diseño del menú...) se perdería al reabrir la app: el
+ * siguiente `loadStoredAuth()` devolvería la versión vieja guardada en el login/registro. */
+export async function persistUser(user: User): Promise<void> {
+  await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+}
+
 export async function clearAuth(): Promise<void> {
   await Promise.all([
     SecureStore.deleteItemAsync(TOKEN_KEY),

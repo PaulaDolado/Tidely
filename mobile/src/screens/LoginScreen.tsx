@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { View, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { Text, TextInput } from "../components/AppText";
 import Svg, { Path } from "react-native-svg";
 import { useAuth } from "../auth/AuthContext";
 import { colors, fonts, radius, shadow } from "../theme";

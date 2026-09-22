@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { Text, TextInput } from "./AppText";
 import { runSync } from "../sync";
 import {
   listCategories,

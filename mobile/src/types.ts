@@ -3,11 +3,54 @@
 // en un teléfono (ver mobile/README.md para el alcance exacto de cada fase), no todos los campos
 // que expone la API (p.ej. no hay `image`/`notes`/`customFields` en Task, ni multi-tablero).
 
+// Mismos 7 valores que ENABLED_SECTIONS en dashboard/src/types.ts (backend: src/validators/
+// authValidators.ts) — "Hoy" y "Agenda" no son opcionales, así que no están aquí.
+export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"] as const;
+export type EnabledSection = (typeof ENABLED_SECTIONS)[number];
+
+// Mismos textos que SECTION_LABELS/SECTION_DESCRIPTIONS en dashboard/src/types.ts — compartidos
+// entre el asistente de bienvenida (OnboardingScreen) y Ajustes más adelante.
+export const SECTION_LABELS: Record<EnabledSection, string> = {
+  planificador: "Planificador",
+  horario: "Horario",
+  objetivos: "Objetivos",
+  galeria: "Galería",
+  finanzas: "Finanzas",
+  metasAhorro: "Metas de ahorro",
+  proyectos: "Libreta",
+};
+export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
+  planificador: "Tableros de tareas kanban, con propiedades personalizadas.",
+  horario: "Horario semanal por franjas y calendario anual.",
+  objetivos: "Metas semanales, mensuales o anuales con progreso.",
+  galeria: "Fotos y notas en collage, como una pared de marcos.",
+  finanzas: "Ingresos, gastos y balance del mes.",
+  metasAhorro: "Ahorro e inversión como casillas de progreso.",
+  proyectos: "Cuaderno con notas enriquecidas por proyecto.",
+};
+
+export type MenuLayout = "default" | "compact";
+
 export interface User {
   id: number;
   email: string;
   name: string;
   timezone?: string;
+  // Elegidos en el asistente de bienvenida tras registrarse (ver OnboardingScreen.tsx) — controla
+  // qué apartados opcionales aparecen en el menú (ver AppSidebar.tsx). Opcional en el tipo porque
+  // `updateUser()` en AuthContext hace parches parciales; en la práctica /auth/me siempre lo manda.
+  enabledSections?: EnabledSection[];
+  // Si ya completó el asistente de bienvenida — false solo justo tras registrarse una cuenta
+  // nueva (ver App.tsx: mientras sea false, se muestra OnboardingScreen en vez de la app).
+  onboardingCompleted?: boolean;
+  // Diseño del menú (ver AppSidebar.tsx): "default" separa los apartados fijos de "Tus páginas"
+  // en dos grupos, "compact" los muestra todos juntos sin esa cabecera — mismo criterio que
+  // dashboard/src/types.ts.
+  menuLayout?: MenuLayout;
+  // Orden manual de los apartados del menú (mantener pulsado y arrastrar, ver AppSidebar.tsx) —
+  // array de `route` ("Hoy", "Agenda", "galeria", ids de página propia...). Los que faltan aquí
+  // van al final en su orden habitual.
+  menuOrder?: string[];
 }
 
 export interface AuthResponse {
