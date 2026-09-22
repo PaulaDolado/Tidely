@@ -464,12 +464,16 @@ function createStyles(colors: ColorPalette) {
     top: 0,
     left: 0,
     zIndex: 25,
-    elevation: 25,
+    // Sin `elevation` (la sombra nativa de Android): este panel se anima con `transform:
+    // translateX`, y la sombra de `elevation` no sigue bien una vista animada por transform en
+    // Android — queda descolocada respecto al panel real, viéndose como un margen de color
+    // translúcido "fantasma" cerca de donde debería estar el borde. En Android el borde de abajo
+    // (borderRightColor) ya marca la separación por sí solo, sin sombra.
     backgroundColor: colors.background,
     borderRightWidth: 1,
     borderRightColor: colors.border,
-    // Sombra hacia el contenido que tapa, como una hoja real levantada del resto — visible sobre
-    // todo en iOS (shadow*); Android ya tiene su propia sombra de `elevation`.
+    // Sombra hacia el contenido que tapa, como una hoja real levantada del resto — solo aplica en
+    // iOS (shadow* no hace nada en Android sin `elevation`), donde sí sigue bien el transform.
     shadowColor: "#000",
     shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.15,

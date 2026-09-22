@@ -1,7 +1,72 @@
 import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import Svg, { Path } from "react-native-svg";
 import { useAuth } from "../auth/AuthContext";
 import { colors, fonts, radius, shadow } from "../theme";
+
+// Ojo abierto/tachado — mismo trazo outline que su equivalente web (LoginPage.tsx), en SVG (ya es
+// dependencia del proyecto, sin librería de iconos aparte).
+function EyeIcon({ open, color }: { open: boolean; color: string }) {
+  return open ? (
+    <Svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke={color} strokeWidth={1.75}>
+      <Path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"
+      />
+      <Path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+    </Svg>
+  ) : (
+    <Svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke={color} strokeWidth={1.75}>
+      <Path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"
+      />
+    </Svg>
+  );
+}
+
+// Campo de contraseña con botón para alternar texto plano/oculto — usado tanto en login como en
+// registro (contraseña y repetir contraseña), cada uno con su propio estado de visibilidad. Mismo
+// criterio que PasswordField en dashboard/src/pages/LoginPage.tsx.
+function PasswordField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  editable,
+  onSubmitEditing,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  editable: boolean;
+  onSubmitEditing?: () => void;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.passwordRow}>
+        <TextInput
+          style={[styles.input, styles.passwordInput]}
+          placeholder={placeholder}
+          secureTextEntry={!visible}
+          value={value}
+          onChangeText={onChangeText}
+          editable={editable}
+          onSubmitEditing={onSubmitEditing}
+        />
+        <Pressable onPress={() => setVisible((v) => !v)} hitSlop={8} style={styles.eyeButton}>
+          <EyeIcon open={visible} color={colors.mutedForeground} />
+        </Pressable>
+      </View>
+    </>
+  );
+}
 
 // Misma lógica que dashboard/src/pages/LoginPage.tsx (mismo toggle login/registro, mismos
 // campos) — antes esta pantalla solo tenía login y la cuenta se creaba desde el dashboard web
@@ -109,11 +174,9 @@ export function LoginScreen() {
             />
           )}
 
-          <Text style={styles.label}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
+          <PasswordField
+            label="Contraseña"
             placeholder={mode === "register" ? "Contraseña nueva" : "Introduce la contraseña"}
-            secureTextEntry
             value={password}
             onChangeText={setPassword}
             editable={!loading}
@@ -121,18 +184,14 @@ export function LoginScreen() {
           />
 
           {mode === "register" && (
-            <>
-              <Text style={styles.label}>Repite la contraseña</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Repite la contraseña nueva"
-                secureTextEntry
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                editable={!loading}
-                onSubmitEditing={handleSubmit}
-              />
-            </>
+            <PasswordField
+              label="Repite la contraseña"
+              placeholder="Repite la contraseña nueva"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              editable={!loading}
+              onSubmitEditing={handleSubmit}
+            />
           )}
 
           {mode === "register" && (
@@ -193,6 +252,11 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     backgroundColor: colors.background,
   },
+  // `justifyContent: "center"` en vez de alinear el botón a mano por altura fija: así el ojo se
+  // sigue centrando aunque cambie el alto del input.
+  passwordRow: { position: "relative", justifyContent: "center" },
+  passwordInput: { paddingRight: 44 },
+  eyeButton: { position: "absolute", right: 14 },
   hint: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: -4 },
   error: {
     fontFamily: fonts.sans,
