@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, Text, Pressable, TextInput, Modal, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, Pressable, TextInput, Modal, ScrollView, StyleSheet, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import {
   QUICK_ACCESS_APPS,
@@ -125,57 +126,60 @@ function QuickAccessEditModal({
   onRemoveCustomLink: (id: string) => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Pressable style={styles.modalBackdrop} onPress={onClose}>
-      <Pressable style={styles.modalPanel} onPress={(e) => e.stopPropagation()}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Acceso rápido</Text>
-          <Pressable onPress={onClose} hitSlop={8}>
-            <Text style={styles.modalClose}>✕ Cerrar</Text>
-          </Pressable>
-        </View>
-        <Text style={styles.modalSubtitle}>Elige qué apps quieres ver como accesos directos en "Hoy".</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <Pressable style={[styles.modalPanel, { paddingBottom: insets.bottom + 24 }]} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Acceso rápido</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Text style={styles.modalClose}>✕ Cerrar</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.modalSubtitle}>Elige qué apps quieres ver como accesos directos en "Hoy".</Text>
 
-        <ScrollView style={styles.modalScroll}>
-          {QUICK_ACCESS_APPS.map((app) => {
-            const checked = selectedIds.includes(app.id);
-            return (
-              <Pressable key={app.id} style={styles.checkRow} onPress={() => onToggle(app.id)}>
-                <View style={[styles.checkbox, checked && styles.checkboxChecked]}>{checked && <Text style={styles.checkboxMark}>✓</Text>}</View>
-                <AppLogo app={app} size={32} />
+          <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+            {QUICK_ACCESS_APPS.map((app) => {
+              const checked = selectedIds.includes(app.id);
+              return (
+                <Pressable key={app.id} style={styles.checkRow} onPress={() => onToggle(app.id)}>
+                  <View style={[styles.checkbox, checked && styles.checkboxChecked]}>{checked && <Text style={styles.checkboxMark}>✓</Text>}</View>
+                  <AppLogo app={app} size={32} />
+                  <Text numberOfLines={1} style={styles.checkRowLabel}>
+                    {app.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+
+            <View style={styles.divider} />
+            <Text style={styles.sectionLabel}>Tus enlaces</Text>
+
+            {customLinks.map((link) => (
+              <View key={link.id} style={styles.checkRow}>
+                <AppLogo app={customLinkToApp(link)} size={32} />
                 <Text numberOfLines={1} style={styles.checkRowLabel}>
-                  {app.label}
+                  {link.label}
                 </Text>
-              </Pressable>
-            );
-          })}
+                <Pressable
+                  onPress={() =>
+                    Alert.alert("Eliminar enlace", `¿Quitar "${link.label}" de tus accesos rápidos?`, [
+                      { text: "Cancelar", style: "cancel" },
+                      { text: "Eliminar", style: "destructive", onPress: () => onRemoveCustomLink(link.id) },
+                    ])
+                  }
+                  hitSlop={8}
+                >
+                  <Text style={styles.removeLink}>✕</Text>
+                </Pressable>
+              </View>
+            ))}
 
-          <View style={styles.divider} />
-          <Text style={styles.sectionLabel}>Tus enlaces</Text>
-
-          {customLinks.map((link) => (
-            <View key={link.id} style={styles.checkRow}>
-              <AppLogo app={customLinkToApp(link)} size={32} />
-              <Text numberOfLines={1} style={styles.checkRowLabel}>
-                {link.label}
-              </Text>
-              <Pressable
-                onPress={() =>
-                  Alert.alert("Eliminar enlace", `¿Quitar "${link.label}" de tus accesos rápidos?`, [
-                    { text: "Cancelar", style: "cancel" },
-                    { text: "Eliminar", style: "destructive", onPress: () => onRemoveCustomLink(link.id) },
-                  ])
-                }
-                hitSlop={8}
-              >
-                <Text style={styles.removeLink}>✕</Text>
-              </Pressable>
-            </View>
-          ))}
-
-          <AddCustomLinkForm onAdd={onAddCustomLink} />
-        </ScrollView>
-      </Pressable>
+            <AddCustomLinkForm onAdd={onAddCustomLink} />
+          </ScrollView>
+        </Pressable>
+      </KeyboardAvoidingView>
     </Pressable>
   );
 }

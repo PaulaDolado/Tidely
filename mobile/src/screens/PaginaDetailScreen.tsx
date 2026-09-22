@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Image, Alert, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Image, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
@@ -59,6 +59,7 @@ type Props = NativeStackScreenProps<PaginasStackParamList, "Detalle">;
 
 export function PaginaDetailScreen({ route, navigation }: Props) {
   const { id } = route.params;
+  const insets = useSafeAreaInsets();
   const [page, setPage] = useState<LocalCustomPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -312,8 +313,8 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       <Modal visible={editingEntry !== null} animationType="slide" transparent onRequestClose={() => setEditingEntry(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {editingEntry && (
               <GalleryItemForm
                 entry={editingEntry}
@@ -323,7 +324,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
               />
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -531,6 +532,7 @@ const FIELD_TYPES: CustomFieldType[] = ["text", "number", "date", "select"];
 // (ver api/customPages.ts): `onChange` sustituye el `content` entero en cada cambio (columnas,
 // fieldDefs o los `fields` de una tarjeta), igual que ya hacía antes de esta sección.
 function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: (next: KanbanContent) => Promise<void> }) {
+  const insets = useSafeAreaInsets();
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState("");
   const [editingCard, setEditingCard] = useState<{ columnId: string; card: KanbanCard } | null>(null);
@@ -686,8 +688,8 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
       )}
 
       <Modal visible={editingCard !== null} animationType="slide" transparent onRequestClose={() => setEditingCard(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {editingCard && (
               <KanbanCardForm
                 card={editingCard.card}
@@ -712,12 +714,12 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
               />
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={managingFields} animationType="slide" transparent onRequestClose={() => setManagingFields(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <KanbanFieldsManager
               fieldDefs={fieldDefs}
               onAdd={addFieldDef}
@@ -727,7 +729,7 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
               onClose={() => setManagingFields(false)}
             />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { runSync } from "../sync";
@@ -25,6 +25,7 @@ type Props = NativeStackScreenProps<PaginasStackParamList, "Lista">;
 
 export function PaginasListScreen({ navigation }: Props) {
   const { collapsed } = useSidebar();
+  const insets = useSafeAreaInsets();
   const [pages, setPages] = useState<LocalCustomPage[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -136,11 +137,11 @@ export function PaginasListScreen({ navigation }: Props) {
       </ScrollView>
 
       <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <NewPageForm onCancel={() => setShowCreate(false)} onSubmit={handleCreate} />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Alert, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
@@ -111,6 +111,7 @@ function toForm(task: LocalTask): TaskForm {
 
 export function PlanificadorScreen() {
   const { collapsed } = useSidebar();
+  const insets = useSafeAreaInsets();
 
   // TABLEROS
   const [planners, setPlanners] = useState<Planner[]>([]);
@@ -887,8 +888,8 @@ export function PlanificadorScreen() {
 
       {/* MODAL DE EDICIÓN */}
       <Modal visible={form !== null} animationType="slide" onRequestClose={closeTask} transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.modalTitle}>Tarea</Text>
 
@@ -1170,13 +1171,13 @@ export function PlanificadorScreen() {
               </Pressable>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL NUEVO TABLERO */}
       <Modal visible={showCreatePlanner} animationType="slide" transparent onRequestClose={() => setShowCreatePlanner(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <Text style={styles.modalTitle}>Nuevo tablero</Text>
             <TextInput
               style={styles.input}
@@ -1192,7 +1193,7 @@ export function PlanificadorScreen() {
               <Text style={styles.cancelButtonText}>Cancelar</Text>
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {showDuePicker && (

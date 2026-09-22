@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { runSync } from "../sync";
@@ -44,6 +44,7 @@ const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "S
 
 export function FinanzasScreen() {
   const { collapsed } = useSidebar();
+  const insets = useSafeAreaInsets();
   const [balance, setBalance] = useState<MonthlyBalance | null>(null);
   const [transactions, setTransactions] = useState<LocalTransaction[]>([]);
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
@@ -273,8 +274,8 @@ export function FinanzasScreen() {
       </ScrollView>
 
       <Modal visible={formTx !== null} animationType="slide" transparent onRequestClose={() => setFormTx(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {formTx !== null && (
               <MovementForm
                 initial={formTx === "new" ? undefined : formTx}
@@ -294,7 +295,7 @@ export function FinanzasScreen() {
               />
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView } from "react-native";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
 // está deprecado, este es el reemplazo recomendado.
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { runSync } from "../sync";
@@ -113,6 +113,7 @@ function formToOccurrenceEditor(event: ParsedEvent): EventForm {
 
 export function AgendaScreen() {
   const { collapsed } = useSidebar();
+  const insets = useSafeAreaInsets();
   const [weekStart, setWeekStart] = useState(() => mondayOfWeek(new Date()));
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyOf(new Date()));
   const [occurrences, setOccurrences] = useState<EventOccurrence<ParsedEvent>[]>([]);
@@ -378,13 +379,13 @@ export function AgendaScreen() {
         </View>
       </ScrollView>
 
-      <Pressable style={styles.fab} onPress={openCreate}>
+      <Pressable style={[styles.fab, { bottom: insets.bottom + 24 }]} onPress={openCreate}>
         <Text style={styles.fabText}>+</Text>
       </Pressable>
 
       <Modal visible={form !== null} animationType="slide" onRequestClose={closeForm} transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.modalTitle}>{form?.id ? "Editar evento" : "Nuevo evento"}</Text>
 
@@ -526,7 +527,7 @@ export function AgendaScreen() {
               </Pressable>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Visor de solo lectura para un evento compartido conmigo (role "invitee", ver openEdit) —
@@ -535,7 +536,7 @@ export function AgendaScreen() {
           otra persona y quitármelo del calendario. */}
       <Modal visible={sharedEventView !== null} animationType="slide" onRequestClose={() => setSharedEventView(null)} transparent>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {sharedEventView && sharedEventView.event.sharing?.role === "invitee" && (
               <>
                 <Text style={styles.modalTitle}>{sharedEventView.event.title}</Text>

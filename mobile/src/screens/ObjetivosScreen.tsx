@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Switch, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { runSync } from "../sync";
 import { listGoals, createGoalLocal, deleteGoalLocal } from "../db/goalsRepo";
@@ -80,6 +80,7 @@ function paceStatus(goal: LocalGoal): "green" | "yellow" {
 
 export function ObjetivosScreen() {
   const { collapsed } = useSidebar();
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<GoalStatus>("active");
   const [goals, setGoals] = useState<LocalGoal[]>([]);
   const [activeGoals, setActiveGoals] = useState<LocalGoal[]>([]);
@@ -190,11 +191,11 @@ export function ObjetivosScreen() {
       </ScrollView>
 
       <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <NewGoalForm onCancel={() => setShowCreate(false)} onSubmit={handleCreate} />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

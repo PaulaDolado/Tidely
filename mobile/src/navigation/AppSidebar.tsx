@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, Easing, View, Text, Pressable, Image, ScrollView, Modal, StyleSheet, useWindowDimensions } from "react-native";
+import {
+  Alert,
+  Animated,
+  Easing,
+  View,
+  Text,
+  Pressable,
+  Image,
+  ScrollView,
+  Modal,
+  StyleSheet,
+  useWindowDimensions,
+  Platform,
+  KeyboardAvoidingView,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useAuth } from "../auth/AuthContext";
@@ -418,16 +432,16 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           pulsar "+ Nueva página" — un <Modal> nativo, no otra pantalla del stack, así que no hace
           falta pasar por "Lista" para crear. */}
       <Modal visible={showCreatePage} animationType="slide" transparent onRequestClose={() => setShowCreatePage(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <NewPageForm onCancel={() => setShowCreatePage(false)} onSubmit={handleCreatePage} />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.settingsHeader}>
               <Text style={styles.settingsTitle}>Ajustes</Text>
               <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>

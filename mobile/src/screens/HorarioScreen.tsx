@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { useFocusEffect } from "@react-navigation/native";
 import { runSync } from "../sync";
@@ -48,6 +48,7 @@ type ViewMode = "flechas" | "apilado";
 
 export function HorarioScreen() {
   const { collapsed } = useSidebar();
+  const insets = useSafeAreaInsets();
   const [schedules, setSchedules] = useState<LocalSchedule[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [rows, setRows] = useState<LocalScheduleRow[]>([]);
@@ -335,8 +336,8 @@ export function HorarioScreen() {
       </ScrollView>
 
       <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <Text style={styles.modalTitle}>Nuevo horario</Text>
             <TextInput style={styles.input} placeholder="Ej. 1r trimestre" value={newName} onChangeText={setNewName} autoFocus />
             <Pressable style={styles.saveButton} onPress={handleCreateSchedule}>
@@ -346,7 +347,7 @@ export function HorarioScreen() {
               <Text style={styles.cancelButtonText}>Cancelar</Text>
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
