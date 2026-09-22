@@ -56,6 +56,23 @@ jobs:
         working-directory: mobile
         run: npm ci
 
+      # `expo.version` de app.json (el que embebe expo prebuild en el .apk, y el que compara
+      # appUpdate.ts contra el tag_name del último Release) NO se actualiza solo con el tag — sin
+      # este paso se quedaría siempre en el valor fijo del repo (nunca sube), así que el aviso de
+      # "hay una versión nueva" nunca se dispararía. `github.ref_name` en un push de tag es el tag
+      # tal cual (p.ej. "v1.0.2"); se le quita la "v" antes de escribirlo.
+      - name: Incrustar la versión del tag en app.json
+        working-directory: mobile
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e "
+            const fs = require('fs');
+            const path = 'app.json';
+            const json = JSON.parse(fs.readFileSync(path, 'utf8'));
+            json.expo.version = '$VERSION';
+            fs.writeFileSync(path, JSON.stringify(json, null, 2) + '\n');
+          "
+
       # Genera el proyecto nativo `android/` a partir de app.json (gitignored, se regenera en
       # cada run) — es un comando local del CLI de Expo, no requiere sesión ni token de ninguna
       # cuenta. `EXPO_PUBLIC_API_URL` tiene que estar puesta YA aquí (no solo en el paso de

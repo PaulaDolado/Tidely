@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { useAuth } from "../auth/AuthContext";
@@ -17,6 +17,7 @@ import { colors, fonts, radius, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { QuickAccessCard } from "../components/QuickAccessCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
+import { checkForUpdate, AvailableUpdate } from "../utils/appUpdate";
 
 const SYNC_INTERVAL_MS = 60_000;
 
@@ -89,6 +90,9 @@ export function HoyScreen() {
   // api/today.ts), así que sin red simplemente no se muestra el banner en vez de enseñar un
   // número inventado o desactualizado.
   const [combinedStreak, setCombinedStreak] = useState<number | null>(null);
+  // null = no hay ninguna (o todavía no se ha comprobado) — ver el comentario de cabecera de
+  // appUpdate.ts para por qué esto no puede ser un auto-update de verdad.
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
 
   const reload = useCallback(async () => {
     const [nextEvents, nextTasks, nextHabits, nextNotes] = await Promise.all([
@@ -142,6 +146,9 @@ export function HoyScreen() {
         // el catch de combinedStreak más abajo): sin ellas, cada evento simplemente cae en el
         // estilo neutro por defecto (ver eventCategoryStyle) en vez de romper la pantalla.
       });
+    // Una sola vez al abrir "Hoy" (no en cada sync periódico): comprobar si hay versión nueva no
+    // es algo que cambie cada 60s, y checkForUpdate() ya vuelve `null` sola sin red/en iOS.
+    checkForUpdate().then(setAvailableUpdate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -247,6 +254,15 @@ export function HoyScreen() {
         <Text style={styles.errorBanner}>
           {syncError} — se reintentará solo
         </Text>
+      )}
+
+      {availableUpdate && (
+        <View style={styles.updateBanner}>
+          <Text style={styles.updateBannerText}>Hay una versión nueva disponible (v{availableUpdate.version}).</Text>
+          <Pressable onPress={() => Linking.openURL(availableUpdate.downloadUrl)} hitSlop={6}>
+            <Text style={styles.updateBannerAction}>Actualizar</Text>
+          </Pressable>
+        </View>
       )}
 
       {/* RACHA BANNER */}
@@ -574,6 +590,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.destructive,
   },
+  updateBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: colors.primaryTint,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary,
+  },
+  updateBannerText: { flex: 1, minWidth: 0, fontFamily: fonts.sans, fontSize: 11, color: colors.primary },
+  updateBannerAction: { fontFamily: fonts.sansBold, fontSize: 11, color: colors.primary, textDecorationLine: "underline" },
 
   // ========== RACHA BANNER ==========
   streakBanner: {
