@@ -27,6 +27,8 @@ import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPage
 import { NewPageForm } from "../components/NewPageForm";
 import { AppearanceSettings } from "../components/AppearanceSettings";
 import { AccountSettings } from "../components/AccountSettings";
+import { SectionsPicker } from "../components/GeneralSettings";
+import { PrivacyPolicySection, TermsOfUseSection } from "../components/PolicyText";
 import { GlobalSearch, SearchPick } from "../components/GlobalSearch";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
 import { EnabledSection, ENABLED_SECTIONS } from "../types";
@@ -111,6 +113,17 @@ const NAV: NavItem[] = [
     children: [{ route: "Ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
   },
   { route: "Proyectos", label: "Proyectos", section: "proyectos" },
+];
+
+// Pestañas del diálogo de Ajustes (ver settingsSection más abajo) — etiquetas cortas a propósito
+// ("Uso"/"Privacidad", no "Política de uso"/"Política de privacidad" como en la web) para que
+// quepan más chips a la vez antes de que haga falta desplazar el scroll horizontal.
+const SETTINGS_SECTIONS: { value: "cuenta" | "general" | "apariencia" | "uso" | "privacidad"; label: string }[] = [
+  { value: "cuenta", label: "Cuenta" },
+  { value: "general", label: "General" },
+  { value: "apariencia", label: "Apariencia" },
+  { value: "uso", label: "Uso" },
+  { value: "privacidad", label: "Privacidad" },
 ];
 
 // Poda NAV según los apartados que el usuario activó (asistente de bienvenida o Ajustes) — mismo
@@ -283,10 +296,11 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const [labelWidths, setLabelWidths] = useState<Record<string, number>>({});
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // Igual criterio que el menú "Cuenta"/"General" de la web (SettingsDialog.tsx) — aquí
-  // simplificado a solo estas dos, las únicas con funcionalidad real de momento (el resto son
-  // texto estático/placeholders en la propia web, ver el comentario de cabecera del fichero).
-  const [settingsSection, setSettingsSection] = useState<"cuenta" | "apariencia">("cuenta");
+  // Igual criterio que el menú de la web (SettingsDialog.tsx), aplanado a estas 5 pestañas — deja
+  // fuera "Invitar a un amigo"/"Obtener ayuda", que en la propia web tampoco son más que un aviso
+  // de "esto llega más adelante" (ver el comentario de cabecera del fichero), así que no aportan
+  // nada real que portar todavía.
+  const [settingsSection, setSettingsSection] = useState<"cuenta" | "general" | "apariencia" | "uso" | "privacidad">("cuenta");
   const [customPages, setCustomPages] = useState<CustomPageSummary[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -604,10 +618,10 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-          {/* Mismo gesto que la web (AppShell.tsx): tocar el nombre abre Ajustes — "Cuenta" y
-              "Apariencia" (ver AccountSettings/AppearanceSettings y settingsSection más arriba);
-              el resto de secciones del diálogo web (políticas, invitar, ayuda) son solo texto
-              estático o placeholders incluso ahí, así que no aportan nada real que portar todavía. */}
+          {/* Mismo gesto que la web (AppShell.tsx): tocar el nombre abre Ajustes — 5 pestañas (ver
+              SETTINGS_SECTIONS y settingsSection más arriba). Deja fuera "Invitar a un amigo"/
+              "Obtener ayuda", que en la propia web tampoco son más que un aviso de "esto llega más
+              adelante", así que no aportan nada real que portar todavía. */}
           <Pressable style={styles.footerUser} onPress={() => setShowSettings(true)} hitSlop={8}>
             <Text numberOfLines={1} style={styles.userName}>
               {user?.name}
@@ -657,26 +671,35 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
               </View>
 
               {/* Igual idea que el menú de la izquierda del diálogo de Ajustes en la web, aplanado
-                  a dos pestañas (ver el comentario de settingsSection más arriba). */}
-              <View style={styles.settingsTabs}>
-                {(["cuenta", "apariencia"] as const).map((section) => (
-                  <Pressable
-                    key={section}
-                    onPress={() => setSettingsSection(section)}
-                    style={[styles.settingsTab, settingsSection === section && styles.settingsTabActive]}
-                  >
-                    <Text style={[styles.settingsTabLabel, settingsSection === section && styles.settingsTabLabelActive]}>
-                      {section === "cuenta" ? "Cuenta" : "Apariencia"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                  a estas 5 pestañas (ver el comentario de settingsSection más arriba) — con scroll
+                  horizontal propio (`showsHorizontalScrollIndicator={false}`, como la propia fila
+                  de pestañas de AppShell.tsx en su breakpoint móvil): las 5 etiquetas ya no caben
+                  todas a la vez en una pantalla de móvil estrecha. */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.settingsTabsScroll}>
+                <View style={styles.settingsTabs}>
+                  {SETTINGS_SECTIONS.map(({ value, label }) => (
+                    <Pressable
+                      key={value}
+                      onPress={() => setSettingsSection(value)}
+                      style={[styles.settingsTab, settingsSection === value && styles.settingsTabActive]}
+                    >
+                      <Text style={[styles.settingsTabLabel, settingsSection === value && styles.settingsTabLabelActive]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
 
               {/* AppearanceSettings ya no es solo el selector de tema (ver Apariencia > tamaño de
                   letra/diseño del menú, añadidos después) — sin scroll propio, "Diseño del menú"
                   quedaría cortado por el `maxHeight: "88%"` de modalSheet en pantallas pequeñas. */}
               <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} keyboardShouldPersistTaps="handled">
-                {settingsSection === "cuenta" ? <AccountSettings /> : <AppearanceSettings />}
+                {settingsSection === "cuenta" && <AccountSettings />}
+                {settingsSection === "general" && <SectionsPicker />}
+                {settingsSection === "apariencia" && <AppearanceSettings />}
+                {settingsSection === "uso" && <TermsOfUseSection />}
+                {settingsSection === "privacidad" && <PrivacyPolicySection />}
               </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
@@ -902,10 +925,12 @@ function createStyles(colors: ColorPalette) {
     fontSize: 12,
     color: colors.mutedForeground,
   },
+  settingsTabsScroll: {
+    marginBottom: 16,
+  },
   settingsTabs: {
     flexDirection: "row",
     gap: 6,
-    marginBottom: 16,
   },
   settingsTab: {
     borderRadius: radius.full,
