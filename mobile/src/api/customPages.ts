@@ -44,7 +44,7 @@ export interface GalleryContent {
 }
 
 // Mismo tipo que CustomPageContentMap["nota"] en dashboard/src/types.ts — el móvil edita este
-// `html` como texto plano (ver utils/htmlText.ts), no con un editor enriquecido.
+// `html` con el mismo editor enriquecido que la web (ver components/RichTextEditor.tsx).
 export interface NotaContent {
   html: string;
 }

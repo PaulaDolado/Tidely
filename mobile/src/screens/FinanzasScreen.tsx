@@ -19,14 +19,18 @@ import { listSavingsGoals } from "../db/savingsGoalsRepo";
 import { LocalTransaction } from "../types";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
+import { api } from "../api/client";
+import { transactionsToCsv } from "../utils/financeExport";
+import { saveAndShareText } from "../utils/fileExport";
 
 // Puerto de dashboard/src/pages/FinanzasPage.tsx — mismos datos (balance del mes, movimientos,
 // análisis, resumen de metas de ahorro) y mismos estilos de tarjeta. Offline-first, igual que
 // Agenda/Planificador: lee/escribe en SQLite (transactionsRepo) y sincroniza vía runSync() — el
 // balance/analytics se calculan localmente sobre las transacciones ya sincronizadas (ver
 // transactionsRepo.getMonthlyBalanceLocal/getAnalyticsLocal), mismo cálculo que financeService.ts
-// en el backend. Simplificación deliberada frente a la web: sin exportación CSV (descargar/
-// compartir ficheros añade permisos y UI que no compensan para una función secundaria).
+// en el backend. La exportación a CSV, en cambio, pide los movimientos al mismo endpoint que la
+// web (GET /finance/transactions/export) en vez de leer SQLite: necesita conexión, pero evita que
+// el CSV dependa de qué se haya sincronizado ya a este dispositivo en concreto.
 
 type TransactionType = "income" | "expense";
 interface NewTransactionInput {
@@ -58,6 +62,7 @@ export function FinanzasScreen() {
   // los dos casos, ver más abajo) — así se puede corregir la fecha de un movimiento que se
   // olvidó registrar el mes pasado, en vez de tener que borrarlo y crearlo de nuevo.
   const [formTx, setFormTx] = useState<LocalTransaction | "new" | null>(null);
+  const [showExport, setShowExport] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -119,9 +124,14 @@ export function FinanzasScreen() {
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, collapsed && { paddingLeft: SIDEBAR_CLIP_CLEARANCE }]}>
         <Text style={styles.title}>Finanzas</Text>
-        <Pressable style={styles.newButton} onPress={() => setFormTx("new")}>
-          <Text style={styles.newButtonText}>+ Nuevo</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable style={styles.exportButton} onPress={() => setShowExport(true)}>
+            <Text style={styles.exportButtonText}>Exportar</Text>
+          </Pressable>
+          <Pressable style={styles.newButton} onPress={() => setFormTx("new")}>
+            <Text style={styles.newButtonText}>+ Nuevo</Text>
+          </Pressable>
+        </View>
       </View>
 
       {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
@@ -298,7 +308,82 @@ export function FinanzasScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal visible={showExport} animationType="slide" transparent onRequestClose={() => setShowExport(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <FinanceExportForm onClose={() => setShowExport(false)} />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
+  );
+}
+
+// Puerto simplificado de FinanceExportMenu en dashboard/src/pages/FinanzasPage.tsx: mismo
+// endpoint (GET /finance/transactions/export) y mismo CSV (transactionsToCsv), pero solo para el
+// mes/año EN CURSO en vez de un mes/año cualquiera a elegir — cubre el caso de uso principal
+// (sacar los movimientos recientes) sin tener que montar un selector de mes/año nativo aparte.
+function FinanceExportForm({ onClose }: { onClose: () => void }) {
+  const [busy, setBusy] = useState<"month" | "year" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTransactions = async (from: Date, to: Date) => {
+    const result = await api.get<{ transactions: LocalTransaction[] }>(
+      `/finance/transactions/export?from=${from.toISOString()}&to=${to.toISOString()}`
+    );
+    return result.transactions;
+  };
+
+  const exportMonth = async () => {
+    setBusy("month");
+    setError(null);
+    try {
+      const now = new Date();
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const transactions = await fetchTransactions(from, to);
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      await saveAndShareText(transactionsToCsv(transactions), `finanzas-${monthKey}.csv`, "text/csv");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo exportar.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportYear = async () => {
+    setBusy("year");
+    setError(null);
+    try {
+      const year = new Date().getFullYear();
+      const from = new Date(year, 0, 1);
+      const to = new Date(year, 11, 31, 23, 59, 59, 999);
+      const transactions = await fetchTransactions(from, to);
+      await saveAndShareText(transactionsToCsv(transactions, { includeMonth: true }), `finanzas-${year}.csv`, "text/csv");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo exportar.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <View>
+      <Text style={styles.modalTitle}>Exportar a CSV</Text>
+      {error && <Text style={styles.errorBanner}>{error}</Text>}
+      <Pressable style={styles.saveButton} onPress={exportMonth} disabled={busy !== null}>
+        <Text style={styles.saveButtonText}>{busy === "month" ? "Exportando…" : "Este mes"}</Text>
+      </Pressable>
+      <Pressable style={[styles.saveButton, { marginTop: 10 }]} onPress={exportYear} disabled={busy !== null}>
+        <Text style={styles.saveButtonText}>{busy === "year" ? "Exportando…" : "Este año (con columna Mes)"}</Text>
+      </Pressable>
+      <Pressable style={styles.cancelButton} onPress={onClose}>
+        <Text style={styles.cancelButtonText}>Cancelar</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -429,6 +514,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  exportButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
+  exportButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.mutedForeground },
   newButton: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   newButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.background },
   content: { padding: 20, paddingTop: 8, gap: 16, paddingBottom: 40 },

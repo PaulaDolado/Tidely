@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView, Alert } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
 // está deprecado, este es el reemplazo recomendado.
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
 import { runSync } from "../sync";
 import { listExpandedEvents, createEventLocal, updateEventLocal, deleteEventLocal, deleteEvent as deleteEventCache, ParsedEvent } from "../db/eventsRepo";
 import { EventOccurrence } from "../utils/recurrence";
@@ -25,6 +27,9 @@ import {
 } from "../api/eventInvitations";
 import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
 import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
+import { buildIcsFromOccurrences, buildAgendaPdfHtml } from "../utils/agendaExport";
+import { saveAndShareText, exportHtmlToPdf } from "../utils/fileExport";
+import { api } from "../api/client";
 import {
   CalendarColor,
   EventCategory,
@@ -41,6 +46,8 @@ import { HabitsCard } from "../components/HabitsCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
 import { GoalsProgressCard } from "../components/GoalsProgressCard";
 import { QuickNotesCard } from "../components/QuickNotesCard";
+
+type AgendaViewMode = "week" | "month" | "year";
 
 // Etiquetas de día en el mismo criterio "clave UTC" que `todayKey()` usa en el resto de la app
 // (ver eventsRepo.ts) — una simplificación deliberada frente al manejo de timezone del backend
@@ -60,6 +67,35 @@ function mondayOfWeek(date: Date): Date {
 
 function addDaysUTC(date: Date, n: number): Date {
   return new Date(date.getTime() + n * 86_400_000);
+}
+
+function startOfMonthUTC(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function addMonthsUTC(date: Date, n: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + n, 1));
+}
+
+function startOfYearUTC(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+}
+
+// Rejilla del mes: siempre semanas completas (lunes a domingo) que cubren el mes, incluidos los
+// días de sobra del mes anterior/siguiente para rellenar la primera/última fila — mismo criterio
+// visual que cualquier calendario mensual.
+function monthGridDays(monthStart: Date): Date[] {
+  const gridStart = mondayOfWeek(monthStart);
+  const nextMonthStart = addMonthsUTC(monthStart, 1);
+  const lastDay = addDaysUTC(nextMonthStart, -1);
+  const gridEnd = mondayOfWeek(lastDay);
+  const days: Date[] = [];
+  let cursor = gridStart;
+  while (cursor.getTime() <= gridEnd.getTime() + 6 * 86_400_000) {
+    days.push(cursor);
+    cursor = addDaysUTC(cursor, 1);
+  }
+  return days;
 }
 
 interface EventForm {
@@ -120,6 +156,10 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
   const insets = useSafeAreaInsets();
   const [weekStart, setWeekStart] = useState(() => mondayOfWeek(new Date()));
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyOf(new Date()));
+  const [viewMode, setViewMode] = useState<AgendaViewMode>("week");
+  const [monthAnchor, setMonthAnchor] = useState(() => startOfMonthUTC(new Date()));
+  const [yearAnchor, setYearAnchor] = useState(() => new Date().getUTCFullYear());
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Búsqueda global (ver GlobalSearch.tsx/AppSidebar.tsx): al llegar con un `focusDate` en los
   // parámetros de navegación, salta a la semana y al día de ese evento en vez de dejar la vista
@@ -191,12 +231,24 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
     }
   }, [form, categories]);
 
+  const monthDays = monthGridDays(monthAnchor);
+
+  // El rango a cargar depende de qué vista está activa: semana (igual que siempre), la rejilla
+  // completa del mes (incluye días de sobra de los meses vecinos, ver monthGridDays) o el año
+  // entero — así una sola `occurrences` sirve a la vista activa Y a la lista del día seleccionado
+  // debajo, sin mantener dos estados de eventos por separado.
+  const activeRange = (): [Date, Date] => {
+    if (viewMode === "month") return [monthDays[0], addDaysUTC(monthDays[monthDays.length - 1], 1)];
+    if (viewMode === "year") return [startOfYearUTC(new Date(Date.UTC(yearAnchor, 0, 1))), new Date(Date.UTC(yearAnchor + 1, 0, 1))];
+    return [weekStart, addDaysUTC(weekStart, 7)];
+  };
+
   const reload = useCallback(async () => {
-    const rangeStart = weekStart;
-    const rangeEnd = addDaysUTC(weekStart, 7);
+    const [rangeStart, rangeEnd] = activeRange();
     const rows = await listExpandedEvents(rangeStart, rangeEnd);
     setOccurrences(rows);
-  }, [weekStart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, viewMode, monthAnchor, yearAnchor]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -216,19 +268,33 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
       sync();
       reloadPendingInvitations();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [weekStart])
+    }, [weekStart, viewMode, monthAnchor, yearAnchor])
   );
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDaysUTC(weekStart, i));
   const dayEvents = occurrences
     .filter((occ) => dateKeyOf(occ.startTime) === selectedDateKey)
     .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  // Días (dentro del rango ya cargado) que tienen al menos un evento — usado por MonthGrid/YearGrid
+  // para pintar el puntito sin tener que volver a consultar SQLite por celda.
+  const daysWithEvents = new Set(occurrences.map((occ) => dateKeyOf(occ.startTime)));
 
   const goToWeek = (deltaWeeks: number) => setWeekStart((w) => addDaysUTC(w, deltaWeeks * 7));
+  const goToMonth = (delta: number) => setMonthAnchor((m) => addMonthsUTC(m, delta));
+  const goToYear = (delta: number) => setYearAnchor((y) => y + delta);
   const goToToday = () => {
     const today = new Date();
     setWeekStart(mondayOfWeek(today));
+    setMonthAnchor(startOfMonthUTC(today));
+    setYearAnchor(today.getUTCFullYear());
     setSelectedDateKey(dateKeyOf(today));
+  };
+  // Al tocar un día en la rejilla de mes/año, se selecciona ese día Y se sincroniza `weekStart`
+  // para que, si el usuario vuelve a la vista semana, aparezca la semana de ese día (no la que
+  // estaba antes de entrar a mes/año).
+  const selectDay = (day: Date) => {
+    setSelectedDateKey(dateKeyOf(day));
+    setWeekStart(mondayOfWeek(day));
   };
 
   const openCreate = () => setForm(defaultForm(selectedDateKey));
@@ -326,6 +392,9 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
         <Text style={styles.title}>Agenda</Text>
         <View style={styles.headerRight}>
           <Text style={styles.syncText}>{syncing ? "Sincronizando…" : ""}</Text>
+          <Pressable style={styles.exportButton} onPress={() => setShowExportMenu(true)}>
+            <Text style={styles.exportButtonText}>⇅</Text>
+          </Pressable>
         </View>
       </View>
       {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
@@ -341,30 +410,71 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
         />
       )}
 
+      <View style={styles.viewModeRow}>
+        {(["week", "month", "year"] as AgendaViewMode[]).map((mode) => (
+          <Pressable
+            key={mode}
+            style={[styles.viewModeChip, viewMode === mode && styles.viewModeChipSelected]}
+            onPress={() => setViewMode(mode)}
+          >
+            <Text style={[styles.viewModeChipText, viewMode === mode && styles.viewModeChipTextSelected]}>
+              {mode === "week" ? "Semana" : mode === "month" ? "Mes" : "Año"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <View style={styles.weekNav}>
-        <Pressable onPress={() => goToWeek(-1)}>
-          <Text style={styles.navButton}>‹ Semana</Text>
+        <Pressable onPress={() => (viewMode === "week" ? goToWeek(-1) : viewMode === "month" ? goToMonth(-1) : goToYear(-1))}>
+          <Text style={styles.navButton}>‹</Text>
         </Pressable>
         <Pressable onPress={goToToday}>
-          <Text style={styles.navButtonToday}>Hoy</Text>
+          <Text style={styles.navButtonToday}>
+            {viewMode === "week"
+              ? "Hoy"
+              : viewMode === "month"
+                ? monthAnchor.toLocaleDateString("es-ES", { month: "long", year: "numeric", timeZone: "UTC" })
+                : String(yearAnchor)}
+          </Text>
         </Pressable>
-        <Pressable onPress={() => goToWeek(1)}>
-          <Text style={styles.navButton}>Semana ›</Text>
+        <Pressable onPress={() => (viewMode === "week" ? goToWeek(1) : viewMode === "month" ? goToMonth(1) : goToYear(1))}>
+          <Text style={styles.navButton}>›</Text>
         </Pressable>
       </View>
 
-      <View style={styles.weekStrip}>
-        {weekDays.map((day) => {
-          const key = dateKeyOf(day);
-          const selected = key === selectedDateKey;
-          return (
-            <Pressable key={key} style={[styles.dayChip, selected && styles.dayChipSelected]} onPress={() => setSelectedDateKey(key)}>
-              <Text style={[styles.dayChipWeekday, selected && styles.dayChipTextSelected]}>{WEEKDAY_LABELS[day.getUTCDay()]}</Text>
-              <Text style={[styles.dayChipNumber, selected && styles.dayChipTextSelected]}>{day.getUTCDate()}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {viewMode === "week" && (
+        <View style={styles.weekStrip}>
+          {weekDays.map((day) => {
+            const key = dateKeyOf(day);
+            const selected = key === selectedDateKey;
+            return (
+              <Pressable key={key} style={[styles.dayChip, selected && styles.dayChipSelected]} onPress={() => setSelectedDateKey(key)}>
+                <Text style={[styles.dayChipWeekday, selected && styles.dayChipTextSelected]}>{WEEKDAY_LABELS[day.getUTCDay()]}</Text>
+                <Text style={[styles.dayChipNumber, selected && styles.dayChipTextSelected]}>{day.getUTCDate()}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      {viewMode === "month" && (
+        <MonthGrid days={monthDays} monthAnchor={monthAnchor} selectedDateKey={selectedDateKey} daysWithEvents={daysWithEvents} onSelectDay={selectDay} />
+      )}
+
+      {viewMode === "year" && (
+        <YearGrid year={yearAnchor} selectedDateKey={selectedDateKey} daysWithEvents={daysWithEvents} onSelectDay={selectDay} />
+      )}
+
+      {viewMode !== "week" && (
+        <Text style={styles.selectedDayLabel}>
+          {new Date(`${selectedDateKey}T00:00:00.000Z`).toLocaleDateString("es-ES", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            timeZone: "UTC",
+          })}
+        </Text>
+      )}
 
       <ScrollView contentContainerStyle={styles.list}>
         {dayEvents.length === 0 && <Text style={styles.emptyText}>Sin eventos este día</Text>}
@@ -583,6 +693,25 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
         </View>
       </Modal>
 
+      <Modal visible={showExportMenu} animationType="slide" transparent onRequestClose={() => setShowExportMenu(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <AgendaExportImportForm
+              viewMode={viewMode}
+              weekStart={weekStart}
+              monthAnchor={monthAnchor}
+              yearAnchor={yearAnchor}
+              categories={categories}
+              onClose={() => setShowExportMenu(false)}
+              onImported={async () => {
+                setShowExportMenu(false);
+                await sync();
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
       {form && picker === "start-date" && (
         <DateTimePicker
           value={form.startTime}
@@ -620,6 +749,232 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
         />
       )}
     </SafeAreaView>
+  );
+}
+
+const MONTH_SHORT_LABELS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** Rejilla mensual (lunes-domingo, con los días de sobra de los meses vecinos atenuados) — puerto
+ * simplificado de la vista "Mes" en dashboard/src/pages/AgendaPage.tsx: aquí cada celda solo
+ * lleva un punto si ese día tiene algún evento (no una lista de títulos, no cabe en una celda
+ * táctil) — tocar el día lo selecciona y su detalle aparece debajo (ver dayEvents en AgendaScreen). */
+function MonthGrid({
+  days,
+  monthAnchor,
+  selectedDateKey,
+  daysWithEvents,
+  onSelectDay,
+}: {
+  days: Date[];
+  monthAnchor: Date;
+  selectedDateKey: string;
+  daysWithEvents: Set<string>;
+  onSelectDay: (day: Date) => void;
+}) {
+  const todayKey = dateKeyOf(new Date());
+  const weeks: Date[][] = [];
+  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+
+  return (
+    <View style={styles.monthGrid}>
+      <View style={styles.monthGridWeekdayRow}>
+        {WEEKDAY_LABELS.slice(1).concat(WEEKDAY_LABELS[0]).map((label) => (
+          <Text key={label} style={styles.monthGridWeekdayLabel}>
+            {label}
+          </Text>
+        ))}
+      </View>
+      {weeks.map((week, i) => (
+        <View key={i} style={styles.monthGridWeekRow}>
+          {week.map((day) => {
+            const key = dateKeyOf(day);
+            const inMonth = day.getUTCMonth() === monthAnchor.getUTCMonth();
+            const selected = key === selectedDateKey;
+            const isToday = key === todayKey;
+            return (
+              <Pressable key={key} style={styles.monthGridCell} onPress={() => onSelectDay(day)}>
+                <View style={[styles.monthGridDayCircle, selected && styles.monthGridDayCircleSelected, !selected && isToday && styles.monthGridDayCircleToday]}>
+                  <Text
+                    style={[
+                      styles.monthGridDayText,
+                      !inMonth && styles.monthGridDayTextOutside,
+                      selected && styles.monthGridDayTextSelected,
+                    ]}
+                  >
+                    {day.getUTCDate()}
+                  </Text>
+                </View>
+                {daysWithEvents.has(key) && <View style={[styles.monthGridDot, selected && styles.monthGridDotSelected]} />}
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Calendario anual: doce mini-meses de 3 columnas — puerto simplificado de AnnualCalendarLegend
+ * (sin la leyenda de colores por categoría, que en móvil ya vive en el propio formulario de
+ * evento): cada día lleva el mismo puntito que MonthGrid si tiene algo, tocar uno selecciona ese
+ * día (igual que MonthGrid). */
+function YearGrid({
+  year,
+  selectedDateKey,
+  daysWithEvents,
+  onSelectDay,
+}: {
+  year: number;
+  selectedDateKey: string;
+  daysWithEvents: Set<string>;
+  onSelectDay: (day: Date) => void;
+}) {
+  const todayKey = dateKeyOf(new Date());
+  return (
+    <ScrollView style={styles.yearGridScroll} contentContainerStyle={styles.yearGrid}>
+      {MONTH_SHORT_LABELS.map((label, monthIndex) => {
+        const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+        const firstWeekday = (monthStart.getUTCDay() + 6) % 7; // 0 = lunes
+        const daysInThisMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+        const cells: (Date | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInThisMonth }, (_, i) => new Date(Date.UTC(year, monthIndex, i + 1)))];
+        while (cells.length % 7 !== 0) cells.push(null);
+
+        return (
+          <View key={label} style={styles.yearMonthBlock}>
+            <Text style={styles.yearMonthLabel}>{label}</Text>
+            <View style={styles.yearMonthGrid}>
+              {cells.map((day, i) => {
+                if (!day) return <View key={i} style={styles.yearDayCell} />;
+                const key = dateKeyOf(day);
+                const selected = key === selectedDateKey;
+                const isToday = key === todayKey;
+                return (
+                  <Pressable key={i} style={styles.yearDayCell} onPress={() => onSelectDay(day)}>
+                    <View style={[styles.yearDayCircle, selected && styles.yearDayCircleSelected, !selected && isToday && styles.yearDayCircleToday]}>
+                      <Text style={[styles.yearDayText, selected && styles.yearDayTextSelected]}>{day.getUTCDate()}</Text>
+                    </View>
+                    {daysWithEvents.has(key) && <View style={styles.yearDayDot} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+// Exportar (.ics / PDF) el periodo actualmente visible (semana/mes/año, según `viewMode`) e
+// importar eventos desde un .ics ajeno — puerto de IcsMenu/AgendaExportDialog en
+// dashboard/src/pages/AgendaPage.tsx, pero sobre los eventos YA CARGADOS en el dispositivo (ver
+// el comentario de cabecera de agendaExport.ts) en vez de pedirlos de nuevo al backend por scope.
+function AgendaExportImportForm({
+  viewMode,
+  weekStart,
+  monthAnchor,
+  yearAnchor,
+  categories,
+  onClose,
+  onImported,
+}: {
+  viewMode: AgendaViewMode;
+  weekStart: Date;
+  monthAnchor: Date;
+  yearAnchor: number;
+  categories: EventCategory[];
+  onClose: () => void;
+  onImported: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<"ics" | "pdf" | "import" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const scopeLabel = viewMode === "week" ? "esta semana" : viewMode === "month" ? "este mes" : "este año";
+  const scopeRange = (): [Date, Date] => {
+    if (viewMode === "month") return [monthAnchor, addMonthsUTC(monthAnchor, 1)];
+    if (viewMode === "year") return [new Date(Date.UTC(yearAnchor, 0, 1)), new Date(Date.UTC(yearAnchor + 1, 0, 1))];
+    return [weekStart, addDaysUTC(weekStart, 7)];
+  };
+  const scopeFilenamePart = viewMode === "week" ? dateKeyOf(weekStart) : viewMode === "month" ? dateKeyOf(monthAnchor).slice(0, 7) : String(yearAnchor);
+
+  const exportIcs = async () => {
+    setBusy("ics");
+    setError(null);
+    try {
+      const [rangeStart, rangeEnd] = scopeRange();
+      const occurrences = await listExpandedEvents(rangeStart, rangeEnd);
+      await saveAndShareText(buildIcsFromOccurrences(occurrences), `agenda-${scopeFilenamePart}.ics`, "text/calendar");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo exportar.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportPdf = async () => {
+    setBusy("pdf");
+    setError(null);
+    try {
+      const [rangeStart, rangeEnd] = scopeRange();
+      const occurrences = await listExpandedEvents(rangeStart, rangeEnd);
+      const html = buildAgendaPdfHtml("Agenda", `Exportado ${scopeLabel}`, occurrences, categories);
+      await exportHtmlToPdf(html, `agenda-${scopeFilenamePart}.pdf`);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo exportar.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const importIcs = async () => {
+    setError(null);
+    const picked = await DocumentPicker.getDocumentAsync({ type: ["text/calendar", "*/*"], copyToCacheDirectory: true });
+    if (picked.canceled || picked.assets.length === 0) return;
+    setBusy("import");
+    try {
+      const text = await new File(picked.assets[0].uri).text();
+      const result = await api.post<{ created: number; skippedUnparsable: number; importedAsSingleOccurrence: number }>(
+        "/agenda/ics/import",
+        { ics: text }
+      );
+      await onImported();
+      Alert.alert(
+        "Importación completa",
+        `${result.created} evento(s) importado(s)${result.skippedUnparsable ? `, ${result.skippedUnparsable} omitido(s)` : ""}.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo importar ese archivo.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <Text style={styles.modalTitle}>Exportar / Importar</Text>
+      {error && <Text style={styles.errorBanner}>{error}</Text>}
+
+      <Text style={styles.fieldLabel}>Exportar {scopeLabel}</Text>
+      <Pressable style={styles.saveButton} onPress={exportIcs} disabled={busy !== null}>
+        <Text style={styles.saveButtonText}>{busy === "ics" ? "Exportando…" : "Descargar .ics (importar en otro calendario)"}</Text>
+      </Pressable>
+      <Pressable style={[styles.saveButton, { marginTop: 10 }]} onPress={exportPdf} disabled={busy !== null}>
+        <Text style={styles.saveButtonText}>{busy === "pdf" ? "Exportando…" : "Descargar PDF"}</Text>
+      </Pressable>
+
+      <View style={styles.divider} />
+
+      <Text style={styles.fieldLabel}>Importar desde .ics</Text>
+      <Pressable style={styles.importButton} onPress={importIcs} disabled={busy !== null}>
+        <Text style={styles.importButtonText}>{busy === "import" ? "Importando…" : "Elegir archivo .ics"}</Text>
+      </Pressable>
+
+      <Pressable style={styles.cancelButton} onPress={onClose}>
+        <Text style={styles.cancelButtonText}>Cerrar</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 
@@ -1059,18 +1414,64 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   syncText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  exportButton: { width: 32, height: 32, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  exportButtonText: { fontSize: 15, color: colors.mutedForeground },
   errorBanner: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, paddingHorizontal: 20, paddingBottom: 8 },
+  viewModeRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, paddingBottom: 8 },
+  viewModeChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
+  viewModeChipSelected: { backgroundColor: colors.primaryTint, borderColor: colors.primary },
+  viewModeChipText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  viewModeChipTextSelected: { color: colors.primary },
   weekNav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8 },
-  navButton: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
-  navButtonToday: { fontFamily: fonts.sansBold, fontSize: 13, color: colors.primary },
+  navButton: { fontFamily: fonts.sans, fontSize: 18, color: colors.mutedForeground, paddingHorizontal: 10 },
+  navButtonToday: { fontFamily: fonts.sansBold, fontSize: 14, color: colors.primary, textTransform: "capitalize" },
   weekStrip: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 8 },
   dayChip: { alignItems: "center", padding: 8, borderRadius: radius.input, width: 42 },
   dayChipSelected: { backgroundColor: colors.primary },
   dayChipWeekday: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
   dayChipNumber: { fontFamily: fonts.sansBold, fontSize: 15, color: colors.foreground, marginTop: 2 },
   dayChipTextSelected: { color: colors.primaryForeground },
+  selectedDayLabel: {
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 13,
+    color: colors.foreground,
+    textTransform: "capitalize",
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  // --- Vista mensual (MonthGrid) ---
+  monthGrid: { paddingHorizontal: 16, paddingBottom: 8 },
+  monthGridWeekdayRow: { flexDirection: "row", marginBottom: 4 },
+  monthGridWeekdayLabel: { flex: 1, textAlign: "center", fontFamily: fonts.sansBold, fontSize: 10, color: colors.mutedForeground, textTransform: "uppercase" },
+  monthGridWeekRow: { flexDirection: "row" },
+  monthGridCell: { flex: 1, alignItems: "center", paddingVertical: 4, gap: 2 },
+  monthGridDayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  monthGridDayCircleSelected: { backgroundColor: colors.primary },
+  monthGridDayCircleToday: { borderWidth: 1.5, borderColor: colors.primary },
+  monthGridDayText: { fontFamily: fonts.sans, fontSize: 13, color: colors.foreground },
+  monthGridDayTextOutside: { color: colors.mutedForeground, opacity: 0.4 },
+  monthGridDayTextSelected: { fontFamily: fonts.sansBold, color: colors.primaryForeground },
+  monthGridDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primary },
+  monthGridDotSelected: { backgroundColor: colors.primary },
+  // --- Vista anual (YearGrid) ---
+  yearGridScroll: { maxHeight: 420 },
+  yearGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
+  yearMonthBlock: { width: "31%", gap: 4 },
+  yearMonthLabel: { fontFamily: fonts.sansBold, fontSize: 11, color: colors.mutedForeground, textTransform: "capitalize", textAlign: "center" },
+  yearMonthGrid: { flexDirection: "row", flexWrap: "wrap" },
+  yearDayCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
+  yearDayCircle: { width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  yearDayCircleSelected: { backgroundColor: colors.primary },
+  yearDayCircleToday: { borderWidth: 1, borderColor: colors.primary },
+  yearDayText: { fontFamily: fonts.sans, fontSize: 8, color: colors.foreground },
+  yearDayTextSelected: { color: colors.primaryForeground, fontFamily: fonts.sansBold },
+  yearDayDot: { position: "absolute", bottom: -1, width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.primary },
+  // --- Exportar/importar ---
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
+  importButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, padding: 13, alignItems: "center", marginBottom: 8 },
+  importButtonText: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.foreground },
   list: { padding: 20, paddingTop: 8, gap: 10 },
   extraSections: { gap: 20, marginTop: 16, paddingBottom: 12 },
   emptyText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, fontStyle: "italic" },

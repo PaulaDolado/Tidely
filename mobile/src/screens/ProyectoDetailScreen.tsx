@@ -20,23 +20,21 @@ import {
   deleteProjectPageLocal,
 } from "../db/projectPagesRepo";
 import { LocalProject, LocalProjectPage, LocalProjectTask } from "../types";
-import { htmlToPlainText, plainTextToHtml } from "../utils/htmlText";
+import { RichTextEditor } from "../components/RichTextEditor";
+import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
+import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
 import { colors, fonts, radius, shadow } from "../theme";
 import { ProyectosStackParamList } from "./ProyectosScreen";
 
 // Cuaderno de un proyecto — puerto de ProjectNotebook + ProjectPages en
 // dashboard/src/pages/ProyectosPage.tsx. Offline-first, igual que el resto de pantallas: lee/
 // escribe en SQLite (projectsRepo/projectTasksRepo/projectPagesRepo) y sincroniza vía runSync().
-// Dos simplificaciones deliberadas frente a la web:
-//   - El contenido de cada página se edita como texto plano, no con el editor enriquecido de la
-//     web (negrita/listas/imágenes) — no hay ninguna librería de rich text en package.json, y
-//     traer una solo para esto es demasiado para lo que se pidió. Ver utils/htmlText.ts
-//     (htmlToPlainText/plainTextToHtml) para la conversión en los dos sentidos — compartido con la
-//     plantilla "Nota en blanco" de página personalizada (PaginaDetailScreen.tsx).
-//   - Guardado explícito con un botón, no autoguardado a los 600ms de cada tecla — mismo criterio
-//     que el resto de editores del móvil (ver PaginaDetailScreen.tsx).
-// La exportación a PDF/Word de la web tampoco tiene equivalente aquí (usa el diálogo de impresión
-// del navegador y un blob .doc, ninguno de los dos existe en un teléfono).
+// El contenido de cada página se edita con el mismo editor enriquecido que la web (ver
+// components/RichTextEditor.tsx — un WebView con el mismo contentEditable/execCommand, ya que
+// React Native no tiene nada parecido nativo), guardando el mismo HTML que produce/lee
+// dashboard/src/components/RichTextEditor.tsx — sin conversión a texto plano de por medio.
+// Guardado explícito con un botón, no autoguardado a los 600ms de cada tecla — mismo criterio
+// que el resto de editores del móvil (ver PaginaDetailScreen.tsx).
 type ProjectStatus = "idea" | "en_curso" | "pausado" | "completado";
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   idea: "Idea",
@@ -67,6 +65,7 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
   const [content, setContent] = useState("");
   const [savingContent, setSavingContent] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [exportingContent, setExportingContent] = useState<"pdf" | "word" | null>(null);
 
   const [taskDraft, setTaskDraft] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -115,7 +114,7 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
   function selectPage(page: LocalProjectPage) {
     setSelectedPageId(page.id);
     setPageTitle(page.title);
-    setContent(htmlToPlainText(page.content));
+    setContent(page.content);
     setDirty(false);
   }
 
@@ -214,9 +213,8 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     if (selectedPageId === null) return;
     setSavingContent(true);
     try {
-      const html = plainTextToHtml(content);
-      await updateProjectPageLocal(selectedPageId, { content: html });
-      setPages((prev) => prev.map((p) => (p.id === selectedPageId ? { ...p, content: html } : p)));
+      await updateProjectPageLocal(selectedPageId, { content });
+      setPages((prev) => prev.map((p) => (p.id === selectedPageId ? { ...p, content } : p)));
       setDirty(false);
     } finally {
       setSavingContent(false);
@@ -224,10 +222,27 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     await sync();
   };
 
+  const exportContent = async (page: LocalProjectPage, format: "pdf" | "word") => {
+    setExportingContent(format);
+    try {
+      const pages = [{ title: page.title, content: page.id === selectedPageId ? content : page.content }];
+      if (format === "pdf") {
+        await exportHtmlToPdf(buildNotebookPdfHtml(page.title, project?.title ?? "Tidely", pages), `${page.title}.pdf`);
+      } else {
+        await saveAndShareText(buildNotebookWordHtml(page.title, project?.title ?? "Tidely", pages), `${page.title}.doc`, "application/msword");
+      }
+    } catch (err) {
+      Alert.alert("No se pudo exportar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
+    } finally {
+      setExportingContent(null);
+    }
+  };
+
   // Página vacía se borra sin preguntar (nada que perder); con contenido, pide confirmación —
-  // igual que en la web.
+  // igual que en la web. "Vacío" se mide quitando las etiquetas HTML: un contentEditable recién
+  // tocado y sin escribir nada puede guardar "<p><br></p>" en vez de "" a secas.
   const handleDeletePage = (page: LocalProjectPage) => {
-    const isEmpty = !page.content || htmlToPlainText(page.content).trim() === "";
+    const isEmpty = !page.content || page.content.replace(/<[^>]*>/g, "").trim() === "";
     const doDelete = async () => {
       await deleteProjectPageLocal(page.id);
       setPages((prev) => prev.filter((p) => p.id !== page.id));
@@ -364,21 +379,31 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
                 placeholder="Título de la página"
                 placeholderTextColor={colors.mutedForeground}
               />
-              <TextInput
-                style={styles.pageContentInput}
+              <RichTextEditor
                 value={content}
-                onChangeText={(t) => {
-                  setContent(t);
+                onChange={(html) => {
+                  setContent(html);
                   setDirty(true);
                 }}
                 placeholder="Escribe aquí…"
-                placeholderTextColor={colors.mutedForeground}
-                multiline
-                textAlignVertical="top"
               />
               <Pressable style={styles.saveContentButton} onPress={saveContent} disabled={savingContent || !dirty}>
                 <Text style={styles.saveContentButtonText}>{savingContent ? "Guardando…" : dirty ? "Guardar" : "Guardado"}</Text>
               </Pressable>
+              {(() => {
+                const selectedPage = pages.find((p) => p.id === selectedPageId);
+                if (!selectedPage) return null;
+                return (
+                  <View style={styles.exportRow}>
+                    <Pressable style={styles.exportButton} onPress={() => exportContent(selectedPage, "pdf")} disabled={exportingContent !== null}>
+                      <Text style={styles.exportButtonText}>{exportingContent === "pdf" ? "Exportando…" : "Exportar a PDF"}</Text>
+                    </Pressable>
+                    <Pressable style={styles.exportButton} onPress={() => exportContent(selectedPage, "word")} disabled={exportingContent !== null}>
+                      <Text style={styles.exportButtonText}>{exportingContent === "word" ? "Exportando…" : "Exportar a Word"}</Text>
+                    </Pressable>
+                  </View>
+                );
+              })()}
             </>
           )}
         </View>
@@ -504,25 +529,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.foreground,
   },
-  pageContentInput: {
-    minHeight: 180,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.input,
-    backgroundColor: colors.background,
-    padding: 12,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.foreground,
-  },
   saveContentButton: {
     alignSelf: "flex-start",
     backgroundColor: colors.primary,
     borderRadius: radius.full,
     paddingHorizontal: 18,
     paddingVertical: 9,
+    marginTop: 12,
   },
   saveContentButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primaryForeground },
+  exportRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  exportButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
+  exportButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
 
   deleteProjectButton: { alignItems: "center", paddingVertical: 12 },
   deleteProjectText: { fontFamily: fonts.sansSemiBold, fontSize: 13, color: colors.destructive },

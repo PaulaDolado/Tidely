@@ -31,7 +31,9 @@ import {
   SimpleGoal,
   TEMPLATE_LABELS,
 } from "../api/customPages";
-import { htmlToPlainText, plainTextToHtml } from "../utils/htmlText";
+import { RichTextEditor } from "../components/RichTextEditor";
+import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
+import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { PaginasStackParamList } from "./PaginasScreen";
 
@@ -43,10 +45,10 @@ import { PaginasStackParamList } from "./PaginasScreen";
 // autoguardado a los 600ms de cada pulsación, mismo criterio que el resto de editores del móvil
 // (ver ProyectoDetailScreen.tsx) — salvo las acciones discretas (añadir/marcar/mover/borrar de
 // kanban, galería, finanzas, checklist, objetivos), que guardan de inmediato como ya hacía kanban/
-// galería, no al perder el foco de un campo de texto libre. "Nota" se edita como texto plano, no
-// con el editor enriquecido de la web (ver utils/htmlText.ts): no hay ninguna librería de rich
-// text en package.json. "Kanban" no tiene imagen por tarjeta (se preserva tal cual si ya existía,
-// creada desde la web, pero no se puede añadir/cambiar desde aquí); mover una tarjeta es tocarla y
+// galería, no al perder el foco de un campo de texto libre. "Nota" se edita con el mismo editor
+// enriquecido que la web (ver components/RichTextEditor.tsx). "Kanban" no tiene imagen por
+// tarjeta (se preserva tal cual si ya existía, creada desde la web, pero no se puede añadir/
+// cambiar desde aquí); mover una tarjeta es tocarla y
 // elegir columna en el diálogo, no arrastrar (no hay gesture-handler/reanimated instalado). Sí
 // tiene gestión de propiedades personalizadas (`fieldDefs`/`card.fields`, ver KanbanBoard más
 // abajo) — mismo concepto que en Planificador (PlannerField), pero aquí vive como JSON de cliente
@@ -67,9 +69,10 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [editingEntry, setEditingEntry] = useState<GalleryEntry | null>(null);
-  const [notaText, setNotaText] = useState("");
+  const [notaHtml, setNotaHtml] = useState("");
   const [notaDirty, setNotaDirty] = useState(false);
   const [savingNota, setSavingNota] = useState(false);
+  const [exportingNota, setExportingNota] = useState<"pdf" | "word" | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -79,7 +82,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
       setTitle(loaded.title);
       setSubtitle(loaded.subtitle ?? "");
       if (loaded.template === "nota") {
-        setNotaText(htmlToPlainText((loaded.content as NotaContent).html ?? ""));
+        setNotaHtml((loaded.content as NotaContent).html ?? "");
         setNotaDirty(false);
       }
     }
@@ -135,11 +138,27 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     if (!page) return;
     setSavingNota(true);
     try {
-      const html = plainTextToHtml(notaText);
-      await persist({ content: { html } });
+      await persist({ content: { html: notaHtml } });
       setNotaDirty(false);
     } finally {
       setSavingNota(false);
+    }
+  };
+
+  const exportNota = async (format: "pdf" | "word") => {
+    if (!page) return;
+    setExportingNota(format);
+    try {
+      const pages = [{ title: page.title, content: notaHtml }];
+      if (format === "pdf") {
+        await exportHtmlToPdf(buildNotebookPdfHtml(page.title, "Tidely", pages), `${page.title}.pdf`);
+      } else {
+        await saveAndShareText(buildNotebookWordHtml(page.title, "Tidely", pages), `${page.title}.doc`, "application/msword");
+      }
+    } catch (err) {
+      Alert.alert("No se pudo exportar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
+    } finally {
+      setExportingNota(null);
     }
   };
 
@@ -258,21 +277,25 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
           </>
         ) : page?.template === "nota" ? (
           <>
-            <TextInput
-              style={styles.notaInput}
-              value={notaText}
-              onChangeText={(t) => {
-                setNotaText(t);
+            <RichTextEditor
+              value={notaHtml}
+              onChange={(html) => {
+                setNotaHtml(html);
                 setNotaDirty(true);
               }}
               placeholder="Escribe aquí…"
-              placeholderTextColor={colors.mutedForeground}
-              multiline
-              textAlignVertical="top"
             />
             <Pressable style={styles.saveContentButton} onPress={saveNota} disabled={savingNota || !notaDirty}>
               <Text style={styles.saveContentButtonText}>{savingNota ? "Guardando…" : notaDirty ? "Guardar" : "Guardado"}</Text>
             </Pressable>
+            <View style={styles.exportRow}>
+              <Pressable style={styles.exportButton} onPress={() => exportNota("pdf")} disabled={exportingNota !== null}>
+                <Text style={styles.exportButtonText}>{exportingNota === "pdf" ? "Exportando…" : "Exportar a PDF"}</Text>
+              </Pressable>
+              <Pressable style={styles.exportButton} onPress={() => exportNota("word")} disabled={exportingNota !== null}>
+                <Text style={styles.exportButtonText}>{exportingNota === "word" ? "Exportando…" : "Exportar a Word"}</Text>
+              </Pressable>
+            </View>
           </>
         ) : page?.template === "kanban" ? (
           <KanbanBoard content={(page.content as KanbanContent) ?? { columns: [] }} onChange={saveKanbanContent} />
@@ -1630,19 +1653,11 @@ const styles = StyleSheet.create({
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
 
   // ========== NOTA ==========
-  notaInput: {
-    minHeight: 300,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.input,
-    backgroundColor: colors.card,
-    padding: 12,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.foreground,
-  },
-  saveContentButton: { alignSelf: "flex-start", backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 18, paddingVertical: 9 },
+  saveContentButton: { alignSelf: "flex-start", backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 18, paddingVertical: 9, marginTop: 12 },
   saveContentButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primaryForeground },
+  exportRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  exportButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
+  exportButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
 
   // ========== KANBAN ==========
   // Sin sombra a propósito, a diferencia de otras tarjetas del mismo fichero: el color de columna

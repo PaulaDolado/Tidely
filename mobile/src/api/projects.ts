@@ -24,12 +24,9 @@ export interface Project {
   progress?: { total: number; completed: number; percent: number };
 }
 
-// Página de la libreta: `content` es HTML enriquecido en el servidor (así lo escribe el editor de
-// la web, con negrita/listas/imágenes) — el móvil todavía no tiene un editor de texto enriquecido
-// (no hay ninguna librería de rich text en package.json), así que edita/mira el contenido como
-// texto plano. Ver utils/htmlText.ts (htmlToPlainText/plainTextToHtml) para la conversión en los
-// dos sentidos: abrir una página escrita desde la web no debe enseñar las etiquetas HTML tal cual,
-// y guardar desde el móvil no debe destrozar el HTML existente más de lo imprescindible.
+// Página de la libreta: `content` es HTML enriquecido, editado con el mismo editor que la web
+// (ver components/RichTextEditor.tsx — un WebView con contentEditable/execCommand dentro, ya que
+// React Native no tiene nada parecido nativo).
 export interface ProjectPage {
   id: number;
   projectId: number;
