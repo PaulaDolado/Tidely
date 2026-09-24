@@ -1,3 +1,5 @@
+import { api } from "../api/client";
+
 // Catálogo fijo de apps para "Acceso rápido" (ver HoyPage + QuickAccessCard). `icon` es el path
 // (atributo `d`) del logo oficial de cada marca, viewBox 0 0 24 24 — mismos trazados que usa
 // Simple Icons (simpleicons.org, MIT), incrustados aquí en vez de cargarlos de un CDN externo
@@ -16,9 +18,15 @@ export interface QuickAccessApp {
   webUrl: string;
   // Mutuamente excluyentes: las apps del catálogo fijo traen `icon` (path de un logo de marca);
   // los enlaces personalizados del usuario (ver más abajo) traen `emoji` en su lugar, porque no
-  // hay logo de marca conocido para una URL cualquiera.
+  // hay logo de marca conocido para una URL cualquiera — salvo que se haya podido sacar un
+  // favicon de verdad (ver `faviconUrl`), que entonces se pinta encima del emoji.
   icon?: string;
   emoji?: string;
+  // Icono real del sitio, sacado de GET /link-preview al añadir/editar el enlace (ver
+  // fetchFaviconFor más abajo) — solo lo traen los enlaces personalizados. Es una URL externa
+  // (no un path SVG como `icon`), así que AppLogo la pinta como <img>, con `emoji` de reserva si
+  // esa imagen no llega a cargar (dominio caído, sin favicon de verdad pese al 200 de /favicon.ico...).
+  faviconUrl?: string;
 }
 
 export const QUICK_ACCESS_APPS: QuickAccessApp[] = [
@@ -124,10 +132,12 @@ export const QUICK_ACCESS_APPS: QuickAccessApp[] = [
 
 // --- Enlaces personalizados -------------------------------------------------------------------
 // Además del catálogo fijo de arriba, el usuario puede añadir sus propios accesos directos con
-// cualquier URL y un emoji como icono (no hay subida de imágenes ni un CDN de iconos de terceros
-// — mismo criterio de "autocontenida" que el resto de este catálogo). Se guardan en localStorage,
-// igual que `selectedIds` en QuickAccessCard: es una preferencia de este dispositivo, no del
-// backend.
+// cualquier URL, nombre y (si se consigue sacar uno, ver fetchFaviconFor) el icono real del
+// sitio, con un emoji como reserva. Se guardan en localStorage, igual que `selectedIds` en
+// QuickAccessCard: es una preferencia de este dispositivo, no del backend — lo único que SÍ pasa
+// por el backend es la búsqueda puntual del favicon (GET /link-preview, que ya hace de servidor
+// intermedio para esto en el editor de texto enriquecido), el enlace en sí nunca se manda ni se
+// guarda ahí.
 const CUSTOM_LINKS_STORAGE_KEY = "life-organizer:quick-access-custom";
 
 export interface CustomQuickAccessLink {
@@ -135,6 +145,7 @@ export interface CustomQuickAccessLink {
   label: string;
   url: string;
   emoji: string;
+  faviconUrl?: string;
 }
 
 export function loadCustomLinks(): CustomQuickAccessLink[] {
@@ -181,7 +192,7 @@ export function normalizeQuickAccessUrl(raw: string): string | null {
 
 // Devuelve null si el nombre o la URL no son válidos (el formulario lo interpreta como "corrige
 // los datos"), o el enlace ya guardado si todo fue bien.
-export function addCustomLink(input: { label: string; url: string; emoji: string }): CustomQuickAccessLink | null {
+export function addCustomLink(input: { label: string; url: string; emoji: string; faviconUrl?: string }): CustomQuickAccessLink | null {
   const label = input.label.trim();
   const url = normalizeQuickAccessUrl(input.url);
   if (!label || !url) return null;
@@ -193,9 +204,34 @@ export function addCustomLink(input: { label: string; url: string; emoji: string
     label,
     url,
     emoji,
+    ...(input.faviconUrl ? { faviconUrl: input.faviconUrl } : {}),
   };
   saveCustomLinks([...loadCustomLinks(), link]);
   return link;
+}
+
+// Cambia nombre/URL/icono de un enlace YA guardado, conservando su id (y por tanto su color, que
+// sale de un hash del id — ver colorForCustomLink) — a diferencia de addCustomLink, aquí si la URL
+// cambia hay que volver a pedir el favicon (el viejo ya no pinta nada), así que `faviconUrl` no es
+// opcional: quien llama (el formulario) siempre lo recalcula antes de guardar, aunque sea a `""`
+// si no se consiguió sacar ninguno esta vez.
+export function editCustomLink(
+  id: string,
+  input: { label: string; url: string; emoji: string; faviconUrl: string }
+): CustomQuickAccessLink | null {
+  const label = input.label.trim();
+  const url = normalizeQuickAccessUrl(input.url);
+  if (!label || !url) return null;
+  const emoji = input.emoji.trim() || label.charAt(0).toUpperCase();
+  let updated: CustomQuickAccessLink | null = null;
+  const next = loadCustomLinks().map((link) => {
+    if (link.id !== id) return link;
+    updated = { id, label, url, emoji, ...(input.faviconUrl ? { faviconUrl: input.faviconUrl } : {}) };
+    return updated;
+  });
+  if (!updated) return null;
+  saveCustomLinks(next);
+  return updated;
 }
 
 export function removeCustomLink(id: string): void {
@@ -205,7 +241,28 @@ export function removeCustomLink(id: string): void {
 // Adapta un enlace personalizado a la misma forma que las apps del catálogo fijo, para poder
 // reutilizar AppLogo y openQuickAccessApp sin duplicar nada (ver QuickAccessCard).
 export function customLinkToApp(link: CustomQuickAccessLink): QuickAccessApp {
-  return { id: link.id, label: link.label, color: colorForCustomLink(link.id), webUrl: link.url, emoji: link.emoji };
+  return {
+    id: link.id,
+    label: link.label,
+    color: colorForCustomLink(link.id),
+    webUrl: link.url,
+    emoji: link.emoji,
+    ...(link.faviconUrl ? { faviconUrl: link.faviconUrl } : {}),
+  };
+}
+
+// Pide el favicon del sitio al backend (mismo endpoint que la "miniatura web" del editor de texto
+// enriquecido, ver RichTextEditor.tsx) — se llama al añadir o editar un enlace personalizado, NO
+// en cada tecla escrita en el formulario (evita machacar la API mientras el usuario todavía está
+// escribiendo la URL). Devuelve "" (no null) si falla o el sitio no tiene favicon: así el
+// formulario puede guardar igual el enlace, solo que sin icono real — nunca bloquea el guardado.
+export async function fetchFaviconFor(url: string): Promise<string> {
+  try {
+    const preview = await api.get<{ favicon: string | null }>(`/link-preview?url=${encodeURIComponent(url)}`);
+    return preview.favicon ?? "";
+  } catch {
+    return "";
+  }
 }
 
 // No existe una API de navegador para "¿esta app está instalada?" (por privacidad, ningún

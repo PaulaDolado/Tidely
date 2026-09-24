@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { Linking } from "react-native";
+import { api } from "../api/client";
 
 // Puerto de dashboard/src/utils/quickAccessApps.ts — mismo catálogo de apps (mismos logos de
 // marca, mismos colores, mismos esquemas de URI), pero adaptado a dos cosas que no existen en un
@@ -21,6 +22,7 @@ export interface QuickAccessApp {
   webUrl: string;
   icon?: string; // path (atributo `d`) de un logo de marca, viewBox 0 0 24 24 — ver AppLogo
   emoji?: string; // solo enlaces personalizados, que no tienen logo de marca conocido
+  faviconUrl?: string; // icono real del sitio (ver fetchFaviconFor) — se pinta sobre el emoji si carga
 }
 
 export const QUICK_ACCESS_APPS: QuickAccessApp[] = [
@@ -150,6 +152,7 @@ export interface CustomQuickAccessLink {
   label: string;
   url: string;
   emoji: string;
+  faviconUrl?: string;
 }
 
 export async function loadCustomLinks(): Promise<CustomQuickAccessLink[]> {
@@ -188,7 +191,9 @@ export function normalizeQuickAccessUrl(raw: string): string | null {
   return /^https?:\/\/.+/i.test(withProtocol) ? withProtocol : null;
 }
 
-export async function addCustomLink(input: { label: string; url: string; emoji: string }): Promise<CustomQuickAccessLink | null> {
+export async function addCustomLink(
+  input: { label: string; url: string; emoji: string; faviconUrl?: string }
+): Promise<CustomQuickAccessLink | null> {
   const label = input.label.trim();
   const url = normalizeQuickAccessUrl(input.url);
   if (!label || !url) return null;
@@ -199,9 +204,33 @@ export async function addCustomLink(input: { label: string; url: string; emoji: 
     label,
     url,
     emoji,
+    ...(input.faviconUrl ? { faviconUrl: input.faviconUrl } : {}),
   };
   await saveCustomLinks([...(await loadCustomLinks()), link]);
   return link;
+}
+
+// Cambia nombre/URL/icono de un enlace YA guardado, conservando su id (y por tanto su color, que
+// sale de un hash del id — ver colorForCustomLink). Si la URL cambia, quien llama (el formulario)
+// ya ha vuelto a pedir el favicon antes de invocar esto, así que `faviconUrl` no es opcional aquí
+// — puede ser "" si no se consiguió sacar ninguno.
+export async function editCustomLink(
+  id: string,
+  input: { label: string; url: string; emoji: string; faviconUrl: string }
+): Promise<CustomQuickAccessLink | null> {
+  const label = input.label.trim();
+  const url = normalizeQuickAccessUrl(input.url);
+  if (!label || !url) return null;
+  const emoji = input.emoji.trim() || label.charAt(0).toUpperCase();
+  let updated: CustomQuickAccessLink | null = null;
+  const next = (await loadCustomLinks()).map((link) => {
+    if (link.id !== id) return link;
+    updated = { id, label, url, emoji, ...(input.faviconUrl ? { faviconUrl: input.faviconUrl } : {}) };
+    return updated;
+  });
+  if (!updated) return null;
+  await saveCustomLinks(next);
+  return updated;
 }
 
 export async function removeCustomLink(id: string): Promise<void> {
@@ -211,7 +240,27 @@ export async function removeCustomLink(id: string): Promise<void> {
 // Adapta un enlace personalizado a la misma forma que las apps del catálogo fijo, para reutilizar
 // AppLogo/openQuickAccessApp sin duplicar nada (ver QuickAccessCard.tsx).
 export function customLinkToApp(link: CustomQuickAccessLink): QuickAccessApp {
-  return { id: link.id, label: link.label, color: colorForCustomLink(link.id), webUrl: link.url, emoji: link.emoji };
+  return {
+    id: link.id,
+    label: link.label,
+    color: colorForCustomLink(link.id),
+    webUrl: link.url,
+    emoji: link.emoji,
+    ...(link.faviconUrl ? { faviconUrl: link.faviconUrl } : {}),
+  };
+}
+
+// Pide el favicon del sitio al backend (mismo endpoint GET /link-preview que usa el dashboard) —
+// se llama al añadir o editar un enlace, nunca en cada pulsación de tecla. Devuelve "" (no null)
+// si falla o el sitio no tiene favicon: así el formulario puede guardar igual el enlace, solo que
+// sin icono real.
+export async function fetchFaviconFor(url: string): Promise<string> {
+  try {
+    const preview = await api.get<{ favicon: string | null }>(`/link-preview?url=${encodeURIComponent(url)}`);
+    return preview.favicon ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export async function openQuickAccessApp(app: QuickAccessApp): Promise<void> {

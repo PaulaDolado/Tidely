@@ -20,6 +20,9 @@ export interface LinkPreview {
   description: string | null;
   image: string | null;
   siteName: string;
+  // Icono del sitio (ver extractFavicon) — casi siempre presente (cae a "/favicon.ico" si la
+  // página no declara uno explícito), pero sin garantía de que esa URL cargue de verdad.
+  favicon: string | null;
 }
 
 function isPrivateIp(ip: string): boolean {
@@ -77,6 +80,36 @@ function extractMeta(html: string, ...names: string[]): string | null {
     }
   }
   return null;
+}
+
+// Busca <link rel="icon">/"shortcut icon"/"apple-touch-icon"> (en cualquier orden de atributos,
+// mismo criterio que extractMeta con <meta>) — a diferencia de esos, <link> no tiene "content",
+// el valor está en `href`. Si la página no trae ninguno (bastantes no lo hacen explícito, confían
+// en la convención), se prueba con el mismo `/favicon.ico` que ya asume cualquier navegador — no
+// se comprueba que exista de verdad (evitaría una segunda petición), así que puede no cargar: el
+// cliente que lo pinte como <img> debe tener un fallback (ver AppLogo en QuickAccessCard.tsx del
+// dashboard) para cuando la imagen no carga.
+const ICON_RELS = ["icon", "shortcut icon", "apple-touch-icon", "apple-touch-icon-precomposed"];
+
+function extractFavicon(html: string, baseUrl: string): string | null {
+  for (const rel of ICON_RELS) {
+    // El lookbehind negativo antes de "href=" es necesario: GitHub (y otros) meten un
+    // "data-base-href" en el mismo <link>, y sin él, el `[^>]+` de delante (voraz por defecto)
+    // se comía todo hasta ESE atributo en vez de pararse en el "href" real — extraía
+    // ".../favicon" (roto, sin extensión, 404) en lugar de ".../favicon.svg".
+    const patterns = [
+      new RegExp(`<link[^>]+rel=["']${rel}["'][^>]+(?<![\\w-])href=["']([^"']*)["']`, "i"),
+      new RegExp(`<link[^>]+(?<![\\w-])href=["']([^"']*)["'][^>]+rel=["']${rel}["']`, "i"),
+    ];
+    for (const re of patterns) {
+      const match = html.match(re);
+      if (match?.[1]) {
+        const resolved = resolveUrl(match[1], baseUrl);
+        if (resolved) return resolved;
+      }
+    }
+  }
+  return resolveUrl("/favicon.ico", baseUrl);
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -185,6 +218,7 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
   const rawImage = extractMeta(html, "og:image", "twitter:image");
   const image = rawImage ? resolveUrl(rawImage, parsed.toString()) : null;
   const siteName = extractMeta(html, "og:site_name") ?? parsed.hostname.replace(/^www\./, "");
+  const favicon = extractFavicon(html, parsed.toString());
 
   return {
     url: parsed.toString(),
@@ -192,5 +226,6 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
     description: description ? description.trim().slice(0, 500) : null,
     image,
     siteName,
+    favicon,
   };
 }

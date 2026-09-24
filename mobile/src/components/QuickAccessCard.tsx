@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Pressable, Modal, ScrollView, StyleSheet, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, Modal, ScrollView, StyleSheet, Alert, Platform, KeyboardAvoidingView, Image } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
@@ -11,9 +11,12 @@ import {
   saveSelectedIds,
   loadCustomLinks,
   addCustomLink,
+  editCustomLink,
   removeCustomLink,
   customLinkToApp,
   openQuickAccessApp,
+  fetchFaviconFor,
+  normalizeQuickAccessUrl,
 } from "../utils/quickAccessApps";
 import { colors, fonts, radius, withAlpha } from "../theme";
 
@@ -40,9 +43,15 @@ export function QuickAccessCard() {
     saveSelectedIds(next);
   };
 
-  const handleAddCustomLink = async (input: { label: string; url: string; emoji: string }) => {
+  const handleAddCustomLink = async (input: { label: string; url: string; emoji: string; faviconUrl?: string }) => {
     const link = await addCustomLink(input);
     if (link) setCustomLinks((prev) => [...prev, link]);
+    return link;
+  };
+
+  const handleEditCustomLink = async (id: string, input: { label: string; url: string; emoji: string; faviconUrl: string }) => {
+    const link = await editCustomLink(id, input);
+    if (link) setCustomLinks((prev) => prev.map((l) => (l.id === id ? link : l)));
     return link;
   };
 
@@ -87,6 +96,7 @@ export function QuickAccessCard() {
           onToggle={toggle}
           customLinks={customLinks}
           onAddCustomLink={handleAddCustomLink}
+          onEditCustomLink={handleEditCustomLink}
           onRemoveCustomLink={handleRemoveCustomLink}
           onClose={() => setEditing(false)}
         />
@@ -96,15 +106,25 @@ export function QuickAccessCard() {
 }
 
 // Logo oficial de la marca sobre una casilla de su color, en blanco — mismo tratamiento que en la
-// web (ver AppLogo ahí). Los enlaces personalizados no traen `icon` (path de logo), traen `emoji`.
+// web (ver AppLogo ahí). Los enlaces personalizados no traen `icon` (path de logo): si se
+// consiguió sacar un favicon real (ver fetchFaviconFor) se pinta como <Image>, con el emoji de
+// reserva mientras carga o si `onError` salta (dominio caído, sin favicon real...).
 function AppLogo({ app, size }: { app: QuickAccessApp; size: 32 | 44 }) {
   const boxStyle = size === 44 ? styles.logoBoxLarge : styles.logoBoxSmall;
+  const [faviconFailed, setFaviconFailed] = useState(false);
+
   return (
     <View style={[styles.logoBox, boxStyle, { backgroundColor: app.color }]}>
       {app.icon ? (
         <Svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24">
           <Path d={app.icon} fill="#fff" />
         </Svg>
+      ) : app.faviconUrl && !faviconFailed ? (
+        <Image
+          source={{ uri: app.faviconUrl }}
+          style={{ width: size * 0.6, height: size * 0.6, borderRadius: 4 }}
+          onError={() => setFaviconFailed(true)}
+        />
       ) : (
         <Text style={{ fontSize: size === 44 ? 18 : 14, lineHeight: size === 44 ? 20 : 16 }}>{app.emoji}</Text>
       )}
@@ -117,17 +137,20 @@ function QuickAccessEditModal({
   onToggle,
   customLinks,
   onAddCustomLink,
+  onEditCustomLink,
   onRemoveCustomLink,
   onClose,
 }: {
   selectedIds: string[];
   onToggle: (id: string) => void;
   customLinks: CustomQuickAccessLink[];
-  onAddCustomLink: (input: { label: string; url: string; emoji: string }) => Promise<CustomQuickAccessLink | null>;
+  onAddCustomLink: (input: { label: string; url: string; emoji: string; faviconUrl?: string }) => Promise<CustomQuickAccessLink | null>;
+  onEditCustomLink: (id: string, input: { label: string; url: string; emoji: string; faviconUrl: string }) => Promise<CustomQuickAccessLink | null>;
   onRemoveCustomLink: (id: string) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [editingLink, setEditingLink] = useState<CustomQuickAccessLink | null>(null);
   return (
     <Pressable style={styles.modalBackdrop} onPress={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -163,6 +186,9 @@ function QuickAccessEditModal({
                 <Text numberOfLines={1} style={styles.checkRowLabel}>
                   {link.label}
                 </Text>
+                <Pressable onPress={() => setEditingLink(link)} hitSlop={8}>
+                  <Text style={styles.editLink}>✎ Editar</Text>
+                </Pressable>
                 <Pressable
                   onPress={() =>
                     Alert.alert("Eliminar enlace", `¿Quitar "${link.label}" de tus accesos rápidos?`, [
@@ -177,7 +203,13 @@ function QuickAccessEditModal({
               </View>
             ))}
 
-            <AddCustomLinkForm onAdd={onAddCustomLink} />
+            <AddCustomLinkForm
+              key={editingLink?.id ?? "new"}
+              editingLink={editingLink}
+              onAdd={onAddCustomLink}
+              onEdit={onEditCustomLink}
+              onCancelEdit={() => setEditingLink(null)}
+            />
           </ScrollView>
         </Pressable>
       </KeyboardAvoidingView>
@@ -185,31 +217,77 @@ function QuickAccessEditModal({
   );
 }
 
-// Nombre, URL (se normaliza en normalizeQuickAccessUrl) y un emoji como icono — si se deja vacío,
-// la inicial del nombre hace de icono por defecto (ver addCustomLink).
-function AddCustomLinkForm({ onAdd }: { onAdd: (input: { label: string; url: string; emoji: string }) => Promise<CustomQuickAccessLink | null> }) {
-  const [label, setLabel] = useState("");
-  const [url, setUrl] = useState("");
-  const [emoji, setEmoji] = useState("");
+// Nombre, URL (se normaliza en normalizeQuickAccessUrl) y un emoji de reserva — o edita un enlace
+// ya guardado si `editingLink` viene relleno (el padre remonta este componente con `key` distinta
+// al cambiar de objetivo, así que basta con precargar los valores INICIALES desde `editingLink`,
+// sin sincronizarlos aparte). Al guardar se pide el favicon real del sitio a fetchFaviconFor ANTES
+// de llamar a onAdd/onEdit — nunca en cada tecla escrita — y si no se consigue ninguno se guarda
+// igual, sin icono real, con el emoji de reserva.
+function AddCustomLinkForm({
+  editingLink,
+  onAdd,
+  onEdit,
+  onCancelEdit,
+}: {
+  editingLink: CustomQuickAccessLink | null;
+  onAdd: (input: { label: string; url: string; emoji: string; faviconUrl?: string }) => Promise<CustomQuickAccessLink | null>;
+  onEdit: (id: string, input: { label: string; url: string; emoji: string; faviconUrl: string }) => Promise<CustomQuickAccessLink | null>;
+  onCancelEdit: () => void;
+}) {
+  const [label, setLabel] = useState(editingLink?.label ?? "");
+  const [url, setUrl] = useState(editingLink?.url ?? "");
+  const [emoji, setEmoji] = useState(editingLink?.emoji ?? "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
+    setError("");
+
+    // Se normaliza ANTES de pedir el favicon: el placeholder anima a escribir la URL sin esquema
+    // ("notion.so/mi-pagina"), y GET /link-preview exige una URL completa (http/https) — sin esto,
+    // fetchFaviconFor recibía la URL tal cual, el backend la rechazaba con 400 y el favicon nunca
+    // se sacaba en el caso más común.
+    const normalizedUrl = normalizeQuickAccessUrl(url);
+    if (!label.trim() || !normalizedUrl) {
+      setError("Pon un nombre y una URL válida (p. ej. notion.so/mi-pagina).");
+      return;
+    }
+
     setSubmitting(true);
-    const link = await onAdd({ label, url, emoji });
+    // Si se edita y la URL no cambió, no tiene sentido repetir la búsqueda del favicon.
+    const faviconUrl =
+      editingLink && editingLink.url === normalizedUrl ? editingLink.faviconUrl ?? "" : await fetchFaviconFor(normalizedUrl);
+
+    const link = editingLink
+      ? await onEdit(editingLink.id, { label, url, emoji, faviconUrl })
+      : await onAdd({ label, url, emoji, ...(faviconUrl ? { faviconUrl } : {}) });
+
     setSubmitting(false);
     if (!link) {
       setError("Pon un nombre y una URL válida (p. ej. notion.so/mi-pagina).");
       return;
     }
-    setLabel("");
-    setUrl("");
-    setEmoji("");
-    setError("");
+    if (editingLink) {
+      onCancelEdit();
+    } else {
+      setLabel("");
+      setUrl("");
+      setEmoji("");
+    }
   };
 
   return (
     <View style={styles.addForm}>
+      {editingLink && (
+        <View style={styles.editingRow}>
+          <Text style={styles.editingLabel} numberOfLines={1}>
+            Editando "{editingLink.label}"
+          </Text>
+          <Pressable onPress={onCancelEdit} hitSlop={8}>
+            <Text style={styles.editLink}>Cancelar</Text>
+          </Pressable>
+        </View>
+      )}
       <View style={styles.addFormRow}>
         <TextInput
           value={emoji}
@@ -238,7 +316,9 @@ function AddCustomLinkForm({ onAdd }: { onAdd: (input: { label: string; url: str
       />
       {error !== "" && <Text style={styles.addFormError}>{error}</Text>}
       <Pressable style={styles.addFormSubmit} onPress={submit} disabled={submitting}>
-        <Text style={styles.addFormSubmitText}>{submitting ? "Añadiendo…" : "+ Añadir enlace"}</Text>
+        <Text style={styles.addFormSubmitText}>
+          {submitting ? "Buscando icono…" : editingLink ? "Guardar cambios" : "+ Añadir enlace"}
+        </Text>
       </Pressable>
     </View>
   );
@@ -406,6 +486,19 @@ const styles = StyleSheet.create({
     borderColor: withAlpha(colors.primary, 0.3),
     backgroundColor: withAlpha(colors.primary, 0.05),
     padding: 12,
+  },
+  editingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  editingLabel: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: fonts.sansMedium,
+    fontSize: 12,
+    color: colors.primary,
   },
   addFormRow: {
     flexDirection: "row",
