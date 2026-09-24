@@ -10,6 +10,7 @@
 // - Word: se genera un .doc (HTML con las cabeceras que Word reconoce, no un .docx real) y se
 //   descarga como blob. Word lo abre igual que un documento nativo, con el mismo formato.
 
+import DOMPurify from "dompurify";
 import { allGoogleFontsLinkTags } from "./googleFonts";
 
 // Versión instalada de katex (dashboard/package.json) — el documento exportado vive fuera de
@@ -90,7 +91,7 @@ function buildBodyHtml(subtitle: string, pages: ExportPage[]): string {
         <div class="page-block">
           <h1 class="page-title">${escapeHtml(page.title)}</h1>
           <p class="page-subtitle">${escapeHtml(subtitle)}</p>
-          <div class="page-content">${page.content || "<p><em>(página vacía)</em></p>"}</div>
+          <div class="page-content">${page.content ? DOMPurify.sanitize(page.content, { ADD_ATTR: ["contenteditable", "data-latex"] }) : "<p><em>(página vacía)</em></p>"}</div>
         </div>`;
     })
     .join("\n");

@@ -118,7 +118,7 @@ Railway/Render crean por defecto.
 | `NODE_ENV=production` | Sí | Activa `trust proxy`, logs en JSON, oculta detalles de error 500 |
 | `CORS_ORIGIN` | Recomendada | Dominio exacto del dashboard en vez de `*` una vez lo tengas desplegado |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `RATE_LIMIT_*` | No | Tienen defaults razonables en `src/config/environment.ts` |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | No (solo si quieres sincronizar Google Calendar) | Sin ellas, "Conectar Google Calendar" en el dashboard falla con "La integración con Google Calendar no está configurada en el servidor" — ver [Conectar Google Calendar](#conectar-google-calendar-opcional) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` / `ENCRYPTION_KEY` | No (solo si quieres sincronizar Google Calendar) | Sin ellas, "Conectar Google Calendar" en el dashboard falla con "La integración con Google Calendar no está configurada en el servidor" — ver [Conectar Google Calendar](#conectar-google-calendar-opcional) |
 
 ### Conectar Google Calendar (opcional)
 
@@ -140,6 +140,11 @@ hasta que los añadas:
    - `GOOGLE_CLIENT_ID` = el Client ID del paso 2
    - `GOOGLE_CLIENT_SECRET` = el Client secret del paso 2
    - `GOOGLE_REDIRECT_URI` = `https://<tu-backend>/integrations/google/callback` (la misma URL exacta del paso 1)
+   - `ENCRYPTION_KEY` = una clave de 32 bytes en base64 (genera una con
+     `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`) — cifra en
+     reposo los tokens de Google que se guardan en la base de datos (ver `src/utils/
+     encryption.ts`); sin ella la integración también queda como "no configurada", igual que sin
+     las tres de arriba.
 4. Redeploy (Render lo hace solo al guardar variables de entorno nuevas).
 
 Las credenciales de Google de un usuario nunca se copian en el seed/export de la cuenta demo (ver

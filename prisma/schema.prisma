@@ -87,8 +87,32 @@ model User {
   googleCalendarConnection GoogleCalendarConnection?
   eventInvitationsSent     EventInvitation[] @relation("EventInvitationsSent")
   eventInvitationsReceived EventInvitation[] @relation("EventInvitationsReceived")
+  refreshTokens            RefreshToken[]
 
   @@index([emailVerificationTokenHash])
+}
+
+// Un refresh token JWT es válido por su firma sola durante toda su vida (7 días por defecto) sin
+// esto — no hay forma de matarlo antes de que expire por sí solo (ni al cerrar sesión, ni al
+// cambiar la contraseña porque se sospecha que se filtró). Esta tabla lleva la cuenta de qué
+// refresh tokens se han EMITIDO de verdad (uno por login/registro/refresh, nunca el token en sí,
+// solo su `jti` — el propio JWT sigue siendo lo que autentica, esto es solo el registro de "sigue
+// vivo o no"): revokedAt marca uno como muerto (logout, rotado en el siguiente refresh, o
+// cambiaste la contraseña) y refreshService.ts lo consulta en cada POST /auth/refresh antes de
+// fiarse de que la firma sea válida. Ver también: reutilizar un token ya revocado (alguien
+// presenta uno que el legítimo ya rotó) se trata como señal de robo y revoca TODA la sesión del
+// usuario, no solo ese token — mismo patrón que usan Auth0/Okta ("refresh token rotation with
+// reuse detection").
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  jti       String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Event {

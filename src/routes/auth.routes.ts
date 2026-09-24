@@ -84,6 +84,27 @@ router.post("/refresh", validate(refreshSchema), authController.refresh);
 
 /**
  * @openapi
+ * /auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Revoca un refresh token (cierra esa sesión) — no exige estar logueado con un
+ *       access token válido, basta con el refresh token que se quiere invalidar
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken: { type: string }
+ *     responses:
+ *       200: { description: Sesión cerrada (siempre, incluso si el token ya no era válido) }
+ */
+router.post("/logout", validate(refreshSchema), authController.logout);
+
+/**
+ * @openapi
  * /auth/verify-email:
  *   post:
  *     tags: [Auth]

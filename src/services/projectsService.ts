@@ -2,6 +2,7 @@ import { prisma } from "../config/database";
 import { buildPagination } from "../utils/pagination";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
 import { recordTombstone } from "./tombstoneService";
+import { sanitizeRichTextHtml } from "../utils/sanitizeHtml";
 
 interface CreateProjectInput {
   title: string;
@@ -147,7 +148,7 @@ export async function addPage(userId: number, projectId: number, input: PageInpu
     data: {
       projectId,
       title: input.title?.trim() || "Página sin título",
-      content: input.content ?? "",
+      content: sanitizeRichTextHtml(input.content ?? ""),
       order: (last?.order ?? -1) + 1,
     },
   });
@@ -168,7 +169,7 @@ export async function updatePage(userId: number, projectId: number, pageId: numb
     where: { id: pageId },
     data: {
       ...(input.title !== undefined ? { title: input.title?.trim() || "Página sin título" } : {}),
-      ...(input.content !== undefined ? { content: input.content } : {}),
+      ...(input.content !== undefined ? { content: sanitizeRichTextHtml(input.content) } : {}),
       ...(input.order !== undefined ? { order: input.order } : {}),
     },
   });

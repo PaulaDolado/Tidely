@@ -93,6 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Avisa al backend para que revoque ESTE refresh token (ver POST /auth/logout) — sin esto
+    // seguiría siendo válido hasta que caduque por sí solo (hasta 7 días). Best-effort: la sesión
+    // local se limpia igual aunque la petición falle (sin red, backend caído...), lo importante
+    // para quien cierra sesión es que ESTE dispositivo deja de estar logueado ya mismo.
+    const stored = await loadStoredAuth();
+    if (stored?.refreshToken) {
+      api.post("/auth/logout", { refreshToken: stored.refreshToken }).catch(() => {});
+    }
     await clearAuth();
     setTokens(null, null);
     setUser(null);

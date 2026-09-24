@@ -51,3 +51,12 @@ services:
       # Cloud Console: https://<este-servicio>.onrender.com/integrations/google/callback
       - key: GOOGLE_REDIRECT_URI
         sync: false
+      # Cifra en reposo los tokens de Google Calendar guardados en la base de datos (ver
+      # src/utils/encryption.ts) — obligatoria junto con las de arriba, si no esa integración
+      # responde "no configurada". `sync: false`, NO `generateValue: true` como JWT_SECRET/
+      # JWT_REFRESH_SECRET más arriba: esta SÍ tiene un formato estricto (32 bytes en base64, ver
+      # getKey() en encryption.ts), y lo que genera Render para `generateValue` no está
+      # garantizado que decodifique a exactamente eso — mejor pedirlo a mano con el comando del
+      # comentario en .env.example que arriesgarse a que el servicio no arranque el día del deploy.
+      - key: ENCRYPTION_KEY
+        sync: false

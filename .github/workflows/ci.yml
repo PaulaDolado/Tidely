@@ -33,6 +33,10 @@ jobs:
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/life_organizer_test
       JWT_SECRET: ci-test-secret
       JWT_REFRESH_SECRET: ci-test-refresh-secret
+      # Para el unit test de src/utils/encryption.ts (cifra los tokens de Google Calendar en
+      # reposo) — no hace falta que sea secreta de verdad, solo 32 bytes válidos en base64
+      # (ver getKey() ahí); ningún test conecta con Google de verdad.
+      ENCRYPTION_KEY: "C966/TP07IfI3BoOYlZ0epw0oZFXZM5n0kmOw1JsX/o="
       NODE_ENV: test
 
     steps:

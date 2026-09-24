@@ -4,6 +4,7 @@ import { env } from "../config/environment";
 import { logger } from "../utils/logger";
 import { NotFoundError, ValidationError } from "../utils/errorHandler";
 import { signGoogleOAuthState, verifyGoogleOAuthState } from "../utils/jwt";
+import { decrypt, encrypt } from "../utils/encryption";
 import { getUserTimezone } from "./agendaService";
 import { recordTombstone } from "./tombstoneService";
 
@@ -24,6 +25,9 @@ function assertConfigured(): void {
     throw new ValidationError(
       "La integración con Google Calendar no está configurada en el servidor (faltan GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET)"
     );
+  }
+  if (!env.encryptionKey) {
+    throw new ValidationError("La integración con Google Calendar no está configurada en el servidor (falta ENCRYPTION_KEY)");
   }
 }
 
@@ -71,19 +75,21 @@ export async function handleOAuthCallback(code: string, state: string): Promise<
     throw new ValidationError("Google no ha devuelto el email de la cuenta");
   }
 
+  const encryptedAccessToken = encrypt(tokens.access_token ?? "");
+  const encryptedRefreshToken = encrypt(tokens.refresh_token);
   await prisma.googleCalendarConnection.upsert({
     where: { userId },
     create: {
       userId,
       googleEmail: userInfo.email,
-      accessToken: tokens.access_token ?? "",
-      refreshToken: tokens.refresh_token,
+      accessToken: encryptedAccessToken,
+      refreshToken: encryptedRefreshToken,
       expiryDate: new Date(tokens.expiry_date ?? Date.now()),
     },
     update: {
       googleEmail: userInfo.email,
-      accessToken: tokens.access_token ?? "",
-      refreshToken: tokens.refresh_token,
+      accessToken: encryptedAccessToken,
+      refreshToken: encryptedRefreshToken,
       expiryDate: new Date(tokens.expiry_date ?? Date.now()),
     },
   });
@@ -109,7 +115,7 @@ export async function disconnect(userId: number): Promise<void> {
   // Revocar en Google es un best-effort: si falla (token ya revocado, sin red...) igualmente
   // seguimos con la desconexión local, que es lo que de verdad le importa al usuario en Tidely.
   try {
-    await createOAuthClient().revokeToken(connection.accessToken);
+    await createOAuthClient().revokeToken(decrypt(connection.accessToken));
   } catch (error) {
     logger.warn("googleCalendarService.disconnect: no se pudo revocar el token en Google", { error });
   }
@@ -128,20 +134,25 @@ async function getAuthorizedClient(userId: number) {
 
   const client = createOAuthClient();
   client.setCredentials({
-    access_token: connection.accessToken,
-    refresh_token: connection.refreshToken,
+    access_token: decrypt(connection.accessToken),
+    refresh_token: decrypt(connection.refreshToken),
     expiry_date: connection.expiryDate.getTime(),
   });
 
   // La librería refresca el access token sola cuando hace falta, pero solo en memoria — sin este
   // listener, el token nuevo se perdería al terminar la petición y la siguiente sincronización
   // tendría que refrescar otra vez (funciona, pero desperdicia una llamada a Google en cada sync).
+  // De paso, esto es lo que va re-cifrando con la versión nueva cualquier conexión que se hubiera
+  // guardado en claro antes de que existiera el cifrado (ver PREFIX en utils/encryption.ts).
   client.on("tokens", (tokens) => {
     if (!tokens.access_token) return;
     prisma.googleCalendarConnection
       .update({
         where: { userId },
-        data: { accessToken: tokens.access_token, ...(tokens.expiry_date ? { expiryDate: new Date(tokens.expiry_date) } : {}) },
+        data: {
+          accessToken: encrypt(tokens.access_token),
+          ...(tokens.expiry_date ? { expiryDate: new Date(tokens.expiry_date) } : {}),
+        },
       })
       .catch((error) => logger.error("googleCalendarService: no se pudo persistir el token refrescado", { error }));
   });

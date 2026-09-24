@@ -6,6 +6,12 @@ import { generateVerificationToken, hashToken } from "../utils/verificationToken
 import { sendVerificationEmail } from "../utils/mailer";
 import { ConflictError, TooManyRequestsError, UnauthorizedError, ValidationError } from "../utils/errorHandler";
 import { seedDefaultCategories } from "./eventCategoryService";
+import {
+  checkRefreshTokenStatus,
+  revokeAllRefreshTokensForUser,
+  revokeRefreshToken,
+  storeRefreshToken,
+} from "./refreshTokenService";
 
 // El username solo se puede cambiar una vez cada N días — evita que alguien lo use como
 // picadero para "reservar" varios handles o para dar esquinazo a quien lo busca. El email NO
@@ -28,11 +34,16 @@ interface LoginInput {
   password: string;
 }
 
-function buildTokens(user: { id: number; email: string }) {
+// Guarda cada refresh token que se emite (ver refreshTokenService.ts) — así login/register/
+// refresh dejan siempre un registro que después permite matarlo antes de que caduque por sí solo
+// (logout, cambio de contraseña, o detección de reuso si alguien presenta uno ya rotado).
+async function buildTokens(user: { id: number; email: string }) {
   const payload = { userId: user.id, email: user.email };
+  const refresh = signRefreshToken(payload);
+  await storeRefreshToken(user.id, refresh.jti, refresh.expiresAt);
   return {
     token: signAccessToken(payload),
-    refreshToken: signRefreshToken(payload),
+    refreshToken: refresh.token,
   };
 }
 
@@ -132,7 +143,7 @@ export async function register(input: RegisterInput) {
   // ya logueado (login no exige tener el email verificado, ver decisión en PUT /auth/me).
   await issueAndSendVerification(user.id, user.email);
 
-  const tokens = buildTokens(user);
+  const tokens = await buildTokens(user);
   return { ...tokens, user: toProfile(user) };
 }
 
@@ -149,7 +160,7 @@ export async function login(input: LoginInput) {
     throw new UnauthorizedError("Credenciales inválidas");
   }
 
-  const tokens = buildTokens(user);
+  const tokens = await buildTokens(user);
   return { ...tokens, user: toProfile(user) };
 }
 
@@ -294,6 +305,12 @@ export async function changePassword(userId: number, currentPassword: string, ne
 
   const hashedPassword = await hashPassword(newPassword);
   await prisma.user.update({ where: { id: userId }, data: { password: hashedPassword } });
+
+  // Si la contraseña se cambió porque se sospechaba que se había filtrado, un refresh token ya
+  // robado antes del cambio seguiría siendo válido y podría seguir canjeándose por tokens nuevos
+  // indefinidamente sin esto — cierra TODAS las sesiones activas (todos los dispositivos vuelven
+  // a pedir login), no solo la que disparó el cambio.
+  await revokeAllRefreshTokensForUser(userId);
 }
 
 export async function refresh(refreshToken: string) {
@@ -304,10 +321,44 @@ export async function refresh(refreshToken: string) {
     throw new UnauthorizedError("Refresh token inválido o expirado");
   }
 
+  const status = await checkRefreshTokenStatus(payload.jti);
+  if (status === "revoked") {
+    // Un refresh token ya revocado (porque este mismo flujo ya lo rotó antes, o porque hubo un
+    // logout/cambio de contraseña de por medio) que se vuelve a presentar como válido es la señal
+    // clásica de que se filtró: el cliente legítimo ya avanzó a un token más nuevo, así que quien
+    // presenta ESTE es, casi con toda seguridad, otra parte con una copia robada. La respuesta no
+    // es solo rechazar ESTE token — es cerrar TODA la sesión del usuario (mismo patrón que usan
+    // Auth0/Okta, "refresh token reuse detection"), para no dejar la copia robada más nueva (si
+    // el atacante ya rotó una vez) siguiendo viva.
+    await revokeAllRefreshTokensForUser(payload.userId);
+    throw new UnauthorizedError("Refresh token inválido o expirado");
+  }
+  if (status === "unknown") {
+    throw new UnauthorizedError("Refresh token inválido o expirado");
+  }
+
   const user = await prisma.user.findUnique({ where: { id: payload.userId } });
   if (!user) {
     throw new UnauthorizedError("Usuario no encontrado");
   }
 
+  // Rotación: este token queda inservible en cuanto se canjea, aunque su firma siga siendo
+  // válida hasta que caduque por sí solo — el cliente ya tiene el par nuevo, así que no hay
+  // motivo legítimo para volver a presentar este.
+  await revokeRefreshToken(payload.jti);
   return buildTokens(user);
+}
+
+// Cierra la sesión asociada a ESTE refresh token (no todas las del usuario, a diferencia de un
+// cambio de contraseña) — best-effort a propósito: si el token ya no es válido/reconocible, el
+// resultado que le importa a quien llama (que ese token deje de servir) ya se cumple igual, así
+// que no hace falta distinguir "ya estaba revocado" de "no se encontró" con un error.
+export async function logout(refreshToken: string): Promise<void> {
+  let payload;
+  try {
+    payload = verifyRefreshToken(refreshToken);
+  } catch {
+    return;
+  }
+  await revokeRefreshToken(payload.jti);
 }

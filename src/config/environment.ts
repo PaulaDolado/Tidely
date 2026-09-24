@@ -10,8 +10,20 @@ function required(name: string, fallback?: string): string {
   return value;
 }
 
+const nodeEnv = process.env.NODE_ENV ?? "development";
+const isProduction = nodeEnv === "production";
+
+// `CORS_ORIGIN` sin definir cae a "*" en desarrollo/test (cómodo, y hoy inofensivo porque no hay
+// `credentials: true` en app.ts) — pero en producción NO: un despliegue real que se le olvide
+// poner esta variable serviría con CORS abierto a cualquier origen sin que nadie se diera cuenta,
+// y basta con activar `credentials: true` el día de mañana (p.ej. al pasar a cookies de sesión)
+// para que ese "*" combinado con credenciales se vuelva explotable de verdad. Mismo criterio que
+// JWT_SECRET/DATABASE_URL: si falta en producción, mejor que la app no arranque a que arranque
+// insegura en silencio.
+const corsOrigin = isProduction ? required("CORS_ORIGIN") : process.env.CORS_ORIGIN ?? "*";
+
 export const env = {
-  nodeEnv: process.env.NODE_ENV ?? "development",
+  nodeEnv,
   port: parseInt(process.env.PORT ?? "3000", 10),
   databaseUrl: required("DATABASE_URL"),
   jwt: {
@@ -21,7 +33,7 @@ export const env = {
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
   },
   cors: {
-    origin: process.env.CORS_ORIGIN ?? "*",
+    origin: corsOrigin,
   },
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10),
@@ -42,6 +54,12 @@ export const env = {
     // EXACTAMENTE con un "Authorized redirect URI" del cliente OAuth en Google Cloud Console.
     redirectUri: process.env.GOOGLE_REDIRECT_URI ?? "http://localhost:3000/integrations/google/callback",
   },
-  isProduction: (process.env.NODE_ENV ?? "development") === "production",
-  isTest: (process.env.NODE_ENV ?? "development") === "test",
+  // Clave para cifrar en reposo los access/refresh token de Google Calendar (ver utils/
+  // encryption.ts) — igual de opcional que google.clientId/clientSecret arriba: sin ninguna de
+  // las tres no hay app rota, solo esa integración "no configurada". Si SÍ están las de Google
+  // pero falta esta, assertConfigured() en googleCalendarService también la exige — no tendría
+  // sentido guardar el token de alguien sin poder cifrarlo.
+  encryptionKey: process.env.ENCRYPTION_KEY ?? "",
+  isProduction,
+  isTest: nodeEnv === "test",
 };

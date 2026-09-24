@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../config/database";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
 import { recordTombstone } from "./tombstoneService";
+import { sanitizeJsonHtmlStrings } from "../utils/sanitizeHtml";
 
 /**
  * Contenido inicial de una página nueva, según el modelo elegido en "+ Nueva página" (ver
@@ -91,7 +92,7 @@ export async function updateCustomPage(userId: number, pageId: number, input: Up
       ...(input.title !== undefined ? { title: input.title.trim() } : {}),
       ...(input.subtitle !== undefined ? { subtitle: input.subtitle?.trim() || null } : {}),
       ...(input.icon !== undefined ? { icon: input.icon?.trim() || null } : {}),
-      ...(input.content !== undefined ? { content: input.content } : {}),
+      ...(input.content !== undefined ? { content: sanitizeJsonHtmlStrings(input.content) } : {}),
       ...(input.order !== undefined ? { order: input.order } : {}),
     },
   });

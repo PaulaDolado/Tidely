@@ -96,15 +96,51 @@ function resolveUrl(maybeRelative: string, base: string): string | null {
   }
 }
 
-async function fetchWithLimits(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-    });
+// Cuántas redirecciones seguimos como máximo antes de rendirnos — solo para no quedarnos
+// atrapados en un bucle si una web ajena redirige a sí misma sin parar; 5 es de sobra para
+// cualquier cadena de redirección legítima (acortadores de enlaces normalmente dan 1-2 saltos).
+const MAX_REDIRECTS = 5;
+
+// `redirect: "manual"` a propósito, NO "follow": con "follow", `fetch` seguiría la redirección
+// él solo SIN volver a pasar por assertPublicHost — un servidor controlado por el atacante podría
+// devolver una URL pública válida (pasa la validación de arriba) que a su vez redirige (302) a
+// `http://169.254.169.254/...` (metadatos de la nube) o a un host interno, y el SSRF que
+// assertPublicHost pretende evitar se colaría igualmente por esta puerta trasera. Aquí seguimos
+// la cadena nosotros mismos, validando CADA salto como si fuera la URL original.
+async function fetchWithLimits(startUrl: URL): Promise<string> {
+  let url = startUrl;
+  for (let hop = 0; ; hop++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        signal: controller.signal,
+        redirect: "manual",
+        headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new ValidationError("La web redirige sin indicar a dónde");
+      if (hop >= MAX_REDIRECTS) throw new ValidationError("Demasiadas redirecciones al previsualizar esa URL");
+      let next: URL;
+      try {
+        next = new URL(location, url);
+      } catch {
+        throw new ValidationError("La web redirige a una URL inválida");
+      }
+      if (next.protocol !== "http:" && next.protocol !== "https:") {
+        throw new ValidationError("Solo se admiten URLs http/https");
+      }
+      await assertPublicHost(next.hostname);
+      url = next;
+      continue;
+    }
+
     if (!response.ok || !response.body) {
       throw new ValidationError(`La web respondió con un error (${response.status})`);
     }
@@ -127,8 +163,6 @@ async function fetchWithLimits(url: string): Promise<string> {
       chunks.push(value);
     }
     return Buffer.concat(chunks).toString("utf-8");
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -144,7 +178,7 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
   }
   await assertPublicHost(parsed.hostname);
 
-  const html = await fetchWithLimits(parsed.toString());
+  const html = await fetchWithLimits(parsed);
 
   const title = extractMeta(html, "og:title", "twitter:title") ?? (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? null);
   const description = extractMeta(html, "og:description", "twitter:description", "description");

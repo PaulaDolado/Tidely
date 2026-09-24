@@ -212,6 +212,66 @@ describe("Auth Endpoints", () => {
 
       expect(response.status).toBe(401);
     });
+
+    it("rota el refresh token — el usado para refrescar deja de servir", async () => {
+      const registerResponse = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+      const originalRefreshToken = registerResponse.body.refreshToken;
+
+      const first = await request(app).post("/auth/refresh").send({ refreshToken: originalRefreshToken });
+      expect(first.status).toBe(200);
+
+      // Reutilizar el MISMO refresh token una segunda vez no debería funcionar — ya se canjeó.
+      const reused = await request(app).post("/auth/refresh").send({ refreshToken: originalRefreshToken });
+      expect(reused.status).toBe(401);
+    });
+
+    it("reutilizar un refresh token ya rotado revoca también el token nuevo (detección de robo)", async () => {
+      const registerResponse = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+      const originalRefreshToken = registerResponse.body.refreshToken;
+
+      const first = await request(app).post("/auth/refresh").send({ refreshToken: originalRefreshToken });
+      const rotatedRefreshToken = first.body.refreshToken;
+
+      // Reutilizar el token viejo (ya rotado) debe fallar Y además invalidar el nuevo —
+      // reutilizar uno ya rotado es la señal de que se filtró, así que se cierra toda la sesión.
+      await request(app).post("/auth/refresh").send({ refreshToken: originalRefreshToken });
+
+      const afterReuse = await request(app).post("/auth/refresh").send({ refreshToken: rotatedRefreshToken });
+      expect(afterReuse.status).toBe(401);
+    });
+  });
+
+  describe("POST /auth/logout", () => {
+    it("revoca el refresh token indicado — deja de poder usarse para refrescar", async () => {
+      const registerResponse = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+      const refreshToken = registerResponse.body.refreshToken;
+
+      const logoutResponse = await request(app).post("/auth/logout").send({ refreshToken });
+      expect(logoutResponse.status).toBe(200);
+
+      const afterLogout = await request(app).post("/auth/refresh").send({ refreshToken });
+      expect(afterLogout.status).toBe(401);
+    });
+
+    it("no falla aunque el refresh token ya no sea válido (best-effort)", async () => {
+      const response = await request(app).post("/auth/logout").send({ refreshToken: "token-invalido" });
+      expect(response.status).toBe(200);
+    });
   });
 
   describe("GET/PUT /auth/me", () => {
@@ -663,7 +723,7 @@ describe("Auth Endpoints", () => {
         password: "Password123",
         name: "Test User",
       });
-      return { Authorization: `Bearer ${register.body.token}` };
+      return { Authorization: `Bearer ${register.body.token}`, refreshToken: register.body.refreshToken as string };
     }
 
     it("debería cambiar la contraseña y permitir hacer login con la nueva", async () => {
@@ -714,6 +774,19 @@ describe("Auth Endpoints", () => {
         .send({ currentPassword: "Password123", newPassword: "NuevaPassword456" });
 
       expect(response.status).toBe(401);
+    });
+
+    it("cambiar la contraseña revoca los refresh tokens existentes (cierra las demás sesiones)", async () => {
+      const auth = await registerAndAuth();
+
+      const changed = await request(app)
+        .put("/auth/me/password")
+        .set("Authorization", auth.Authorization)
+        .send({ currentPassword: "Password123", newPassword: "NuevaPassword456" });
+      expect(changed.status).toBe(200);
+
+      const afterChange = await request(app).post("/auth/refresh").send({ refreshToken: auth.refreshToken });
+      expect(afterChange.status).toBe(401);
     });
   });
 });

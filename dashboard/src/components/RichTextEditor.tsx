@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import katex from "katex";
+import DOMPurify from "dompurify";
 // Antes en src/styles.css (global, cargado por CUALQUIER pestaña). Movido aquí para que Vite lo
 // separe en el mismo chunk que este componente — RichTextEditor solo lo usan las páginas `lazy`
 // de DashboardPage.tsx, así que abrir "Hoy" ya no descarga el CSS de KaTeX de más.
@@ -29,6 +30,15 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+// El backend ya sanea el HTML al guardarlo (ver sanitizeRichTextHtml en src/utils/sanitizeHtml.ts
+// de la API) — esto es la segunda capa, defensa en profundidad: cubre contenido guardado ANTES de
+// que existiera esa sanitización, y cualquier otro camino de escritura que se nos pueda escapar.
+// `contenteditable`/`data-latex` de más (DOMPurify no los deja pasar por defecto) porque el propio
+// wrapper de una ecuación KaTeX los necesita para poder reeditarse in situ (ver handleEditorClick).
+function sanitize(html: string): string {
+  return DOMPurify.sanitize(html, { ADD_ATTR: ["contenteditable", "data-latex", "target"] });
+}
+
 function escapeAttr(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -51,8 +61,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   // se guardó con texto en "Playfair Display", hay que volver a pedir ese stylesheet: nada
   // garantiza que ya esté cargado en esta sesión).
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value;
+    const clean = sanitize(value);
+    if (editorRef.current && editorRef.current.innerHTML !== clean) {
+      editorRef.current.innerHTML = clean;
       for (const font of GOOGLE_FONTS) {
         if (value.includes(font)) loadGoogleFont(font);
       }

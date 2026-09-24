@@ -29,6 +29,15 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
   }
 }
 
+export async function logout(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await authService.logout(req.body.refreshToken);
+    res.status(200).json({ message: "Sesión cerrada" });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getProfile(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId as number;
