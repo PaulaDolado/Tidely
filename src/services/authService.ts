@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { addDays } from "date-fns/addDays";
+import { logger } from "../utils/logger";
 import { hashPassword, comparePassword } from "../utils/password";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt";
 import { generateVerificationToken, hashToken } from "../utils/verificationToken";
@@ -333,8 +334,21 @@ export async function refresh(refreshToken: string) {
     await revokeAllRefreshTokensForUser(payload.userId);
     throw new UnauthorizedError("Refresh token inválido o expirado");
   }
+  // OJO: "unknown" (firma y caducidad válidas, pero sin fila en RefreshToken) NO se rechaza —
+  // se trata como válido igual. Es el caso de cualquier sesión que ya estuviera abierta ANTES de
+  // que existiera esta tabla (todo el que tuviera la app abierta el día que se desplegó esto): su
+  // refresh token es perfectamente legítimo, solo que nunca se llegó a registrar. Rechazarlo
+  // desconectaría de golpe a todo el mundo que ya había iniciado sesión, con el único "arreglo"
+  // de volver a loguearse — encontrado en producción tras el primer despliegue (ver el commit que
+  // añadió refreshTokenService.ts). La firma JWT ya es la prueba real de autenticidad; la fila en
+  // esta tabla es una capacidad EXTRA para poder revocar, no el mecanismo de autenticación en sí,
+  // así que no tenerla todavía no es motivo para desconfiar del token. A partir de aquí (justo
+  // debajo) se guarda ya con su fila, así que a partir de este primer refresh post-despliegue la
+  // rotación normal coge el relevo.
   if (status === "unknown") {
-    throw new UnauthorizedError("Refresh token inválido o expirado");
+    logger.info("authService.refresh: refresh token sin registro previo (sesión de antes de esta tabla) — se acepta igual", {
+      userId: payload.userId,
+    });
   }
 
   const user = await prisma.user.findUnique({ where: { id: payload.userId } });

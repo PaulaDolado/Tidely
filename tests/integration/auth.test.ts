@@ -9,6 +9,7 @@ import request from "supertest";
 import { app } from "../../src/app";
 import { prisma } from "../../src/config/database";
 import { sendVerificationEmail } from "../../src/utils/mailer";
+import { signRefreshToken } from "../../src/utils/jwt";
 
 const sendVerificationEmailMock = sendVerificationEmail as jest.Mock;
 
@@ -228,6 +229,26 @@ describe("Auth Endpoints", () => {
       // Reutilizar el MISMO refresh token una segunda vez no debería funcionar — ya se canjeó.
       const reused = await request(app).post("/auth/refresh").send({ refreshToken: originalRefreshToken });
       expect(reused.status).toBe(401);
+    });
+
+    it("acepta un refresh token válido sin fila en RefreshToken (sesión de antes de que existiera esa tabla)", async () => {
+      // No usa register()/login() a propósito: esos SIEMPRE guardan una fila (ver buildTokens en
+      // authService.ts). Esto simula justo el caso que rompió en producción al desplegar la
+      // rotación — todo el mundo que ya tenía la sesión abierta cuando se desplegó tenía un
+      // refresh token con firma y caducidad válidas pero SIN fila, porque la tabla ni existía
+      // cuando se emitió. Debe aceptarse igual (y quedar ya registrado para la próxima vez).
+      const register = await request(app).post("/auth/register").send({
+        username: "test_user",
+        email: "test@example.com",
+        password: "Password123",
+        name: "Test User",
+      });
+      const userId = register.body.user.id;
+      const untrackedRefreshToken = signRefreshToken({ userId, email: "test@example.com" }).token;
+
+      const response = await request(app).post("/auth/refresh").send({ refreshToken: untrackedRefreshToken });
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty("token");
     });
 
     it("reutilizar un refresh token ya rotado revoca también el token nuevo (detección de robo)", async () => {
