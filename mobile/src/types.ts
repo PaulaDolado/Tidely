@@ -191,12 +191,37 @@ export interface ServerEventException {
   updatedAt: string;
 }
 
+// Huecos libres del día (08:00-22:00) + sugerencias de tareas del Planificador que encajan en
+// cada uno — puerto de FreeBlock/FreeTimeSuggestion/FreeTimeResponse en dashboard/src/types.ts.
+// Se pide en directo a GET /agenda/free-time/:date (necesita conexión — se calcula en el servidor
+// a partir de TODOS los eventos del día, no solo los ya sincronizados a este dispositivo), mismo
+// criterio que categorías/invitaciones en AgendaScreen.tsx.
+export interface FreeBlock {
+  start: string;
+  end: string;
+  durationMinutes: number;
+}
+
+export interface FreeTimeSuggestion {
+  block: { start: string; end: string };
+  task: { id: number; title: string; estimatedMinutes: number };
+}
+
+export interface FreeTimeResponse {
+  date: string;
+  timezone: string;
+  freeBlocks: FreeBlock[];
+  suggestions: FreeTimeSuggestion[];
+}
+
 export interface ServerTask {
   id: number;
   plannerId: number;
   projectId: number | null;
   title: string;
   description: string | null;
+  image: string | null;
+  notes: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   order: number;
@@ -480,6 +505,8 @@ export interface LocalTask {
   projectId: number | null;
   title: string;
   description: string | null;
+  image: string | null;
+  notes: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   order: number;

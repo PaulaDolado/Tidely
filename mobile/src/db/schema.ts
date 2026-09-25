@@ -58,6 +58,8 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       projectId INTEGER,
       title TEXT NOT NULL,
       description TEXT,
+      image TEXT,
+      notes TEXT,
       status TEXT NOT NULL DEFAULT 'todo',
       priority TEXT NOT NULL DEFAULT 'medium',
       "order" REAL NOT NULL DEFAULT 0,
@@ -285,6 +287,17 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
   for (const column of ["sharingRole TEXT", "sharingOwnerName TEXT", "sharingOwnerUsername TEXT", "sharingInvitationId INTEGER"]) {
     try {
       await db.execAsync(`ALTER TABLE events ADD COLUMN ${column};`);
+    } catch {
+      // Ya existía — nada que hacer.
+    }
+  }
+
+  // Mismo criterio que categoryId/sharingRole arriba: `image`/`notes` en `tasks` se añadieron
+  // después de instalaciones reales (paridad con Task.image/Task.notes del backend/web, ver
+  // TaskDetailDialog en dashboard/src/pages/PlanificadorPage.tsx).
+  for (const column of ["image TEXT", "notes TEXT"]) {
+    try {
+      await db.execAsync(`ALTER TABLE tasks ADD COLUMN ${column};`);
     } catch {
       // Ya existía — nada que hacer.
     }

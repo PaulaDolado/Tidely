@@ -1,5 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Image, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  View,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Modal,
+  ActivityIndicator,
+  Image,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
+  Animated,
+  PanResponder,
+  GestureResponderEvent,
+  PanResponderGestureState,
+  LayoutChangeEvent,
+} from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
@@ -46,10 +62,10 @@ import { PaginasStackParamList } from "./PaginasScreen";
 // (ver ProyectoDetailScreen.tsx) — salvo las acciones discretas (añadir/marcar/mover/borrar de
 // kanban, galería, finanzas, checklist, objetivos), que guardan de inmediato como ya hacía kanban/
 // galería, no al perder el foco de un campo de texto libre. "Nota" se edita con el mismo editor
-// enriquecido que la web (ver components/RichTextEditor.tsx). "Kanban" no tiene imagen por
-// tarjeta (se preserva tal cual si ya existía, creada desde la web, pero no se puede añadir/
-// cambiar desde aquí); mover una tarjeta es tocarla y
-// elegir columna en el diálogo, no arrastrar (no hay gesture-handler/reanimated instalado). Sí
+// enriquecido que la web (ver components/RichTextEditor.tsx). "Kanban" tiene imagen por tarjeta
+// (añadir/cambiar/quitar, ver KanbanCardForm) y tarjetas arrastrables para reordenar y mover de
+// columna (ver DraggableKanbanCard), con un PanResponder propio en vez de gesture-handler/
+// reanimated (no instalados) — mismo patrón que el reordenado del menú en AppSidebar.tsx. Sí
 // tiene gestión de propiedades personalizadas (`fieldDefs`/`card.fields`, ver KanbanBoard más
 // abajo) — mismo concepto que en Planificador (PlannerField), pero aquí vive como JSON de cliente
 // dentro de `content` en vez de en su propia tabla (ver api/customPages.ts). "Finanzas"/"Objetivos"
@@ -548,11 +564,44 @@ const KANBAN_COLUMN_STYLES: { box: { borderColor: string; backgroundColor: strin
 const FIELD_TYPE_LABELS: Record<CustomFieldType, string> = { text: "Texto", number: "Número", date: "Fecha", select: "Selección" };
 const FIELD_TYPES: CustomFieldType[] = ["text", "number", "date", "select"];
 
-// Tablero kanban — puerto simplificado de la sección Kanban en dashboard/src/pages/
-// CustomPagePage.tsx: columnas dinámicas con tarjetas, pero sin arrastrar (mover una tarjeta es
-// abrirla y elegir columna en el diálogo, ver KanbanCardForm) ni imagen por tarjeta. Sí tiene
-// gestión de propiedades personalizadas (`content.fieldDefs`, texto/número/fecha/selección) — el
-// mismo concepto que CustomFieldDef en la web, guardado como JSON de cliente dentro de `content`
+/** Mueve `cardId` de `fromColumnId` a `toColumnId` (pueden ser la misma, para solo reordenar
+ * dentro de la columna), insertándola justo antes de `beforeCardId` (al final si es null) — usado
+ * tanto para la vista previa en vivo durante el arrastre como para el guardado final al soltar. */
+function reorderKanbanColumns(
+  columns: KanbanColumn[],
+  cardId: string,
+  fromColumnId: string,
+  toColumnId: string,
+  beforeCardId: string | null
+): KanbanColumn[] {
+  const fromColumn = columns.find((c) => c.id === fromColumnId);
+  const card = fromColumn?.cards.find((c) => c.id === cardId);
+  if (!card) return columns;
+
+  return columns.map((c) => {
+    if (c.id === fromColumnId && c.id === toColumnId) {
+      const without = c.cards.filter((cc) => cc.id !== cardId);
+      const idx = beforeCardId ? without.findIndex((cc) => cc.id === beforeCardId) : -1;
+      const insertAt = idx === -1 ? without.length : idx;
+      return { ...c, cards: [...without.slice(0, insertAt), card, ...without.slice(insertAt)] };
+    }
+    if (c.id === fromColumnId) return { ...c, cards: c.cards.filter((cc) => cc.id !== cardId) };
+    if (c.id === toColumnId) {
+      const idx = beforeCardId ? c.cards.findIndex((cc) => cc.id === beforeCardId) : -1;
+      const insertAt = idx === -1 ? c.cards.length : idx;
+      return { ...c, cards: [...c.cards.slice(0, insertAt), card, ...c.cards.slice(insertAt)] };
+    }
+    return c;
+  });
+}
+
+// Tablero kanban — puerto de la sección Kanban en dashboard/src/pages/CustomPagePage.tsx:
+// columnas dinámicas con tarjetas, arrastrables para reordenar y mover de columna (ver
+// DraggableKanbanCard más abajo), con imagen por tarjeta (añadir/cambiar/quitar, ver
+// KanbanCardForm) — mover una tarjeta también se puede seguir haciendo desde el diálogo (ver
+// "Mover a"), no solo arrastrando. Sí tiene gestión de propiedades personalizadas
+// (`content.fieldDefs`, texto/número/fecha/selección) — el mismo concepto que CustomFieldDef en
+// la web, guardado como JSON de cliente dentro de `content`
 // (ver api/customPages.ts): `onChange` sustituye el `content` entero en cada cambio (columnas,
 // fieldDefs o los `fields` de una tarjeta), igual que ya hacía antes de esta sección.
 function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: (next: KanbanContent) => Promise<void> }) {
@@ -562,6 +611,108 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
   const [editingCard, setEditingCard] = useState<{ columnId: string; card: KanbanCard } | null>(null);
   const [managingFields, setManagingFields] = useState(false);
   const fieldDefs = content.fieldDefs ?? [];
+
+  // --- Arrastrar y soltar (ver DraggableKanbanCard) ---
+  // `liveColumns`: vista previa local durante el arrastre — se pinta con esta en vez de
+  // `content.columns` sin llamar a `onChange` (que persiste en SQLite) en cada frame de
+  // movimiento; solo al soltar se confirma de verdad con UN solo `onChange`, igual criterio que
+  // `liveOrder` en AppSidebar.tsx.
+  const [liveColumns, setLiveColumns] = useState<KanbanColumn[] | null>(null);
+  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
+  const columnLayoutRef = useRef<Record<string, { y: number; height: number }>>({});
+  // Alto/posición REAL de cada tarjeta (relativa a SU columna, ver handleCardLayout) — con esto
+  // en vez de una altura media estimada, soltar cae justo donde lo esperas aunque las tarjetas
+  // midan cosas muy distintas entre sí (una con imagen mide bastante más que una de una línea).
+  const cardLayoutRef = useRef<Record<string, { y: number; height: number }>>({});
+  const dragStartRef = useRef<{ cardId: string; fromColumnId: string; startAbsY: number } | null>(null);
+
+  const handleColumnLayout = (columnId: string, e: LayoutChangeEvent) => {
+    columnLayoutRef.current[columnId] = { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height };
+  };
+
+  const handleCardLayout = (cardId: string, e: LayoutChangeEvent) => {
+    cardLayoutRef.current[cardId] = { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height };
+  };
+
+  const handleDragStart = (cardId: string, fromColumnId: string) => {
+    const fromLayout = columnLayoutRef.current[fromColumnId];
+    const cardLayout = cardLayoutRef.current[cardId];
+    const startAbsY = (fromLayout?.y ?? 0) + (cardLayout?.y ?? 0);
+    dragStartRef.current = { cardId, fromColumnId, startAbsY };
+    setDraggingCardId(cardId);
+    setLiveColumns(content.columns);
+  };
+
+  const handleDragMove = (dy: number) => {
+    const start = dragStartRef.current;
+    if (!start) return;
+    const currentAbsY = start.startAbsY + dy;
+
+    // Columna sobre la que está el dedo ahora mismo: la que contiene currentAbsY, o la más
+    // cercana si se ha salido por encima de la primera o por debajo de la última.
+    const entries = Object.entries(columnLayoutRef.current);
+    let targetColumnId = start.fromColumnId;
+    let bestDistance = Infinity;
+    for (const [columnId, layout] of entries) {
+      if (currentAbsY >= layout.y && currentAbsY <= layout.y + layout.height) {
+        targetColumnId = columnId;
+        bestDistance = 0;
+        break;
+      }
+      const distance = currentAbsY < layout.y ? layout.y - currentAbsY : currentAbsY - (layout.y + layout.height);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        targetColumnId = columnId;
+      }
+    }
+
+    // "Antes de qué tarjeta cae el dedo": la primera cuyo punto medio (Y absoluta REAL, no
+    // estimada) queda por debajo de currentAbsY — si ninguna, se añade al final.
+    const base = liveColumns ?? content.columns;
+    const targetColumn = base.find((c) => c.id === targetColumnId);
+    const targetLayout = columnLayoutRef.current[targetColumnId];
+    const withoutDragged = (targetColumn?.cards ?? []).filter((c) => c.id !== start.cardId);
+    let beforeCardId: string | null = null;
+    for (const c of withoutDragged) {
+      const layout = cardLayoutRef.current[c.id];
+      if (!layout) continue;
+      const cardMidAbsY = (targetLayout?.y ?? 0) + layout.y + layout.height / 2;
+      if (cardMidAbsY > currentAbsY) {
+        beforeCardId = c.id;
+        break;
+      }
+    }
+
+    // Siempre se recalcula desde `content.columns` (el original, inalterado durante todo el
+    // gesto) con `start.fromColumnId` como origen — no desde `liveColumns`/`base`, que ya no
+    // tiene la tarjeta en su columna de partida tras el primer movimiento entre columnas, y
+    // buscarla ahí la daría por no encontrada (reorderKanbanColumns no haría nada).
+    setDragOverColumnId(targetColumnId);
+    setLiveColumns(reorderKanbanColumns(content.columns, start.cardId, start.fromColumnId, targetColumnId, beforeCardId));
+  };
+
+  const handleDragEnd = async () => {
+    setDraggingCardId(null);
+    setDragOverColumnId(null);
+    dragStartRef.current = null;
+    const finalColumns = liveColumns;
+    setLiveColumns(null);
+    if (!finalColumns) return;
+    await onChange({ ...content, columns: finalColumns });
+  };
+
+  // El gesto se interrumpió (el ScrollView u otro responder se lo llevó a media faena, ver
+  // onPanResponderTerminationRequest en DraggableKanbanCard) — se descarta la vista previa en
+  // vivo en vez de confirmarla, mismo criterio que handleDragCancel en PlanificadorScreen.tsx.
+  const handleDragCancel = () => {
+    setDraggingCardId(null);
+    setDragOverColumnId(null);
+    dragStartRef.current = null;
+    setLiveColumns(null);
+  };
+
+  const displayColumns = liveColumns ?? content.columns;
 
   const addColumn = async () => {
     const title = newColumnTitle.trim();
@@ -667,9 +818,9 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
         <Text style={styles.manageFieldsButtonText}>Propiedades personalizadas</Text>
       </Pressable>
 
-      {content.columns.length === 0 && <Text style={styles.emptyText}>Sin columnas todavía.</Text>}
+      {displayColumns.length === 0 && <Text style={styles.emptyText}>Sin columnas todavía.</Text>}
 
-      {content.columns.map((column, index) => (
+      {displayColumns.map((column, index) => (
         <KanbanColumnView
           key={column.id}
           column={column}
@@ -678,6 +829,14 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
           onDelete={() => deleteColumn(column.id)}
           onAddCard={(text) => addCard(column.id, text)}
           onOpenCard={(card) => setEditingCard({ columnId: column.id, card })}
+          onLayout={(e) => handleColumnLayout(column.id, e)}
+          isDragOver={dragOverColumnId === column.id}
+          draggingCardId={draggingCardId}
+          onCardLayout={handleCardLayout}
+          onCardDragStart={(cardId) => handleDragStart(cardId, column.id)}
+          onCardDragMove={handleDragMove}
+          onCardDragEnd={handleDragEnd}
+          onCardDragCancel={handleDragCancel}
         />
       ))}
 
@@ -1025,6 +1184,14 @@ function KanbanColumnView({
   onDelete,
   onAddCard,
   onOpenCard,
+  onLayout,
+  isDragOver,
+  draggingCardId,
+  onCardLayout,
+  onCardDragStart,
+  onCardDragMove,
+  onCardDragEnd,
+  onCardDragCancel,
 }: {
   column: KanbanColumn;
   tone: { box: { borderColor: string; backgroundColor: string }; header: string };
@@ -1032,6 +1199,14 @@ function KanbanColumnView({
   onDelete: () => Promise<void>;
   onAddCard: (text: string) => Promise<void>;
   onOpenCard: (card: KanbanCard) => void;
+  onLayout: (e: LayoutChangeEvent) => void;
+  isDragOver: boolean;
+  draggingCardId: string | null;
+  onCardLayout: (cardId: string, e: LayoutChangeEvent) => void;
+  onCardDragStart: (cardId: string) => void;
+  onCardDragMove: (dy: number) => void;
+  onCardDragEnd: () => void;
+  onCardDragCancel: () => void;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(column.title);
@@ -1054,7 +1229,7 @@ function KanbanColumnView({
   };
 
   return (
-    <View style={[styles.kanbanColumn, tone.box]}>
+    <View style={[styles.kanbanColumn, tone.box, isDragOver && styles.kanbanColumnDragOver]} onLayout={onLayout}>
       <View style={styles.kanbanColumnHeader}>
         {editingTitle ? (
           <TextInput
@@ -1079,16 +1254,17 @@ function KanbanColumnView({
       </View>
 
       {column.cards.map((card) => (
-        <Pressable key={card.id} style={styles.kanbanCard} onPress={() => onOpenCard(card)}>
-          <Text style={styles.kanbanCardText} numberOfLines={2}>
-            {card.text}
-          </Text>
-          {card.description ? (
-            <Text style={styles.kanbanCardDescription} numberOfLines={1}>
-              {card.description}
-            </Text>
-          ) : null}
-        </Pressable>
+        <DraggableKanbanCard
+          key={card.id}
+          card={card}
+          isDragging={draggingCardId === card.id}
+          onPress={() => onOpenCard(card)}
+          onLayout={(e) => onCardLayout(card.id, e)}
+          onDragStart={() => onCardDragStart(card.id)}
+          onDragMove={onCardDragMove}
+          onDragEnd={onCardDragEnd}
+          onDragCancel={onCardDragCancel}
+        />
       ))}
 
       {addingCard ? (
@@ -1124,6 +1300,92 @@ function KanbanColumnView({
   );
 }
 
+// Tarjeta con mango de arrastre — mismo patrón que DraggableNavRow en AppSidebar.tsx: el mango
+// (⠿) escucha el gesto de arrastre con su propio PanResponder, el resto de la tarjeta sigue
+// abriendo el diálogo de edición con un toque normal, así los dos gestos no compiten por la
+// misma área táctil.
+function DraggableKanbanCard({
+  card,
+  isDragging,
+  onPress,
+  onLayout,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+}: {
+  card: KanbanCard;
+  isDragging: boolean;
+  onPress: () => void;
+  onLayout: (e: LayoutChangeEvent) => void;
+  onDragStart: () => void;
+  onDragMove: (dy: number) => void;
+  onDragEnd: () => void;
+  onDragCancel: () => void;
+}) {
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  // Igual motivo que callbacksRef en AppSidebar.tsx: onDragStart/onDragMove/onDragEnd son
+  // funciones nuevas en cada render del padre (dependen de content/liveColumns), y el
+  // PanResponder solo se crea una vez — sin este ref intermedio, sus callbacks quedarían
+  // cerrados para siempre sobre la primera versión.
+  const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd, onDragCancel });
+  callbacksRef.current = { onDragStart, onDragMove, onDragEnd, onDragCancel };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      // Ver el mismo comentario en DraggableTaskCard.tsx (PlanificadorScreen.tsx): evita que el
+      // ScrollView del tablero le robe el gesto al mango a media faena, y si aun así pasara,
+      // onPanResponderTerminate descarta en vez de confirmar.
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragStart();
+      },
+      onPanResponderMove: (_evt: GestureResponderEvent, gesture: PanResponderGestureState) => {
+        dragY.setValue(gesture.dy);
+        callbacksRef.current.onDragMove(gesture.dy);
+      },
+      onPanResponderRelease: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragEnd();
+      },
+      onPanResponderTerminate: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragCancel();
+      },
+    })
+  ).current;
+
+  return (
+    <Animated.View
+      onLayout={onLayout}
+      style={isDragging ? { transform: [{ translateY: dragY }], zIndex: 50, elevation: 8, opacity: 0.94 } : undefined}
+    >
+      <Pressable style={styles.kanbanCard} onPress={onPress}>
+        {card.image ? <Image source={{ uri: card.image }} style={styles.kanbanCardImage} /> : null}
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.kanbanCardText} numberOfLines={2}>
+              {card.text}
+            </Text>
+            {card.description ? (
+              <Text style={styles.kanbanCardDescription} numberOfLines={1}>
+                {card.description}
+              </Text>
+            ) : null}
+          </View>
+          <View {...panResponder.panHandlers} hitSlop={8} style={styles.kanbanCardDragHandle}>
+            <Text style={styles.kanbanCardDragHandleIcon}>⠿</Text>
+          </View>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 function KanbanCardForm({
   card,
   columns,
@@ -1150,18 +1412,50 @@ function KanbanCardForm({
   const [text, setText] = useState(card.text);
   const [description, setDescription] = useState(card.description ?? "");
   const [notes, setNotes] = useState(card.notes ?? "");
+  const [imageData, setImageData] = useState<string | null | undefined>(card.image);
   const [saving, setSaving] = useState(false);
+
+  // Mismo patrón que pickImage en GalleryEntryForm más abajo (expo-image-picker + límite de 3MB,
+  // embebida como data URL dentro del propio JSON de la tarjeta — igual que la web, ver
+  // MAX_IMAGE_BYTES en dashboard/src/pages/CustomPagePage.tsx).
+  const pickImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permiso necesario", "Activa el acceso a tus fotos para añadir una imagen.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: 0.7 });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    const base64 = result.assets[0].base64;
+    if (base64.length * 0.75 > MAX_IMAGE_BYTES) {
+      Alert.alert("Imagen demasiado grande", "El límite es de 3 MB por imagen.");
+      return;
+    }
+    setImageData(`data:image/jpeg;base64,${base64}`);
+  };
 
   const submit = async () => {
     if (!text.trim()) return;
     setSaving(true);
-    await onSave({ text: text.trim(), description: description.trim() || undefined, notes: notes.trim() || null });
+    await onSave({ text: text.trim(), description: description.trim() || undefined, notes: notes.trim() || null, image: imageData ?? null });
     setSaving(false);
   };
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled">
       <Text style={styles.modalTitle}>Tarjeta</Text>
+
+      {imageData ? <Image source={{ uri: imageData }} style={styles.kanbanCardFormImage} /> : null}
+      <View style={styles.kanbanImageActions}>
+        <Pressable onPress={pickImage} hitSlop={6}>
+          <Text style={styles.kanbanImageActionText}>{imageData ? "🖼 Cambiar imagen" : "🖼 Añadir imagen"}</Text>
+        </Pressable>
+        {imageData ? (
+          <Pressable onPress={() => setImageData(null)} hitSlop={6}>
+            <Text style={[styles.kanbanImageActionText, styles.kanbanImageActionRemove]}>Quitar imagen</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <TextInput style={styles.input} placeholder="Texto" value={text} onChangeText={setText} />
       <TextInput
@@ -1674,6 +1968,10 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
   },
+  // Resalta la columna sobre la que está ahora mismo el dedo mientras se arrastra una tarjeta
+  // (ver isDragOver en KanbanBoard/KanbanColumnView) — mismo primary que el resto de estados
+  // "seleccionado/activo" de la app.
+  kanbanColumnDragOver: { borderColor: colors.primary, borderWidth: 2 },
   kanbanColumnHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
   kanbanColumnTitle: { flex: 1, minWidth: 0, fontFamily: fonts.sansSemiBold, fontSize: 15, color: colors.foreground },
   kanbanColumnTitleInput: {
@@ -1698,7 +1996,14 @@ const styles = StyleSheet.create({
   },
   kanbanCardText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.foreground },
   kanbanCardDescription: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  kanbanCardImage: { width: "100%", height: 100, borderRadius: radius.input, marginBottom: 6 },
+  kanbanCardDragHandle: { paddingHorizontal: 4, paddingVertical: 2 },
+  kanbanCardDragHandleIcon: { fontSize: 16, color: colors.mutedForeground },
   kanbanAddCardText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primary, paddingVertical: 4 },
+  kanbanCardFormImage: { width: "100%", height: 160, borderRadius: radius.input, marginBottom: 10 },
+  kanbanImageActions: { flexDirection: "row", gap: 16, marginBottom: 12 },
+  kanbanImageActionText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  kanbanImageActionRemove: { color: colors.destructive },
 
   addColumnForm: {
     borderWidth: 1,

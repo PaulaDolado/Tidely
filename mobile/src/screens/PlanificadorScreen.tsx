@@ -1,15 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, View, Pressable, ScrollView, StyleSheet, Modal, Platform, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import {
+  Alert,
+  View,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Modal,
+  Platform,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Animated,
+  PanResponder,
+  GestureResponderEvent,
+  PanResponderGestureState,
+  LayoutChangeEvent,
+  Image,
+} from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
+import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { ApiError } from "../api/client";
-import {createPlanner,createPlannerField,deletePlanner,deletePlannerField,listPlannerFields,listPlanners,listPlannerTasksLive,movePlanner,movePlannerField,Planner,PlannerField,renamePlanner,renamePlannerField,updateTaskCustomFields,} from "../api/planner";
+import {createPlanner,createPlannerField,deletePlanner,deletePlannerField,listPlannerFields,listPlanners,listPlannerTasksLive,logTaskTime,movePlanner,movePlannerField,Planner,PlannerField,renamePlanner,renamePlannerField,updateTaskCustomFields,} from "../api/planner";
 import { CustomFieldType, CustomFieldValue } from "../api/customPages";
 import { runSync } from "../sync";
-import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, deleteTaskLocal, parseTaskTags } from "../db/tasksRepo";
+import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, deleteTaskLocal, parseTaskTags, addActualMinutesLocal } from "../db/tasksRepo";
 import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal } from "../db/subtasksRepo";
 import { LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
 import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow, withAlpha } from "../theme";
@@ -36,6 +53,10 @@ import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext
 
 const VIEW_MODES = ["kanban", "tabla"] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
+
+// Mismo límite que el resto de imágenes embebidas de la app — ver MAX_IMAGE_BYTES en
+// PaginaDetailScreen.tsx.
+const TASK_MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 // Vista de las COLUMNAS (Por hacer/En progreso/Hecho) dentro de UN tablero — a propósito con
 // nombre distinto de `PlannerViewMode` de abajo (esa es la vista de TABLEROS): antes se llamaba
@@ -92,9 +113,13 @@ interface TaskForm {
   id: string;
   title: string;
   description: string;
+  image: string | null;
+  notes: string;
   priority: TaskPriority;
   status: TaskStatus;
   dueDate: Date | null;
+  estimatedMinutesText: string;
+  actualMinutes: number;
   tagsText: string;
 }
 
@@ -103,9 +128,13 @@ function toForm(task: LocalTask): TaskForm {
     id: task.id,
     title: task.title,
     description: task.description ?? "",
+    image: task.image,
+    notes: task.notes ?? "",
     priority: task.priority,
     status: task.status,
     dueDate: task.dueDate ? new Date(task.dueDate) : null,
+    estimatedMinutesText: task.estimatedMinutes != null ? String(task.estimatedMinutes) : "",
+    actualMinutes: task.actualMinutes,
     tagsText: parseTaskTags(task).join(", "),
   };
 }
@@ -418,6 +447,7 @@ export function PlanificadorScreen() {
     setNewFieldName("");
     setNewFieldType("text");
     setNewFieldOptionsText("");
+    setMinutesToLogText("");
   };
 
   const handleQuickAdd = async (status: TaskStatus) => {
@@ -434,8 +464,11 @@ export function PlanificadorScreen() {
     await updateTaskLocal(task.id, {
       title: task.title,
       description: task.description,
+      image: task.image,
+      notes: task.notes,
       priority: nextPriority(task.priority),
       dueDate: task.dueDate,
+      estimatedMinutes: task.estimatedMinutes,
       tags: parseTaskTags(task),
     });
     await reload();
@@ -456,11 +489,15 @@ export function PlanificadorScreen() {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
+    const estimatedMinutes = form.estimatedMinutesText.trim() ? Number(form.estimatedMinutesText.trim()) : null;
     await updateTaskLocal(form.id, {
       title: form.title.trim(),
       description: form.description.trim() || null,
+      image: form.image,
+      notes: form.notes.trim() || null,
       priority: form.priority,
       dueDate: form.dueDate ? form.dueDate.toISOString() : null,
+      estimatedMinutes: estimatedMinutes != null && Number.isFinite(estimatedMinutes) ? estimatedMinutes : null,
       tags,
     });
     // Los campos de texto/número de propiedades personalizadas esperan a "Guardar" (o a perder el
@@ -470,6 +507,51 @@ export function PlanificadorScreen() {
     closeTask();
     await reload();
     sync();
+  };
+
+  // Mismo límite que el resto de imágenes embebidas de la app (galería, tarjetas kanban, editor
+  // enriquecido) — ver MAX_IMAGE_BYTES en PaginaDetailScreen.tsx.
+  const pickTaskImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permiso necesario", "Activa el acceso a tus fotos para añadir una imagen.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: 0.7 });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    const base64 = result.assets[0].base64;
+    if (base64.length * 0.75 > TASK_MAX_IMAGE_BYTES) {
+      Alert.alert("Imagen demasiado grande", "El límite es de 3 MB por imagen.");
+      return;
+    }
+    setForm((prev) => (prev ? { ...prev, image: `data:image/jpeg;base64,${base64}` } : prev));
+  };
+
+  // Registrar tiempo llama a la API directa (ver logTaskTime en api/planner.ts, mismo motivo que
+  // persistCustomField: SUMA en el servidor, no un valor absoluto) y, si responde bien, refleja el
+  // nuevo total tanto en `form` (para que se vea al momento sin cerrar el modal) como en SQLite
+  // (ver addActualMinutesLocal) para que la tarjeta del tablero ya lo muestre actualizado sin
+  // esperar al siguiente pull.
+  const [minutesToLogText, setMinutesToLogText] = useState("");
+  const [loggingTime, setLoggingTime] = useState(false);
+  const handleLogTime = async () => {
+    if (!form) return;
+    const taskId = Number(form.id);
+    if (!Number.isFinite(taskId)) return;
+    const minutes = Number(minutesToLogText.trim());
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    setLoggingTime(true);
+    try {
+      const result = await logTaskTime(taskId, minutes);
+      await addActualMinutesLocal(form.id, minutes);
+      setForm((prev) => (prev ? { ...prev, actualMinutes: result.actualMinutes } : prev));
+      setMinutesToLogText("");
+      await reload();
+    } catch {
+      Alert.alert("No se pudo registrar", "Comprueba tu conexión e inténtalo de nuevo.");
+    } finally {
+      setLoggingTime(false);
+    }
   };
 
   // Solo persiste si la tarea ya tiene id de servidor (Number(form.id) es finito) — una tarea
@@ -766,64 +848,19 @@ export function PlanificadorScreen() {
             )}
 
             {viewMode === "kanban" ? (
-              <View style={styles.kanbanContainer}>
-                {visibleStatuses.map((status) => {
-                  const columnTasks = tasks.filter((t) => t.status === status);
-                  return (
-                    <View
-                      key={status}
-                      style={[
-                        styles.kanbanColumn,
-                        {
-                          backgroundColor: COLUMN_BG_COLORS[status],
-                          borderColor: COLUMN_BORDER_COLORS[status],
-                        },
-                      ]}
-                    >
-                      <Text style={styles.columnHeader}>{COLUMN_HEADERS[status]}</Text>
-                      <Text style={styles.columnCount}>{columnTasks.length}</Text>
-
-                      {columnTasks.length === 0 ? (
-                        <Text style={styles.emptyText}>Sin tareas</Text>
-                      ) : (
-                        columnTasks.map((task) => {
-                          const badge = dueBadge(task.dueDate, task.status === "done");
-                          return (
-                            <Pressable key={task.id} style={styles.taskCard} onPress={() => openTask(task)}>
-                              <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
-                              <View style={styles.taskCardContent}>
-                                <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
-                                {badge && (
-                                  <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-                                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-                                  </View>
-                                )}
-                              </View>
-                              {(task.synced === 0 || task.pendingOp === "update") && (
-                                <Text style={styles.pendingTag}>pendiente</Text>
-                              )}
-                            </Pressable>
-                          );
-                        })
-                      )}
-
-                      <View style={styles.quickAddRow}>
-                        <TextInput
-                          style={styles.quickAddInput}
-                          placeholder="Nueva tarea…"
-                          value={drafts[status]}
-                          onChangeText={(t) => setDrafts({ ...drafts, [status]: t })}
-                          onSubmitEditing={() => handleQuickAdd(status)}
-                          placeholderTextColor={colors.mutedForeground}
-                        />
-                        <Pressable style={styles.addButton} onPress={() => handleQuickAdd(status)}>
-                          <Text style={styles.addButtonText}>+</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
+              <TaskKanbanColumns
+                statuses={visibleStatuses}
+                tasks={tasks}
+                drafts={drafts}
+                onDraftChange={(status, t) => setDrafts({ ...drafts, [status]: t })}
+                onQuickAdd={handleQuickAdd}
+                onOpenTask={openTask}
+                onMoveTask={async (taskId, status, beforeTaskId) => {
+                  await moveTask(taskId, status, beforeTaskId);
+                  await reload();
+                  sync();
+                }}
+              />
             ) : (
               // VISTA LISTA
               <View style={styles.listContainer}>
@@ -910,6 +947,28 @@ export function PlanificadorScreen() {
                 placeholderTextColor={colors.mutedForeground}
               />
 
+              {form?.image ? <Image source={{ uri: form.image }} style={styles.taskFormImage} /> : null}
+              <View style={styles.taskImageActions}>
+                <Pressable onPress={pickTaskImage} hitSlop={6}>
+                  <Text style={styles.taskImageActionText}>{form?.image ? "🖼 Cambiar imagen" : "🖼 Añadir imagen"}</Text>
+                </Pressable>
+                {form?.image ? (
+                  <Pressable onPress={() => setForm((prev) => (prev ? { ...prev, image: null } : prev))} hitSlop={6}>
+                    <Text style={[styles.taskImageActionText, styles.taskImageActionRemove]}>Quitar imagen</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <Text style={styles.fieldLabel}>Notas</Text>
+              <TextInput
+                style={[styles.input, styles.inputMultiline]}
+                placeholder="Notas libres (opcional)"
+                value={form?.notes ?? ""}
+                onChangeText={(t) => form && setForm({ ...form, notes: t })}
+                multiline
+                placeholderTextColor={colors.mutedForeground}
+              />
+
               <Text style={styles.fieldLabel}>Estado</Text>
               <View style={styles.chipRow}>
                 {TASK_STATUSES.map((status) => (
@@ -987,6 +1046,37 @@ export function PlanificadorScreen() {
                   <Text style={styles.addButtonText}>+</Text>
                 </Pressable>
               </View>
+
+              <Text style={styles.fieldLabel}>Tiempo</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Tiempo estimado en minutos (opcional)"
+                value={form?.estimatedMinutesText ?? ""}
+                onChangeText={(t) => form && setForm({ ...form, estimatedMinutesText: t.replace(/[^0-9]/g, "") })}
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground}
+              />
+              {/* Registrar tiempo solo tiene sentido con id de servidor real (logTaskTime golpea
+                  /planner/tasks/:id/time) — mismo criterio que EventInvitationsEditor en
+                  AgendaScreen.tsx para una tarea/evento aún sin sincronizar. */}
+              {form?.id && /^\d+$/.test(form.id) && (
+                <View style={styles.timeLogRow}>
+                  <Text style={styles.timeLogTotal}>Tiempo registrado: {form.actualMinutes} min</Text>
+                  <View style={styles.timeLogInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.timeLogInput]}
+                      placeholder="Minutos"
+                      value={minutesToLogText}
+                      onChangeText={(t) => setMinutesToLogText(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="numeric"
+                      placeholderTextColor={colors.mutedForeground}
+                    />
+                    <Pressable style={styles.addButton} onPress={handleLogTime} disabled={loggingTime || !minutesToLogText.trim()}>
+                      <Text style={styles.addButtonText}>{loggingTime ? "…" : "+"}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
 
               {/* PROPIEDADES PERSONALIZADAS — solo si la tarea pertenece a un tablero (siempre
                   debería, ver LocalTask.plannerId) y se pudo llegar al servidor (ver
@@ -1228,13 +1318,300 @@ export function PlanificadorScreen() {
   );
 }
 
+/** Columnas de un tablero (Por hacer/En progreso/Hecho, o solo una en modo "Flechas") con
+ * arrastrar-para-reordenar-y-mover-de-columna — compartido entre la vista de un único tablero
+ * (PlanificadorScreen) y cada tarjeta de tablero en el modo Apilado de tableros (PlannerBoardCard,
+ * más abajo), que hasta ahora repetían la misma rejilla de columnas+tarjetas+alta rápida sin
+ * arrastre (mover una tarjeta era abrir su formulario y tocar el estado). El arrastre calcula una
+ * vista previa LOCAL (`liveTasks`) sin tocar SQLite en cada frame de movimiento — solo al soltar
+ * se llama una vez a `onMoveTask` (que sí persiste, ver moveTask en db/tasksRepo.ts, con el mismo
+ * `beforeTaskId` que ya usa la web para el orden fraccionario dentro de cada columna).
+ *
+ * La posición de destino se calcula con el `onLayout` REAL de cada tarjeta y columna (no una
+ * altura media estimada): cada tarjeta reporta su propio alto exacto (una con descripción larga o
+ * imagen mide más que una de una línea), así que soltar cae justo donde lo esperas incluso con
+ * tarjetas de alturas muy distintas dentro del mismo tablero. */
+function TaskKanbanColumns({
+  statuses,
+  tasks,
+  drafts,
+  onDraftChange,
+  onQuickAdd,
+  onOpenTask,
+  onMoveTask,
+}: {
+  statuses: readonly TaskStatus[];
+  tasks: LocalTask[];
+  drafts: Record<TaskStatus, string>;
+  onDraftChange: (status: TaskStatus, text: string) => void;
+  onQuickAdd: (status: TaskStatus) => void;
+  onOpenTask: (task: LocalTask) => void;
+  onMoveTask: (taskId: string, status: TaskStatus, beforeTaskId: string | null) => Promise<void>;
+}) {
+  const [liveTasks, setLiveTasks] = useState<LocalTask[] | null>(null);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
+  const columnLayoutRef = useRef<Record<string, { y: number; height: number }>>({});
+  // Alto/posición REAL de cada tarjeta (relativa a SU columna, ver handleCardLayout) — a
+  // diferencia de columnLayoutRef (solo 3 entradas, una por columna), esta se actualiza a menudo
+  // mientras las tarjetas se reflowan en vivo durante el arrastre.
+  const cardLayoutRef = useRef<Record<string, { y: number; height: number }>>({});
+  const dragStartRef = useRef<{ taskId: string; fromStatus: TaskStatus; startAbsY: number } | null>(null);
+
+  const displayTasks = liveTasks ?? tasks;
+
+  const handleColumnLayout = (status: TaskStatus, e: LayoutChangeEvent) => {
+    columnLayoutRef.current[status] = { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height };
+  };
+
+  const handleCardLayout = (taskId: string, e: LayoutChangeEvent) => {
+    cardLayoutRef.current[taskId] = { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height };
+  };
+
+  const handleDragStart = (task: LocalTask) => {
+    const fromLayout = columnLayoutRef.current[task.status];
+    const cardLayout = cardLayoutRef.current[task.id];
+    // Fallback si por lo que sea esta tarjeta en concreto no llegó a medirse (no debería pasar:
+    // para arrastrarla, el usuario ya la ha visto renderizada, así que su onLayout ya disparó) —
+    // 0 sitúa el cálculo en la parte de arriba de la columna, mejor que romper el arrastre.
+    const startAbsY = (fromLayout?.y ?? 0) + (cardLayout?.y ?? 0);
+    dragStartRef.current = { taskId: task.id, fromStatus: task.status as TaskStatus, startAbsY };
+    setDraggingTaskId(task.id);
+    setLiveTasks(tasks);
+  };
+
+  const handleDragMove = (dy: number) => {
+    const start = dragStartRef.current;
+    if (!start) return;
+    const currentAbsY = start.startAbsY + dy;
+
+    const entries = Object.entries(columnLayoutRef.current) as [TaskStatus, { y: number; height: number }][];
+    let targetStatus = start.fromStatus;
+    let bestDistance = Infinity;
+    for (const [status, layout] of entries) {
+      if (currentAbsY >= layout.y && currentAbsY <= layout.y + layout.height) {
+        targetStatus = status;
+        bestDistance = 0;
+        break;
+      }
+      const distance = currentAbsY < layout.y ? layout.y - currentAbsY : currentAbsY - (layout.y + layout.height);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        targetStatus = status;
+      }
+    }
+
+    // "Antes de qué tarjeta cae el dedo": la primera cuyo punto medio (Y absoluta REAL, no
+    // estimada) queda por debajo de currentAbsY — si ninguna, se añade al final. Las tarjetas
+    // sin medir todavía (añadidas justo ahora, onLayout aún no disparado) se ignoran en vez de
+    // romper el cálculo.
+    const targetLayout = columnLayoutRef.current[targetStatus];
+    const withoutDragged = (liveTasks ?? tasks).filter((t) => t.status === targetStatus && t.id !== start.taskId);
+    let beforeTaskId: string | null = null;
+    for (const t of withoutDragged) {
+      const layout = cardLayoutRef.current[t.id];
+      if (!layout) continue;
+      const cardMidAbsY = (targetLayout?.y ?? 0) + layout.y + layout.height / 2;
+      if (cardMidAbsY > currentAbsY) {
+        beforeTaskId = t.id;
+        break;
+      }
+    }
+
+    setDragOverStatus(targetStatus);
+    // Vista previa: quita la tarea de donde estaba y la reinserta en la posición calculada —
+    // sobre `tasks` (el original, sin tocar por el arrastre en curso), igual criterio que
+    // reorderKanbanColumns en PaginaDetailScreen.tsx: recalcular siempre desde el estado
+    // inalterado evita que un cálculo intermedio se pierda al buscar la tarea en un sitio donde
+    // ya no está.
+    const without = tasks.filter((t) => t.id !== start.taskId);
+    const draggedTask = tasks.find((t) => t.id === start.taskId);
+    if (!draggedTask) return;
+    const updatedTask = { ...draggedTask, status: targetStatus };
+    const targetColumnTasks = without.filter((t) => t.status === targetStatus);
+    const otherTasks = without.filter((t) => t.status !== targetStatus);
+    const insertAt = beforeTaskId ? targetColumnTasks.findIndex((t) => t.id === beforeTaskId) : -1;
+    const insertIndex = insertAt === -1 ? targetColumnTasks.length : insertAt;
+    targetColumnTasks.splice(insertIndex, 0, updatedTask);
+    setLiveTasks([...otherTasks, ...targetColumnTasks]);
+  };
+
+  const handleDragEnd = async () => {
+    setDraggingTaskId(null);
+    setDragOverStatus(null);
+    const start = dragStartRef.current;
+    dragStartRef.current = null;
+    const finalTasks = liveTasks;
+    setLiveTasks(null);
+    if (!start || !finalTasks) return;
+    const finalTask = finalTasks.find((t) => t.id === start.taskId);
+    if (!finalTask) return;
+    const columnTasks = finalTasks.filter((t) => t.status === finalTask.status);
+    const index = columnTasks.findIndex((t) => t.id === start.taskId);
+    const beforeTaskId = columnTasks[index + 1]?.id ?? null;
+    await onMoveTask(start.taskId, finalTask.status as TaskStatus, beforeTaskId);
+  };
+
+  // El gesto se interrumpió (el ScrollView u otro responder se lo llevó a media faena, ver
+  // onPanResponderTerminationRequest en DraggableTaskCard) — a diferencia de soltar de verdad
+  // (handleDragEnd), aquí NO se confirma nada: se descarta la vista previa en vivo y se vuelve
+  // a `tasks` tal cual estaba, mismo criterio que "cancelar". Sin esto, una interrupción movía la
+  // tarea igual, a donde fuera que estuviera la vista previa en ese instante — no donde el
+  // usuario quería soltarla.
+  const handleDragCancel = () => {
+    setDraggingTaskId(null);
+    setDragOverStatus(null);
+    dragStartRef.current = null;
+    setLiveTasks(null);
+  };
+
+  return (
+    <View style={styles.kanbanContainer}>
+      {statuses.map((status) => {
+        const columnTasks = displayTasks.filter((t) => t.status === status);
+        return (
+          <View
+            key={status}
+            style={[
+              styles.kanbanColumn,
+              { backgroundColor: COLUMN_BG_COLORS[status], borderColor: COLUMN_BORDER_COLORS[status] },
+              dragOverStatus === status && styles.kanbanColumnDragOver,
+            ]}
+            onLayout={(e) => handleColumnLayout(status, e)}
+          >
+            <Text style={styles.columnHeader}>{COLUMN_HEADERS[status]}</Text>
+            <Text style={styles.columnCount}>{columnTasks.length}</Text>
+
+            {columnTasks.length === 0 ? (
+              <Text style={styles.emptyText}>Sin tareas</Text>
+            ) : (
+              columnTasks.map((task) => (
+                <DraggableTaskCard
+                  key={task.id}
+                  task={task}
+                  isDragging={draggingTaskId === task.id}
+                  onPress={() => onOpenTask(task)}
+                  onLayout={(e) => handleCardLayout(task.id, e)}
+                  onDragStart={() => handleDragStart(task)}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  onDragCancel={handleDragCancel}
+                />
+              ))
+            )}
+
+            <View style={styles.quickAddRow}>
+              <TextInput
+                style={styles.quickAddInput}
+                placeholder="Nueva tarea…"
+                value={drafts[status]}
+                onChangeText={(t) => onDraftChange(status, t)}
+                onSubmitEditing={() => onQuickAdd(status)}
+                placeholderTextColor={colors.mutedForeground}
+              />
+              <Pressable style={styles.addButton} onPress={() => onQuickAdd(status)}>
+                <Text style={styles.addButtonText}>+</Text>
+              </Pressable>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// Tarjeta con mango de arrastre — mismo patrón que DraggableNavRow en AppSidebar.tsx y
+// DraggableKanbanCard en PaginaDetailScreen.tsx.
+function DraggableTaskCard({
+  task,
+  isDragging,
+  onPress,
+  onLayout,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+}: {
+  task: LocalTask;
+  isDragging: boolean;
+  onPress: () => void;
+  onLayout: (e: LayoutChangeEvent) => void;
+  onDragStart: () => void;
+  onDragMove: (dy: number) => void;
+  onDragEnd: () => void;
+  onDragCancel: () => void;
+}) {
+  const dragY = useRef(new Animated.Value(0)).current;
+  const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd, onDragCancel });
+  callbacksRef.current = { onDragStart, onDragMove, onDragEnd, onDragCancel };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      // Sin esto, el ScrollView que envuelve el tablero puede robarle el gesto al mango de
+      // arrastre a media faena (típico conflicto de PanResponder anidado en un ScrollView
+      // vertical) — decirle al sistema que NO ceda el responder reduce buena parte de esos
+      // casos. Si aun así se interrumpiera (el propio SO puede forzarlo), onPanResponderTerminate
+      // descarta el cambio en vez de confirmarlo (ver onDragCancel/handleDragCancel).
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragStart();
+      },
+      onPanResponderMove: (_evt: GestureResponderEvent, gesture: PanResponderGestureState) => {
+        dragY.setValue(gesture.dy);
+        callbacksRef.current.onDragMove(gesture.dy);
+      },
+      onPanResponderRelease: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragEnd();
+      },
+      onPanResponderTerminate: () => {
+        dragY.setValue(0);
+        callbacksRef.current.onDragCancel();
+      },
+    })
+  ).current;
+
+  const badge = dueBadge(task.dueDate, task.status === "done");
+
+  return (
+    <Animated.View
+      onLayout={onLayout}
+      style={isDragging ? { transform: [{ translateY: dragY }], zIndex: 50, elevation: 8, opacity: 0.94 } : undefined}
+    >
+      <Pressable style={styles.taskCard} onPress={onPress}>
+        {task.image ? <Image source={{ uri: task.image }} style={styles.taskCardImage} /> : null}
+        <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
+        <View style={styles.taskCardContent}>
+          <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {badge && (
+              <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+                <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+              </View>
+            )}
+            {task.notes ? <Text style={styles.taskNotesIndicator}>📝</Text> : null}
+          </View>
+        </View>
+        {(task.synced === 0 || task.pendingOp === "update") && <Text style={styles.pendingTag}>pendiente</Text>}
+        <View {...panResponder.panHandlers} hitSlop={8} style={styles.kanbanCardDragHandle}>
+          <Text style={styles.kanbanCardDragHandleIcon}>⠿</Text>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 /** Un tablero completo (título propio + su Kanban de 3 columnas) del modo Apilado — puerto de
  * PlannerBoard en dashboard/src/pages/PlanificadorPage.tsx, simplificado como ScheduleTableCard en
  * HorarioScreen.tsx: carga y guarda sus propias tareas (no las del `tasks` de la vista Flechas de
  * arriba), porque en Apilado hay varios tableros visibles a la vez. Sin el Flechas/Apilado de
  * columnas ni el modo Lista — siempre las 3 columnas, siempre Kanban, para no duplicar una segunda
  * capa de paginación dentro de cada tablero ya apilado. Tocar una tarjeta abre el modal de edición
- * compartido de PlanificadorScreen (`onOpenTask`), no uno propio. */
+ * compartido de PlanificadorScreen (`onOpenTask`), no uno propio. Ahora con arrastrar-y-soltar
+ * (ver TaskKanbanColumns), igual que la vista de un único tablero. */
 function PlannerBoardCard({
   planner,
   refreshToken,
@@ -1332,56 +1709,19 @@ function PlannerBoardCard({
         </View>
       </View>
 
-      <View style={styles.kanbanContainer}>
-        {TASK_STATUSES.map((status) => {
-          const columnTasks = tasks.filter((t) => t.status === status);
-          return (
-            <View
-              key={status}
-              style={[styles.kanbanColumn, { backgroundColor: COLUMN_BG_COLORS[status], borderColor: COLUMN_BORDER_COLORS[status] }]}
-            >
-              <Text style={styles.columnHeader}>{COLUMN_HEADERS[status]}</Text>
-              <Text style={styles.columnCount}>{columnTasks.length}</Text>
-
-              {columnTasks.length === 0 ? (
-                <Text style={styles.emptyText}>Sin tareas</Text>
-              ) : (
-                columnTasks.map((task) => {
-                  const badge = dueBadge(task.dueDate, task.status === "done");
-                  return (
-                    <Pressable key={task.id} style={styles.taskCard} onPress={() => onOpenTask(task)}>
-                      <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
-                      <View style={styles.taskCardContent}>
-                        <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
-                        {badge && (
-                          <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-                            <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-                          </View>
-                        )}
-                      </View>
-                      {(task.synced === 0 || task.pendingOp === "update") && <Text style={styles.pendingTag}>pendiente</Text>}
-                    </Pressable>
-                  );
-                })
-              )}
-
-              <View style={styles.quickAddRow}>
-                <TextInput
-                  style={styles.quickAddInput}
-                  placeholder="Nueva tarea…"
-                  value={drafts[status]}
-                  onChangeText={(t) => setDrafts((prev) => ({ ...prev, [status]: t }))}
-                  onSubmitEditing={() => handleQuickAdd(status)}
-                  placeholderTextColor={colors.mutedForeground}
-                />
-                <Pressable style={styles.addButton} onPress={() => handleQuickAdd(status)}>
-                  <Text style={styles.addButtonText}>+</Text>
-                </Pressable>
-              </View>
-            </View>
-          );
-        })}
-      </View>
+      <TaskKanbanColumns
+        statuses={TASK_STATUSES}
+        tasks={tasks}
+        drafts={drafts}
+        onDraftChange={(status, t) => setDrafts((prev) => ({ ...prev, [status]: t }))}
+        onQuickAdd={handleQuickAdd}
+        onOpenTask={onOpenTask}
+        onMoveTask={async (taskId, status, beforeTaskId) => {
+          await moveTask(taskId, status, beforeTaskId);
+          await reload();
+          onSync();
+        }}
+      />
     </View>
   );
 }
@@ -1579,6 +1919,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
   },
+  // Resalta la columna sobre la que está ahora mismo el dedo mientras se arrastra una tarea (ver
+  // dragOverStatus en TaskKanbanColumns) — mismo criterio que kanbanColumnDragOver en
+  // PaginaDetailScreen.tsx.
+  kanbanColumnDragOver: { borderColor: colors.primary, borderWidth: 2 },
   columnHeader: {
     fontFamily: fonts.sansBold,
     fontSize: 13,
@@ -1603,12 +1947,16 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   priorityDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  taskCardImage: { width: 36, height: 36, borderRadius: radius.input, flexShrink: 0 },
+  taskNotesIndicator: { fontSize: 11 },
   taskCardContent: { flex: 1, gap: 4 },
   taskTitle: { fontFamily: fonts.sans, fontSize: 13, color: colors.foreground },
   taskTitleDone: { textDecorationLine: "line-through", color: colors.mutedForeground },
   badge: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full },
   badgeText: { fontFamily: fonts.sansMedium, fontSize: 10 },
   pendingTag: { fontFamily: fonts.sansMedium, fontSize: 9, color: colors.warning },
+  kanbanCardDragHandle: { paddingHorizontal: 4, paddingVertical: 2 },
+  kanbanCardDragHandleIcon: { fontSize: 16, color: colors.mutedForeground },
 
   // LIST VIEW
   listContainer: { gap: 16 },
@@ -1680,6 +2028,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   inputMultiline: { minHeight: 60, textAlignVertical: "top" },
+  taskFormImage: { width: "100%", height: 160, borderRadius: radius.input, marginBottom: 8 },
+  taskImageActions: { flexDirection: "row", gap: 16, marginBottom: 12 },
+  taskImageActionText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  taskImageActionRemove: { color: colors.destructive },
+  timeLogRow: { marginBottom: 12, gap: 6 },
+  timeLogTotal: { fontFamily: fonts.sans, fontSize: 13, color: colors.foreground },
+  timeLogInputRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  timeLogInput: { flex: 1, marginBottom: 0 },
   fieldLabel: {
     fontFamily: fonts.sansBold,
     fontSize: 10,

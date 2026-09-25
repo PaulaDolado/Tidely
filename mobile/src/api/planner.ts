@@ -85,3 +85,11 @@ export async function listPlannerTasksLive(plannerId: number): Promise<PlannerLi
 // ya hubiera en `customFields`, un `null` explícito borra solo esa clave.
 export const updateTaskCustomFields = (taskId: number, customFields: Record<string, CustomFieldValue>) =>
   api.put<{ customFields: Record<string, CustomFieldValue> }>(`/planner/tasks/${taskId}`, { customFields });
+
+// Tiempo real dedicado a una tarea (ver TaskDetailDialog en dashboard/src/pages/PlanificadorPage.tsx):
+// cada llamada SUMA minutos al acumulado en el servidor (plannerService.logTime hace un
+// `increment`, no un valor absoluto), así que va por API directa igual que customFields en vez de
+// por el contrato de sync — mandar un total ya sumado localmente arriesgaría perder minutos
+// registrados desde otro dispositivo entre medias. Solo sirve para tareas YA sincronizadas (id de
+// servidor real); ver el mismo criterio en persistCustomField de PlanificadorScreen.tsx.
+export const logTaskTime = (taskId: number, minutes: number) => api.post<{ actualMinutes: number }>(`/planner/tasks/${taskId}/time`, { minutes });

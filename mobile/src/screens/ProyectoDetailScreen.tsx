@@ -222,14 +222,21 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
     await sync();
   };
 
-  const exportContent = async (page: LocalProjectPage, format: "pdf" | "word") => {
+  // `scope: "current"` exporta solo la página abierta; `"all"` el cuaderno entero (todas las
+  // páginas del proyecto, en el mismo PDF/Word) — mismo par de opciones que ExportMenu en
+  // dashboard/src/pages/ProyectosPage.tsx. La página seleccionada usa el `content` en memoria
+  // (por si hay cambios sin guardar todavía) en vez de `page.content`; el resto usa lo ya guardado.
+  const exportContent = async (format: "pdf" | "word", scope: "current" | "all") => {
+    const targetPages = scope === "current" ? pages.filter((p) => p.id === selectedPageId) : pages;
+    if (targetPages.length === 0) return;
     setExportingContent(format);
     try {
-      const pages = [{ title: page.title, content: page.id === selectedPageId ? content : page.content }];
+      const exportPages = targetPages.map((p) => ({ title: p.title, content: p.id === selectedPageId ? content : p.content }));
+      const documentTitle = scope === "current" ? targetPages[0].title : project?.title ?? "Cuaderno";
       if (format === "pdf") {
-        await exportHtmlToPdf(buildNotebookPdfHtml(page.title, project?.title ?? "Tidely", pages), `${page.title}.pdf`);
+        await exportHtmlToPdf(buildNotebookPdfHtml(documentTitle, project?.title ?? "Tidely", exportPages), `${documentTitle}.pdf`);
       } else {
-        await saveAndShareText(buildNotebookWordHtml(page.title, project?.title ?? "Tidely", pages), `${page.title}.doc`, "application/msword");
+        await saveAndShareText(buildNotebookWordHtml(documentTitle, project?.title ?? "Tidely", exportPages), `${documentTitle}.doc`, "application/msword");
       }
     } catch (err) {
       Alert.alert("No se pudo exportar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
@@ -390,20 +397,24 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
               <Pressable style={styles.saveContentButton} onPress={saveContent} disabled={savingContent || !dirty}>
                 <Text style={styles.saveContentButtonText}>{savingContent ? "Guardando…" : dirty ? "Guardar" : "Guardado"}</Text>
               </Pressable>
-              {(() => {
-                const selectedPage = pages.find((p) => p.id === selectedPageId);
-                if (!selectedPage) return null;
-                return (
-                  <View style={styles.exportRow}>
-                    <Pressable style={styles.exportButton} onPress={() => exportContent(selectedPage, "pdf")} disabled={exportingContent !== null}>
-                      <Text style={styles.exportButtonText}>{exportingContent === "pdf" ? "Exportando…" : "Exportar a PDF"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.exportButton} onPress={() => exportContent(selectedPage, "word")} disabled={exportingContent !== null}>
-                      <Text style={styles.exportButtonText}>{exportingContent === "word" ? "Exportando…" : "Exportar a Word"}</Text>
-                    </Pressable>
-                  </View>
-                );
-              })()}
+              <Text style={styles.exportSectionLabel}>Esta página</Text>
+              <View style={styles.exportRow}>
+                <Pressable style={styles.exportButton} onPress={() => exportContent("pdf", "current")} disabled={exportingContent !== null}>
+                  <Text style={styles.exportButtonText}>{exportingContent === "pdf" ? "Exportando…" : "Exportar a PDF"}</Text>
+                </Pressable>
+                <Pressable style={styles.exportButton} onPress={() => exportContent("word", "current")} disabled={exportingContent !== null}>
+                  <Text style={styles.exportButtonText}>{exportingContent === "word" ? "Exportando…" : "Exportar a Word"}</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.exportSectionLabel}>Todo el cuaderno</Text>
+              <View style={styles.exportRow}>
+                <Pressable style={styles.exportButton} onPress={() => exportContent("pdf", "all")} disabled={exportingContent !== null}>
+                  <Text style={styles.exportButtonText}>{exportingContent === "pdf" ? "Exportando…" : "Exportar a PDF"}</Text>
+                </Pressable>
+                <Pressable style={styles.exportButton} onPress={() => exportContent("word", "all")} disabled={exportingContent !== null}>
+                  <Text style={styles.exportButtonText}>{exportingContent === "word" ? "Exportando…" : "Exportar a Word"}</Text>
+                </Pressable>
+              </View>
             </>
           )}
         </View>
@@ -538,7 +549,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   saveContentButtonText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primaryForeground },
-  exportRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  exportSectionLabel: {
+    fontFamily: fonts.sansBold,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: colors.mutedForeground,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  exportRow: { flexDirection: "row", gap: 8 },
   exportButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   exportButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
 

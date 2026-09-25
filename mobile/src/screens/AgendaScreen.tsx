@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView, Alert } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView, Alert, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
 // está deprecado, este es el reemplazo recomendado.
@@ -34,6 +34,7 @@ import {
   CalendarColor,
   EventCategory,
   EventInvitation,
+  FreeTimeResponse,
   RECURRING_PATTERNS,
   RECURRING_PATTERN_LABELS,
   RecurringPattern,
@@ -160,6 +161,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
   const [monthAnchor, setMonthAnchor] = useState(() => startOfMonthUTC(new Date()));
   const [yearAnchor, setYearAnchor] = useState(() => new Date().getUTCFullYear());
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showFreeTime, setShowFreeTime] = useState(false);
 
   // Búsqueda global (ver GlobalSearch.tsx/AppSidebar.tsx): al llegar con un `focusDate` en los
   // parámetros de navegación, salta a la semana y al día de ese evento en vez de dejar la vista
@@ -497,6 +499,20 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
             {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
           </Pressable>
         ))}
+
+        <Pressable style={styles.freeTimeToggle} onPress={() => setShowFreeTime((v) => !v)}>
+          <Text style={styles.freeTimeToggleText}>{showFreeTime ? "Ocultar tiempo libre" : "⏱ Tiempo libre"}</Text>
+        </Pressable>
+        {showFreeTime && (
+          <FreeTimePanel
+            date={selectedDateKey}
+            categories={categories}
+            onScheduled={async () => {
+              await reload();
+              sync();
+            }}
+          />
+        )}
 
         {/* Debajo de la vista semanal: mismos bloques que la web (dashboard/src/pages/AgendaPage.tsx),
             apilados en una sola columna en vez de la rejilla de dos columnas de escritorio. */}
@@ -975,6 +991,117 @@ function AgendaExportImportForm({
         <Text style={styles.cancelButtonText}>Cerrar</Text>
       </Pressable>
     </ScrollView>
+  );
+}
+
+/** Huecos libres del día seleccionado (08:00-22:00) con sugerencias de tareas del Planificador
+ * que encajan — puerto de FreeTimePanel en dashboard/src/pages/AgendaPage.tsx. "Meter" una
+ * sugerencia crea el evento localmente (createEventLocal, offline-first, igual que "+ Nuevo
+ * evento") en vez de golpear POST /agenda/events directo como hace la web — así aparece al
+ * instante en la lista de eventos de este dispositivo sin esperar al siguiente pull. */
+function FreeTimePanel({
+  date,
+  categories,
+  onScheduled,
+}: {
+  date: string;
+  categories: EventCategory[];
+  onScheduled: () => Promise<void>;
+}) {
+  const [data, setData] = useState<FreeTimeResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [schedulingStart, setSchedulingStart] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.get<FreeTimeResponse>(`/agenda/free-time/${date}`));
+    } catch {
+      setError("No se pudieron calcular los huecos libres.");
+    } finally {
+      setLoading(false);
+    }
+  }, [date]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+
+  const scheduleSuggestion = async (suggestion: FreeTimeResponse["suggestions"][number]) => {
+    // Sin selector propio (es una sugerencia de un toque): cae en "Trabajo" si existe, o si no en
+    // la primera categoría disponible — el usuario siempre puede cambiarla después desde el
+    // evento ya creado. Igual criterio que la web.
+    const categoryId = categories.find((c) => c.label === "Trabajo")?.id ?? categories[0]?.id;
+    if (categoryId == null) return;
+    setSchedulingStart(suggestion.block.start);
+    try {
+      const endTime = new Date(new Date(suggestion.block.start).getTime() + suggestion.task.estimatedMinutes * 60000).toISOString();
+      await createEventLocal({
+        title: suggestion.task.title,
+        description: null,
+        type: categories.find((c) => c.id === categoryId)?.label ?? "Otro",
+        categoryId,
+        startTime: suggestion.block.start,
+        endTime,
+        location: null,
+        isRecurring: false,
+        recurringPattern: null,
+        reminderMinutesBefore: [],
+        guests: [],
+      });
+      await onScheduled();
+      await reload();
+    } finally {
+      setSchedulingStart(null);
+    }
+  };
+
+  return (
+    <View style={styles.freeTimeCard}>
+      <Text style={styles.freeTimeTitle}>
+        Tiempo libre · {new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "long" })}
+      </Text>
+      <Text style={styles.freeTimeHint}>Huecos entre 08:00 y 22:00, con sugerencias del Planificador que encajan.</Text>
+
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+      ) : error ? (
+        <Text style={styles.errorBanner}>{error}</Text>
+      ) : (data?.freeBlocks.length ?? 0) === 0 ? (
+        <Text style={styles.emptyText}>Sin huecos ese día — agenda completa.</Text>
+      ) : (
+        <View style={{ gap: 8 }}>
+          {data?.freeBlocks.map((block) => {
+            const suggestion = data.suggestions.find((s) => s.block.start === block.start);
+            return (
+              <View key={block.start} style={styles.freeBlockRow}>
+                <Text style={styles.freeBlockText}>
+                  {fmtTime(block.start)} – {fmtTime(block.end)}{" "}
+                  <Text style={styles.freeBlockDuration}>({block.durationMinutes} min libres)</Text>
+                </Text>
+                {suggestion ? (
+                  <Pressable
+                    style={styles.freeBlockSuggestButton}
+                    onPress={() => scheduleSuggestion(suggestion)}
+                    disabled={schedulingStart !== null}
+                  >
+                    <Text style={styles.freeBlockSuggestText} numberOfLines={2}>
+                      {schedulingStart === block.start ? "Metiendo…" : `+ Meter "${suggestion.task.title}" (${suggestion.task.estimatedMinutes} min)`}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Text style={styles.freeBlockNoMatch}>Sin tarea pendiente que encaje</Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -1473,6 +1600,48 @@ const styles = StyleSheet.create({
   importButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, padding: 13, alignItems: "center", marginBottom: 8 },
   importButtonText: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.foreground },
   list: { padding: 20, paddingTop: 8, gap: 10 },
+  // --- Tiempo libre ---
+  freeTimeToggle: { alignSelf: "flex-start", paddingVertical: 6 },
+  freeTimeToggleText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.primary },
+  freeTimeCard: {
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    padding: 16,
+    gap: 4,
+  },
+  freeTimeTitle: {
+    fontFamily: fonts.sansBold,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: colors.mutedForeground,
+  },
+  freeTimeHint: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, marginBottom: 8 },
+  freeBlockRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  freeBlockText: { fontFamily: fonts.sans, fontSize: 13, color: colors.foreground, flexShrink: 1 },
+  freeBlockDuration: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
+  freeBlockSuggestButton: {
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryTint,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    maxWidth: "100%",
+  },
+  freeBlockSuggestText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.primary },
+  freeBlockNoMatch: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, opacity: 0.7 },
   extraSections: { gap: 20, marginTop: 16, paddingBottom: 12 },
   emptyText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, fontStyle: "italic" },
   eventCard: {

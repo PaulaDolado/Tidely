@@ -14,12 +14,13 @@ export async function upsertTasks(tasks: ServerTask[]): Promise<void> {
       const id = String(t.id);
       await db.runAsync(
         `INSERT INTO tasks
-           (id, plannerId, projectId, title, description, status, priority, "order", dueDate,
-            tags, estimatedMinutes, actualMinutes, updatedAt, synced, pendingOp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
+           (id, plannerId, projectId, title, description, image, notes, status, priority, "order",
+            dueDate, tags, estimatedMinutes, actualMinutes, updatedAt, synced, pendingOp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
          ON CONFLICT(id) DO UPDATE SET
            plannerId = excluded.plannerId, projectId = excluded.projectId, title = excluded.title,
-           description = excluded.description, status = excluded.status, priority = excluded.priority,
+           description = excluded.description, image = excluded.image, notes = excluded.notes,
+           status = excluded.status, priority = excluded.priority,
            "order" = excluded."order", dueDate = excluded.dueDate, tags = excluded.tags,
            estimatedMinutes = excluded.estimatedMinutes, actualMinutes = excluded.actualMinutes,
            updatedAt = excluded.updatedAt, synced = 1
@@ -30,6 +31,8 @@ export async function upsertTasks(tasks: ServerTask[]): Promise<void> {
           t.projectId,
           t.title,
           t.description,
+          t.image,
+          t.notes,
           t.status,
           t.priority,
           t.order,
@@ -98,30 +101,60 @@ export async function createTaskLocal(input: {
   const now = new Date().toISOString();
   await db.runAsync(
     `INSERT INTO tasks
-       (id, plannerId, projectId, title, description, status, priority, "order", dueDate, tags,
+       (id, plannerId, projectId, title, description, image, notes, status, priority, "order", dueDate, tags,
         estimatedMinutes, actualMinutes, updatedAt, synced, pendingOp)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, 0, NULL)`,
+     VALUES (?, ?, NULL, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, NULL, 0, ?, 0, NULL)`,
     [id, input.plannerId, input.title, input.description, input.status, input.priority, order, input.dueDate, toJsonArray(input.tags), now]
   );
   return id;
 }
 
-/** Edición "de contenido" (título, descripción, prioridad, fecha, tags) — no toca `status`/
- * `order`, eso es cosa de `moveTask` (mismo reparto de responsabilidades que en
- * `dashboard/src/pages/PlanificadorPage.tsx`: `updateTask` para campos, `moveTask` para mover de
- * columna). */
+/** Edición "de contenido" (título, descripción, imagen, notas, prioridad, fecha, tiempo estimado,
+ * tags) — no toca `status`/`order`/`actualMinutes`, eso es cosa de `moveTask`/`logTaskTime` (mismo
+ * reparto de responsabilidades que en `dashboard/src/pages/PlanificadorPage.tsx`: `updateTask`
+ * para campos, `moveTask` para mover de columna, `POST /planner/tasks/:id/time` para tiempo real). */
 export async function updateTaskLocal(
   id: string,
-  input: { title: string; description: string | null; priority: TaskPriority; dueDate: string | null; tags: string[] }
+  input: {
+    title: string;
+    description: string | null;
+    image: string | null;
+    notes: string | null;
+    priority: TaskPriority;
+    dueDate: string | null;
+    estimatedMinutes: number | null;
+    tags: string[];
+  }
 ): Promise<void> {
   const db = await getDb();
   const now = new Date().toISOString();
   await db.runAsync(
-    `UPDATE tasks SET title = ?, description = ?, priority = ?, dueDate = ?, tags = ?, updatedAt = ?,
+    `UPDATE tasks SET title = ?, description = ?, image = ?, notes = ?, priority = ?, dueDate = ?,
+       estimatedMinutes = ?, tags = ?, updatedAt = ?,
        pendingOp = CASE WHEN synced = 1 THEN 'update' ELSE pendingOp END
      WHERE id = ?`,
-    [input.title, input.description, input.priority, input.dueDate, toJsonArray(input.tags), now, id]
+    [
+      input.title,
+      input.description,
+      input.image,
+      input.notes,
+      input.priority,
+      input.dueDate,
+      input.estimatedMinutes,
+      toJsonArray(input.tags),
+      now,
+      id,
+    ]
   );
+}
+
+/** Suma `minutes` a `actualMinutes` localmente — usado justo después de que `logTaskTime` (ver
+ * api/planner.ts) confirme el incremento en el servidor, para que la UI refleje el nuevo total sin
+ * esperar al siguiente pull. Solo tiene sentido para una tarea YA sincronizada (con id de servidor,
+ * que es lo único contra lo que logTaskTime puede llamar), así que no toca `pendingOp`. */
+export async function addActualMinutesLocal(id: string, minutes: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(`UPDATE tasks SET actualMinutes = actualMinutes + ? WHERE id = ?`, [minutes, id]);
 }
 
 /** Cambia de columna (status) calculando un `order` fraccionario para no tener que renumerar el
