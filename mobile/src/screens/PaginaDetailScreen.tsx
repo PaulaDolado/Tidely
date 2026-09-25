@@ -353,7 +353,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       <Modal visible={editingEntry !== null} animationType="slide" transparent onRequestClose={() => setEditingEntry(null)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {editingEntry && (
               <GalleryItemForm
@@ -871,7 +871,7 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
       )}
 
       <Modal visible={editingCard !== null} animationType="slide" transparent onRequestClose={() => setEditingCard(null)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {editingCard && (
               <KanbanCardForm
@@ -901,7 +901,7 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
       </Modal>
 
       <Modal visible={managingFields} animationType="slide" transparent onRequestClose={() => setManagingFields(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <KanbanFieldsManager
               fieldDefs={fieldDefs}

@@ -926,7 +926,7 @@ export function PlanificadorScreen() {
 
       {/* MODAL DE EDICIÓN */}
       <Modal visible={form !== null} animationType="slide" onRequestClose={closeTask} transparent>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.modalTitle}>Tarea</Text>
@@ -1267,7 +1267,7 @@ export function PlanificadorScreen() {
 
       {/* MODAL NUEVO TABLERO */}
       <Modal visible={showCreatePlanner} animationType="slide" transparent onRequestClose={() => setShowCreatePlanner(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <Text style={styles.modalTitle}>Nuevo tablero</Text>
             <TextInput

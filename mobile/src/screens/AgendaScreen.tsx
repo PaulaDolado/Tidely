@@ -529,7 +529,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
       </Pressable>
 
       <Modal visible={form !== null} animationType="slide" onRequestClose={closeForm} transparent>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.modalTitle}>{form?.id ? "Editar evento" : "Nuevo evento"}</Text>

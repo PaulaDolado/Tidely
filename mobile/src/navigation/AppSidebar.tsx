@@ -10,7 +10,6 @@ import {
   Modal,
   StyleSheet,
   useWindowDimensions,
-  Platform,
   KeyboardAvoidingView,
   PanResponder,
   GestureResponderEvent,
@@ -485,11 +484,22 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const topOffset = insets.top + 16;
 
   return (
-    // Raíz 0x0 a propósito: no reserva ancho en el flex-row del navegador ni abierto ni cerrado
-    // (a diferencia de la primera versión, que sí lo hacía estando desplegado y por eso encogía
-    // el contenido) — tanto el fondo oscuro como el panel escapan de este tamaño con
+    // Fragmento raíz: el View de abajo (con position:absolute, 0x0) agrupa fondo oscuro + panel
+    // bajo un mismo elevation (ver su comentario), y los dos <Modal> de más abajo van como
+    // hermanos sueltos — un <Modal> es una ventana nativa aparte, no le afecta el elevation de
+    // nada de fuera. Ninguno de los dos reserva ancho en el flex-row del navegador ni abierto ni
+    // cerrado (a diferencia de la primera versión, que sí lo hacía estando desplegado y por eso
+    // encogía el contenido) — tanto el fondo oscuro como el panel escapan de su tamaño con
     // `position: absolute`, así que la pantalla de detrás nunca cambia de tamaño.
     <>
+      <View style={styles.drawerLayer} pointerEvents="box-none">
+      {/* Fondo oscuro (backdrop) y panel (sidebar) comparten AQUÍ un único `elevation` de grupo:
+          en Android, dos hermanos con `elevation` distinto se apilan por elevation, ignorando
+          zIndex — con el backdrop en elevation 20 y el panel sin elevation (0), el backdrop podía
+          acabar pintándose POR ENCIMA del panel mientras el menú estaba abierto, oscureciéndolo
+          también a él y no solo al contenido de detrás. Metiéndolos bajo un mismo `elevation` aquí
+          (uno solo, para todo el grupo), la elevation ya no decide el orden ENTRE ellos — vuelve a
+          mandar el orden normal (zIndex / orden de aparición), que es el que sí es correcto. */}
       {/* Fondo oscuro semitransparente: se interpone entre el menú y el contenido mientras
           desliza, y tocarlo cierra el menú. `pointerEvents` en "none" mientras está cerrado para
           no robarle toques al contenido (aunque su opacidad ya sea 0). */}
@@ -647,12 +657,13 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           <Image source={clipClosedSource} resizeMode="contain" style={{ width: CLIP_CLOSED_W, height: CLIP_CLOSED_H }} />
         </Pressable>
       </Animated.View>
+    </View>
 
       {/* Mismo diálogo (plantilla + título) que dashboard/src/components/AppShell.tsx abre al
           pulsar "+ Nueva página" — un <Modal> nativo, no otra pantalla del stack, así que no hace
           falta pasar por "Lista" para crear. */}
       <Modal visible={showCreatePage} animationType="slide" transparent onRequestClose={() => setShowCreatePage(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <NewPageForm onCancel={() => setShowCreatePage(false)} onSubmit={handleCreatePage} />
           </View>
@@ -660,50 +671,56 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
       </Modal>
 
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.settingsHeader}>
-                <Text style={styles.settingsTitle}>Ajustes</Text>
-                <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>
-                  <Text style={styles.settingsClose}>Cerrar</Text>
-                </Pressable>
+        {/* Mismo patrón que el modal de "+ Nueva página" de arriba (modalBackdrop directamente en
+            el KeyboardAvoidingView, no en un Pressable envolviéndolo) — con el patrón anterior
+            (Pressable > KeyboardAvoidingView sin estilo > Pressable) el fondo oscuro no llegaba a
+            cubrir toda la pantalla en Android, dejando ver la cabecera y el pie del menú lateral
+            por encima y por debajo de este diálogo. El "tocar fuera para cerrar" pasa a un
+            Pressable que ocupa todo el hueco DETRÁS de la hoja (StyleSheet.absoluteFill), en vez
+            de en el propio contenedor. */}
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSettings(false)} />
+          <Pressable style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Ajustes</Text>
+              <Pressable onPress={() => setShowSettings(false)} hitSlop={8}>
+                <Text style={styles.settingsClose}>Cerrar</Text>
+              </Pressable>
+            </View>
+
+            {/* Igual idea que el menú de la izquierda del diálogo de Ajustes en la web, aplanado
+                a estas 5 pestañas (ver el comentario de settingsSection más arriba) — con scroll
+                horizontal propio (`showsHorizontalScrollIndicator={false}`, como la propia fila
+                de pestañas de AppShell.tsx en su breakpoint móvil): las 5 etiquetas ya no caben
+                todas a la vez en una pantalla de móvil estrecha. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.settingsTabsScroll}>
+              <View style={styles.settingsTabs}>
+                {SETTINGS_SECTIONS.map(({ value, label }) => (
+                  <Pressable
+                    key={value}
+                    onPress={() => setSettingsSection(value)}
+                    style={[styles.settingsTab, settingsSection === value && styles.settingsTabActive]}
+                  >
+                    <Text style={[styles.settingsTabLabel, settingsSection === value && styles.settingsTabLabelActive]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
+            </ScrollView>
 
-              {/* Igual idea que el menú de la izquierda del diálogo de Ajustes en la web, aplanado
-                  a estas 5 pestañas (ver el comentario de settingsSection más arriba) — con scroll
-                  horizontal propio (`showsHorizontalScrollIndicator={false}`, como la propia fila
-                  de pestañas de AppShell.tsx en su breakpoint móvil): las 5 etiquetas ya no caben
-                  todas a la vez en una pantalla de móvil estrecha. */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.settingsTabsScroll}>
-                <View style={styles.settingsTabs}>
-                  {SETTINGS_SECTIONS.map(({ value, label }) => (
-                    <Pressable
-                      key={value}
-                      onPress={() => setSettingsSection(value)}
-                      style={[styles.settingsTab, settingsSection === value && styles.settingsTabActive]}
-                    >
-                      <Text style={[styles.settingsTabLabel, settingsSection === value && styles.settingsTabLabelActive]}>
-                        {label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
-
-              {/* AppearanceSettings ya no es solo el selector de tema (ver Apariencia > tamaño de
-                  letra/diseño del menú, añadidos después) — sin scroll propio, "Diseño del menú"
-                  quedaría cortado por el `maxHeight: "88%"` de modalSheet en pantallas pequeñas. */}
-              <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} keyboardShouldPersistTaps="handled">
-                {settingsSection === "cuenta" && <AccountSettings />}
-                {settingsSection === "general" && <SectionsPicker />}
-                {settingsSection === "apariencia" && <AppearanceSettings />}
-                {settingsSection === "uso" && <TermsOfUseSection />}
-                {settingsSection === "privacidad" && <PrivacyPolicySection />}
-              </ScrollView>
-            </Pressable>
-          </KeyboardAvoidingView>
-        </Pressable>
+            {/* AppearanceSettings ya no es solo el selector de tema (ver Apariencia > tamaño de
+                letra/diseño del menú, añadidos después) — sin scroll propio, "Diseño del menú"
+                quedaría cortado por el `maxHeight: "88%"` de modalSheet en pantallas pequeñas. */}
+            <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} keyboardShouldPersistTaps="handled">
+              {settingsSection === "cuenta" && <AccountSettings />}
+              {settingsSection === "general" && <SectionsPicker />}
+              {settingsSection === "apariencia" && <AppearanceSettings />}
+              {settingsSection === "uso" && <TermsOfUseSection />}
+              {settingsSection === "privacidad" && <PrivacyPolicySection />}
+            </ScrollView>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -715,12 +732,15 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
 // arriba) cada vez que `useTheme()` entrega una paleta distinta.
 function createStyles(colors: ColorPalette) {
   return StyleSheet.create({
+  // Agrupa fondo oscuro + panel bajo un único elevation (ver el comentario de más arriba, donde
+  // se usa) — position:absolute y sin ancho/alto para no ocupar hueco en el flex-row del
+  // navegador, igual criterio que backdrop/sidebar de aquí abajo.
+  drawerLayer: { position: "absolute", top: 0, left: 0, elevation: 25 },
   backdrop: {
     position: "absolute",
     top: 0,
     left: 0,
     zIndex: 20,
-    elevation: 20,
     backgroundColor: "rgba(45, 41, 38, 0.4)",
   },
   backdropTouchable: {

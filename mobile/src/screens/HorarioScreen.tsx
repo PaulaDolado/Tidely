@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
@@ -337,7 +337,7 @@ export function HorarioScreen() {
       </ScrollView>
 
       <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <Text style={styles.modalTitle}>Nuevo horario</Text>
             <TextInput style={styles.input} placeholder="Ej. 1r trimestre" value={newName} onChangeText={setNewName} autoFocus />

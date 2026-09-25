@@ -285,7 +285,7 @@ export function FinanzasScreen() {
       </ScrollView>
 
       <Modal visible={formTx !== null} animationType="slide" transparent onRequestClose={() => setFormTx(null)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {formTx !== null && (
               <MovementForm

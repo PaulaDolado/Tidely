@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Pressable, Modal, ScrollView, StyleSheet, Alert, Platform, KeyboardAvoidingView, Image } from "react-native";
+import { View, Pressable, Modal, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Image } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
@@ -153,7 +153,7 @@ function QuickAccessEditModal({
   const [editingLink, setEditingLink] = useState<CustomQuickAccessLink | null>(null);
   return (
     <Pressable style={styles.modalBackdrop} onPress={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView behavior="padding">
         <Pressable style={[styles.modalPanel, { paddingBottom: insets.bottom + 24 }]} onPress={(e) => e.stopPropagation()}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Acceso rápido</Text>

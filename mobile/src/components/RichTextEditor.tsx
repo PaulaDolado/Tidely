@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Modal, Pressable, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, StyleSheet, Modal, Pressable, Alert, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "./AppText";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 import * as ImagePicker from "expo-image-picker";
@@ -150,7 +150,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       />
 
       <Modal visible={prompt !== null} transparent animationType="fade" onRequestClose={() => setPrompt(null)}>
-        <KeyboardAvoidingView style={styles.promptBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.promptBackdrop} behavior="padding">
           <View style={styles.promptCard}>
             <Text style={styles.promptTitle}>
               {prompt?.kind === "link" ? "URL del enlace" : prompt?.kind === "bookmark" ? "URL de la web" : "Fórmula en LaTeX"}

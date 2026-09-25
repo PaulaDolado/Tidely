@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { View, Pressable, Modal, ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Pressable, Modal, ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useTheme } from "../context/ThemeContext";
 import { search, SearchResults } from "../api/search";
@@ -79,9 +79,12 @@ export function GlobalSearch({ onPick }: { onPick: (pick: SearchPick) => void })
       </Pressable>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={close}>
+        {/* "padding" en los dos sistemas: un <Modal transparent> no hereda el adjustResize del
+            Activity en Android, así que dejar `undefined` ahí (solo iOS) hacía que el teclado
+            tapara los campos de más abajo sin que nada los desplazara. */}
         <KeyboardAvoidingView
           style={[styles.backdrop, { backgroundColor: "rgba(45,41,38,0.4)" }]}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
         >
           <View style={[styles.sheet, { backgroundColor: colors.background }]}>
             <View style={styles.header}>

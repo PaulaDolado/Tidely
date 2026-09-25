@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -138,7 +138,7 @@ export function PaginasListScreen({ navigation }: Props) {
       </ScrollView>
 
       <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <NewPageForm onCancel={() => setShowCreate(false)} onSubmit={handleCreate} />
           </View>

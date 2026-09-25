@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { View, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import Svg, { Path } from "react-native-svg";
 import { useAuth } from "../auth/AuthContext";
@@ -124,7 +124,7 @@ export function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <Text style={styles.title}>Tidely</Text>
