@@ -11,7 +11,7 @@ import appJson from "../../app.json";
 // La versión "de este build" es `expo.version` de app.json en el momento de compilar — el
 // workflow de release (.github/workflows/release.yml) la sobrescribe con el tag `vX.Y.Z` justo
 // antes de compilar el .apk, así que lo que se compara aquí siempre coincide con el tag publicado.
-const REPO = "PaulaDolado/Tidely";
+export const REPO = "PaulaDolado/Tidely";
 const APK_DOWNLOAD_URL = `https://github.com/${REPO}/releases/latest/download/Tidely.apk`;
 const LOCAL_VERSION = appJson.expo.version;
 

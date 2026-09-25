@@ -28,6 +28,7 @@ import { AppearanceSettings } from "../components/AppearanceSettings";
 import { AccountSettings } from "../components/AccountSettings";
 import { SectionsPicker } from "../components/GeneralSettings";
 import { PrivacyPolicySection, TermsOfUseSection } from "../components/PolicyText";
+import { AboutTidelySection } from "../components/AboutTidely";
 import { GlobalSearch, SearchPick } from "../components/GlobalSearch";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
 import { EnabledSection, ENABLED_SECTIONS } from "../types";
@@ -116,13 +117,16 @@ const NAV: NavItem[] = [
 
 // Pestañas del diálogo de Ajustes (ver settingsSection más abajo) — etiquetas cortas a propósito
 // ("Uso"/"Privacidad", no "Política de uso"/"Política de privacidad" como en la web) para que
-// quepan más chips a la vez antes de que haga falta desplazar el scroll horizontal.
-const SETTINGS_SECTIONS: { value: "cuenta" | "general" | "apariencia" | "uso" | "privacidad"; label: string }[] = [
+// quepan más chips a la vez antes de que haga falta desplazar el scroll horizontal. "Sobre" no
+// tiene equivalente en la web (SettingsDialog.tsx): solo tiene sentido en el móvil, que es la
+// única build que se actualiza a mano descargando un .apk nuevo (ver AboutTidely.tsx).
+const SETTINGS_SECTIONS: { value: "cuenta" | "general" | "apariencia" | "uso" | "privacidad" | "sobre"; label: string }[] = [
   { value: "cuenta", label: "Cuenta" },
   { value: "general", label: "General" },
   { value: "apariencia", label: "Apariencia" },
   { value: "uso", label: "Uso" },
   { value: "privacidad", label: "Privacidad" },
+  { value: "sobre", label: "Sobre" },
 ];
 
 // Poda NAV según los apartados que el usuario activó (asistente de bienvenida o Ajustes) — mismo
@@ -299,7 +303,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   // fuera "Invitar a un amigo"/"Obtener ayuda", que en la propia web tampoco son más que un aviso
   // de "esto llega más adelante" (ver el comentario de cabecera del fichero), así que no aportan
   // nada real que portar todavía.
-  const [settingsSection, setSettingsSection] = useState<"cuenta" | "general" | "apariencia" | "uso" | "privacidad">("cuenta");
+  const [settingsSection, setSettingsSection] = useState<"cuenta" | "general" | "apariencia" | "uso" | "privacidad" | "sobre">("cuenta");
   const [customPages, setCustomPages] = useState<CustomPageSummary[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -718,6 +722,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
               {settingsSection === "apariencia" && <AppearanceSettings />}
               {settingsSection === "uso" && <TermsOfUseSection />}
               {settingsSection === "privacidad" && <PrivacyPolicySection />}
+              {settingsSection === "sobre" && <AboutTidelySection />}
             </ScrollView>
           </Pressable>
         </KeyboardAvoidingView>

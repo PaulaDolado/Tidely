@@ -2,7 +2,6 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { colors, fonts } from "../theme";
 import { PaginasListScreen } from "./PaginasListScreen";
 import { PaginaDetailScreen } from "./PaginaDetailScreen";
-import { DetailBackButton } from "../components/DetailBackButton";
 
 // "Páginas" es la única pestaña que necesita drill-down (lista → detalle de una página), así que
 // es la única que monta su propia pila (`native-stack`, ya usado en Fase 1 antes de pasar a
@@ -22,15 +21,19 @@ export function PaginasScreen() {
       <Stack.Screen
         name="Detalle"
         component={PaginaDetailScreen}
-        options={({ route, navigation }) => ({
+        options={({ route }) => ({
           title: route.params.title,
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: fonts.sansSemiBold },
           headerShadowVisible: false,
-          // Flecha de volver custom, no la nativa por defecto: con el menú lateral colapsado, esa
-          // flecha caía justo debajo del clip flotante (ver DetailBackButton.tsx).
-          headerLeft: () => <DetailBackButton onPress={() => navigation.goBack()} />,
+          // Sin flecha de volver: tanto Galería como "+ Nueva página" abren este detalle
+          // directamente desde el menú lateral (sin pasar antes por "Lista"), así que la flecha
+          // ahí siempre volvía a "Hoy" (la pestaña activa al abrirlo), no a ningún sitio
+          // relacionado con la propia página — más confuso que útil. Para las páginas SÍ abiertas
+          // desde "Lista" (tocando una en el listado), el menú lateral y la pestaña "Páginas" de
+          // la barra inferior siguen sirviendo para volver.
+          headerLeft: () => null,
         })}
       />
     </Stack.Navigator>

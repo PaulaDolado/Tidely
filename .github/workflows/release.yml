@@ -180,6 +180,10 @@ jobs:
     needs: [build-android, build-windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           name: android-apks
@@ -190,14 +194,28 @@ jobs:
           name: windows-msi
           path: dist
 
+      # El cuerpo del Release es el propio mensaje del tag anotado (`git tag -a -m "..."`, donde
+      # ya se escribe a mano un resumen legible de la versión) en vez de generate_release_notes,
+      # que solo listaría los commits en bruto desde el tag anterior — este texto es el que luego
+      # lee la app en "Ajustes > Sobre Tidely" (ver mobile/src/components/AboutTidely.tsx, que pide
+      # GET /repos/.../releases) para mostrar las novedades de cada versión, así que interesa que
+      # sea legible de verdad.
+      - name: Leer el mensaje del tag
+        id: tag_message
+        run: |
+          {
+            echo 'body<<EOF'
+            git for-each-ref "refs/tags/${{ github.ref_name }}" --format='%(contents)'
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
       # `files:` con nombres fijos (Tidely.apk/Tidely-Setup.msi) — es justo lo que hace que la URL
       # ".../releases/latest/download/..." sea estable entre versiones, ver el comentario de arriba
-      # del todo. `generate_release_notes: true` rellena el cuerpo del Release solo, a partir de
-      # los commits desde el tag anterior.
+      # del todo.
       - name: Crear el Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.apk
             dist/Tidely-Setup.msi
-          generate_release_notes: true
+          body: ${{ steps.tag_message.outputs.body }}
