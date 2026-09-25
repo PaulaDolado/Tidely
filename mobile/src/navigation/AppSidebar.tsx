@@ -738,9 +738,14 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
 function createStyles(colors: ColorPalette) {
   return StyleSheet.create({
   // Agrupa fondo oscuro + panel bajo un único elevation (ver el comentario de más arriba, donde
-  // se usa) — position:absolute y sin ancho/alto para no ocupar hueco en el flex-row del
-  // navegador, igual criterio que backdrop/sidebar de aquí abajo.
-  drawerLayer: { position: "absolute", top: 0, left: 0, elevation: 25 },
+  // se usa) — position:absolute y estirado a toda la pantalla (top/left/right/bottom en vez de
+  // solo top/left) para no ocupar hueco en el flex-row del navegador (sigue fuera del flujo) pero
+  // con tamaño real: todos sus hijos son también position:absolute, así que sin right/bottom Yoga
+  // mide este contenedor como 0x0 (los hijos absolutos no aportan tamaño al padre) — y en Android
+  // una View de 0x0 con `elevation` no llega a pintar sus hijos, dejando el clip de "mostrar menú"
+  // invisible con el menú colapsado (el resto del panel ya está fuera de pantalla/opacidad 0 en
+  // ese estado, así que no se notaba nada más roto).
+  drawerLayer: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, elevation: 25 },
   backdrop: {
     position: "absolute",
     top: 0,
