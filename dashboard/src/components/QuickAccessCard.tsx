@@ -113,16 +113,21 @@ export function QuickAccessCard() {
 // Tailwind (size-11 = 2.75rem, size-8 = 2rem), reutilizado en la tarjeta y en el diálogo de
 // selección con dos tamaños distintos. Prioridad: `icon` (path de logo de marca del catálogo
 // fijo) > `faviconUrl` (icono real sacado de la web al añadir/editar un enlace propio, ver
-// fetchFaviconFor) > `emoji` (reserva si no hay ninguno de los dos, o si el favicon no carga —
-// `imgFailed` se pone a true en el onError de la propia imagen, así que un dominio caído o sin
-// favicon de verdad pese al 200 de /favicon.ico no deja la casilla en blanco).
+// fetchFaviconFor) > `emoji` (si el usuario puso uno a mano) > 🔗 genérico (ya no la inicial del
+// nombre) — `imgFailed` se pone a true en el onError de la propia imagen, así que un dominio
+// caído o sin favicon de verdad pese al 200 de /favicon.ico cae también al genérico, no en blanco.
 function AppLogo({ app, size }: { app: QuickAccessApp; size: 8 | 11 }) {
   const [imgFailed, setImgFailed] = useState(false);
   const boxClass = size === 11 ? "size-11 rounded-2xl p-2" : "size-8 rounded-lg p-1.5";
   const showFavicon = !!app.faviconUrl && !imgFailed;
+  // Los enlaces propios (sin `icon` de marca) van siempre sobre fondo transparente: un favicon de
+  // verdad ya trae su propio color/diseño, y una casilla de color detrás solo desentonaría. Los
+  // del catálogo fijo (`icon`) sí necesitan su color de marca — son un SVG en blanco pensado para
+  // pintarse sobre ese fondo, no se verían sobre transparente.
+  const backgroundColor = app.icon ? app.color : "transparent";
 
   return (
-    <span className={`flex shrink-0 items-center justify-center overflow-hidden ${boxClass}`} style={{ backgroundColor: app.color }}>
+    <span className={`flex shrink-0 items-center justify-center overflow-hidden ${boxClass}`} style={{ backgroundColor }}>
       {app.icon ? (
         <svg viewBox="0 0 24 24" fill="#fff" role="img" aria-label={app.label}>
           <path d={app.icon} />
@@ -136,7 +141,7 @@ function AppLogo({ app, size }: { app: QuickAccessApp; size: 8 | 11 }) {
         />
       ) : (
         <span className={size === 11 ? "text-lg leading-none" : "text-sm leading-none"} role="img" aria-label={app.label}>
-          {app.emoji}
+          {app.emoji || "🔗"}
         </span>
       )}
     </span>

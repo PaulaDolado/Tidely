@@ -196,9 +196,8 @@ export function addCustomLink(input: { label: string; url: string; emoji: string
   const label = input.label.trim();
   const url = normalizeQuickAccessUrl(input.url);
   if (!label || !url) return null;
-  // Sin emoji, la inicial del nombre en mayúscula funciona como icono por defecto (mismo recurso
-  // que un avatar con iniciales) en vez de dejar la casilla vacía.
-  const emoji = input.emoji.trim() || label.charAt(0).toUpperCase();
+  // Sin emoji ni favicon, AppLogo cae a un icono genérico (🔗) — no a la inicial del nombre.
+  const emoji = input.emoji.trim();
   const link: CustomQuickAccessLink = {
     id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     label,
@@ -222,7 +221,7 @@ export function editCustomLink(
   const label = input.label.trim();
   const url = normalizeQuickAccessUrl(input.url);
   if (!label || !url) return null;
-  const emoji = input.emoji.trim() || label.charAt(0).toUpperCase();
+  const emoji = input.emoji.trim();
   let updated: CustomQuickAccessLink | null = null;
   const next = loadCustomLinks().map((link) => {
     if (link.id !== id) return link;

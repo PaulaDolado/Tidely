@@ -112,9 +112,14 @@ export function QuickAccessCard() {
 function AppLogo({ app, size }: { app: QuickAccessApp; size: 32 | 44 }) {
   const boxStyle = size === 44 ? styles.logoBoxLarge : styles.logoBoxSmall;
   const [faviconFailed, setFaviconFailed] = useState(false);
+  // Los enlaces propios (sin `icon` de marca) van siempre sobre fondo transparente: un favicon de
+  // verdad ya trae su propio color/diseño, y una casilla de color detrás solo desentonaría. Los
+  // del catálogo fijo (`icon`) sí necesitan su color de marca — son un SVG en blanco pensado para
+  // pintarse sobre ese fondo, no se verían sobre transparente.
+  const backgroundColor = app.icon ? app.color : "transparent";
 
   return (
-    <View style={[styles.logoBox, boxStyle, { backgroundColor: app.color }]}>
+    <View style={[styles.logoBox, boxStyle, { backgroundColor }]}>
       {app.icon ? (
         <Svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24">
           <Path d={app.icon} fill="#fff" />
@@ -126,7 +131,9 @@ function AppLogo({ app, size }: { app: QuickAccessApp; size: 32 | 44 }) {
           onError={() => setFaviconFailed(true)}
         />
       ) : (
-        <Text style={{ fontSize: size === 44 ? 18 : 14, lineHeight: size === 44 ? 20 : 16 }}>{app.emoji}</Text>
+        // Sin favicon (o si falló), el emoji que haya puesto el usuario a mano — o un 🔗 genérico
+        // si tampoco eso, ya no la inicial del nombre.
+        <Text style={{ fontSize: size === 44 ? 18 : 14, lineHeight: size === 44 ? 20 : 16 }}>{app.emoji || "🔗"}</Text>
       )}
     </View>
   );
