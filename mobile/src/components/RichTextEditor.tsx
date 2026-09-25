@@ -4,7 +4,19 @@ import { Text, TextInput } from "./AppText";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 import * as ImagePicker from "expo-image-picker";
 import { RICH_EDITOR_HTML } from "./richEditorHtml";
+import { api, ApiError } from "../api/client";
 import { colors, fonts, radius } from "../theme";
+
+// Mismo shape que LinkPreview en src/services/linkPreviewService.ts (backend) — solo los campos
+// que de verdad usa la tarjeta de miniatura web (ver applyBookmark en richEditorHtml.ts); no
+// hace falta `favicon` aquí, esa es la búsqueda de Acceso rápido (ver utils/quickAccessApps.ts).
+interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  siteName: string;
+}
 
 // Puerto táctil de dashboard/src/components/RichTextEditor.tsx — ver richEditorHtml.ts para el
 // porqué de la arquitectura (WebView con contentEditable/execCommand dentro, ya que RN no tiene
@@ -29,8 +41,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   // contenido realmente cambió por fuera").
   const lastSyncedRef = useRef("");
   const readyRef = useRef(false);
-  const [prompt, setPrompt] = useState<{ kind: "link" | "equation" } | null>(null);
+  const [prompt, setPrompt] = useState<{ kind: "link" | "equation" | "bookmark" } | null>(null);
   const [promptValue, setPromptValue] = useState("");
+  const [submittingPrompt, setSubmittingPrompt] = useState(false);
 
   const inject = (js: string) => webViewRef.current?.injectJavaScript(`${js}; true;`);
 
@@ -71,6 +84,11 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       setPrompt({ kind: "equation" });
       return;
     }
+    if (msg.type === "request-bookmark") {
+      setPromptValue("https://");
+      setPrompt({ kind: "bookmark" });
+      return;
+    }
     if (msg.type === "request-image") {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -92,10 +110,31 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     }
   };
 
-  const submitPrompt = () => {
+  const submitPrompt = async () => {
     if (!prompt) return;
+    const value = promptValue.trim();
+
+    if (prompt.kind === "bookmark") {
+      if (!value) {
+        setPrompt(null);
+        return;
+      }
+      const normalized = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+      setSubmittingPrompt(true);
+      try {
+        const preview = await api.get<LinkPreview>(`/link-preview?url=${encodeURIComponent(normalized)}`);
+        inject(`window.applyBookmark(${JSON.stringify(JSON.stringify(preview))})`);
+        setPrompt(null);
+      } catch (err) {
+        Alert.alert("Aviso", err instanceof ApiError ? err.message : "No se pudo cargar la vista previa de esa web.");
+      } finally {
+        setSubmittingPrompt(false);
+      }
+      return;
+    }
+
     const fn = prompt.kind === "link" ? "applyLink" : "applyEquation";
-    inject(`window.${fn}(${JSON.stringify(promptValue.trim())})`);
+    inject(`window.${fn}(${JSON.stringify(value)})`);
     setPrompt(null);
   };
 
@@ -113,24 +152,27 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       <Modal visible={prompt !== null} transparent animationType="fade" onRequestClose={() => setPrompt(null)}>
         <KeyboardAvoidingView style={styles.promptBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.promptCard}>
-            <Text style={styles.promptTitle}>{prompt?.kind === "link" ? "URL del enlace" : "Fórmula en LaTeX"}</Text>
+            <Text style={styles.promptTitle}>
+              {prompt?.kind === "link" ? "URL del enlace" : prompt?.kind === "bookmark" ? "URL de la web" : "Fórmula en LaTeX"}
+            </Text>
             <TextInput
               autoFocus
               style={styles.promptInput}
               value={promptValue}
               onChangeText={setPromptValue}
-              placeholder={prompt?.kind === "link" ? "https://" : "E = mc^2"}
+              placeholder={prompt?.kind === "equation" ? "E = mc^2" : "https://"}
               placeholderTextColor={colors.mutedForeground}
               autoCapitalize="none"
               autoCorrect={false}
+              editable={!submittingPrompt}
               onSubmitEditing={submitPrompt}
             />
             <View style={styles.promptActions}>
-              <Pressable onPress={() => setPrompt(null)} hitSlop={8}>
+              <Pressable onPress={() => setPrompt(null)} hitSlop={8} disabled={submittingPrompt}>
                 <Text style={styles.promptCancel}>Cancelar</Text>
               </Pressable>
-              <Pressable style={styles.promptSubmit} onPress={submitPrompt}>
-                <Text style={styles.promptSubmitText}>Aplicar</Text>
+              <Pressable style={styles.promptSubmit} onPress={submitPrompt} disabled={submittingPrompt}>
+                <Text style={styles.promptSubmitText}>{submittingPrompt ? "Cargando…" : "Aplicar"}</Text>
               </Pressable>
             </View>
           </View>

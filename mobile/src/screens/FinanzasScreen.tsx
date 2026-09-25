@@ -320,13 +320,17 @@ export function FinanzasScreen() {
   );
 }
 
-// Puerto simplificado de FinanceExportMenu en dashboard/src/pages/FinanzasPage.tsx: mismo
-// endpoint (GET /finance/transactions/export) y mismo CSV (transactionsToCsv), pero solo para el
-// mes/año EN CURSO en vez de un mes/año cualquiera a elegir — cubre el caso de uso principal
-// (sacar los movimientos recientes) sin tener que montar un selector de mes/año nativo aparte.
+// Puerto de FinanceExportMenu en dashboard/src/pages/FinanzasPage.tsx: mismo endpoint
+// (GET /finance/transactions/export) y mismo CSV (transactionsToCsv), con el mismo par de
+// opciones (un mes cualquiera / un año cualquiera) — el mes se elige con el selector nativo de
+// fecha (solo importan año+mes de lo elegido, el día se ignora) en vez de un <input type="month">,
+// que no existe en RN; el año es un campo numérico, igual que el <input type="number"> de la web.
 function FinanceExportForm({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState<"month" | "year" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [monthAnchor, setMonthAnchor] = useState(() => new Date());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [yearText, setYearText] = useState(() => String(new Date().getFullYear()));
 
   const fetchTransactions = async (from: Date, to: Date) => {
     const result = await api.get<{ transactions: LocalTransaction[] }>(
@@ -339,11 +343,12 @@ function FinanceExportForm({ onClose }: { onClose: () => void }) {
     setBusy("month");
     setError(null);
     try {
-      const now = new Date();
-      const from = new Date(now.getFullYear(), now.getMonth(), 1);
-      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const y = monthAnchor.getFullYear();
+      const m = monthAnchor.getMonth();
+      const from = new Date(y, m, 1);
+      const to = new Date(y, m + 1, 0, 23, 59, 59, 999);
       const transactions = await fetchTransactions(from, to);
-      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
       await saveAndShareText(transactionsToCsv(transactions), `finanzas-${monthKey}.csv`, "text/csv");
       onClose();
     } catch (err) {
@@ -354,10 +359,14 @@ function FinanceExportForm({ onClose }: { onClose: () => void }) {
   };
 
   const exportYear = async () => {
+    const year = Number(yearText.trim());
+    if (!Number.isFinite(year) || year < 1970 || year > 9999) {
+      setError("Pon un año válido.");
+      return;
+    }
     setBusy("year");
     setError(null);
     try {
-      const year = new Date().getFullYear();
       const from = new Date(year, 0, 1);
       const to = new Date(year, 11, 31, 23, 59, 59, 999);
       const transactions = await fetchTransactions(from, to);
@@ -374,13 +383,46 @@ function FinanceExportForm({ onClose }: { onClose: () => void }) {
     <View>
       <Text style={styles.modalTitle}>Exportar a CSV</Text>
       {error && <Text style={styles.errorBanner}>{error}</Text>}
-      <Pressable style={styles.saveButton} onPress={exportMonth} disabled={busy !== null}>
-        <Text style={styles.saveButtonText}>{busy === "month" ? "Exportando…" : "Este mes"}</Text>
-      </Pressable>
-      <Pressable style={[styles.saveButton, { marginTop: 10 }]} onPress={exportYear} disabled={busy !== null}>
-        <Text style={styles.saveButtonText}>{busy === "year" ? "Exportando…" : "Este año (con columna Mes)"}</Text>
-      </Pressable>
-      <Pressable style={styles.cancelButton} onPress={onClose}>
+
+      <Text style={styles.fieldLabel}>Un mes</Text>
+      <View style={styles.exportPickerRow}>
+        <Pressable style={[styles.dateButton, styles.exportPickerField]} onPress={() => setShowMonthPicker(true)}>
+          <Text style={styles.dateButtonText}>
+            {monthAnchor.toLocaleDateString("es-ES", { month: "long", year: "numeric" })}
+          </Text>
+        </Pressable>
+        <Pressable style={styles.exportPickerSubmit} onPress={exportMonth} disabled={busy !== null}>
+          <Text style={styles.saveButtonText}>{busy === "month" ? "…" : "Exportar"}</Text>
+        </Pressable>
+      </View>
+      {showMonthPicker && (
+        <DateTimePicker
+          value={monthAnchor}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          onValueChange={(_event: DateTimePickerChangeEvent, selected?: Date) => {
+            setShowMonthPicker(false);
+            if (selected) setMonthAnchor(selected);
+          }}
+          onDismiss={() => setShowMonthPicker(false)}
+        />
+      )}
+
+      <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Un año (con columna Mes)</Text>
+      <View style={styles.exportPickerRow}>
+        <TextInput
+          style={[styles.input, styles.exportYearInput]}
+          value={yearText}
+          onChangeText={(t) => setYearText(t.replace(/[^0-9]/g, "").slice(0, 4))}
+          keyboardType="numeric"
+          maxLength={4}
+        />
+        <Pressable style={styles.exportPickerSubmit} onPress={exportYear} disabled={busy !== null}>
+          <Text style={styles.saveButtonText}>{busy === "year" ? "…" : "Exportar"}</Text>
+        </Pressable>
+      </View>
+
+      <Pressable style={[styles.cancelButton, { marginTop: 8 }]} onPress={onClose}>
         <Text style={styles.cancelButtonText}>Cancelar</Text>
       </Pressable>
     </View>
@@ -700,6 +742,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   dateButtonText: { fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },
+  exportPickerRow: { flexDirection: "row", gap: 8, alignItems: "flex-start" },
+  exportPickerField: { flex: 1, marginBottom: 0 },
+  exportYearInput: { flex: 1, marginBottom: 0, textAlign: "center" },
+  exportPickerSubmit: { backgroundColor: colors.primary, borderRadius: radius.input, paddingHorizontal: 16, justifyContent: "center" },
   saveButton: { backgroundColor: colors.primary, borderRadius: radius.full, padding: 15, alignItems: "center", marginTop: 8 },
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },

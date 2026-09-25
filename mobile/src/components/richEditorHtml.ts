@@ -10,13 +10,18 @@
 // Native vía postMessage en vez de con window.prompt(): react-native-webview no soporta
 // window.prompt() de forma fiable, así que RN abre su propio diálogo nativo y devuelve la
 // respuesta llamando a una función ya expuesta en esta página (ver el protocolo más abajo).
+// Tipografías y nº de columnas, en cambio, SÍ usan un <select> normal aquí dentro — no son texto
+// libre, son una lista cerrada de opciones, y un <select> es un control de formulario normal
+// (a diferencia de window.prompt/alert) que los WebView renderizan con su propio selector nativo
+// sin el problema de fiabilidad de esos otros dos.
 //
 // Protocolo con React Native (ver RichTextEditor.tsx):
 //   WebView → RN (postMessage, JSON): {type:"ready"} | {type:"change", html} |
 //     {type:"request-link"} | {type:"request-equation", current} | {type:"request-image"} |
-//     {type:"alert", message}
+//     {type:"request-bookmark"} | {type:"alert", message}
 //   RN → WebView (injectJavaScript llamando a estas funciones globales):
-//     setEditorHtml(html) | applyLink(url) | applyEquation(latex) | applyImage(dataUri)
+//     setEditorHtml(html) | applyLink(url) | applyEquation(latex) | applyImage(dataUri) |
+//     applyBookmark(previewJson)
 export const RICH_EDITOR_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -37,6 +42,10 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
     font-size: 13px; color: #6b6258; white-space: nowrap;
   }
   #toolbar button:active { background: rgba(0,0,0,0.08); }
+  #toolbar select {
+    flex: none; border: none; background: transparent; border-radius: 8px; padding: 7px 4px;
+    font-size: 13px; color: #6b6258; max-width: 92px;
+  }
   #toolbar .sep { flex: none; width: 1px; background: #e5e0d8; margin: 4px 3px; }
   #editor {
     min-height: 60vh; padding: 14px 16px 40px; font-size: 15px; line-height: 1.6; color: #211d1a;
@@ -87,6 +96,10 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   <button data-cmd="underline" style="text-decoration:underline">S</button>
   <button data-cmd="strikeThrough" style="text-decoration:line-through">T</button>
   <span class="sep"></span>
+  <select id="sel-font" title="Tipografía">
+    <option value="" disabled selected>Tipografía</option>
+  </select>
+  <span class="sep"></span>
   <button data-cmd="insertUnorderedList">• Lista</button>
   <button data-cmd="insertOrderedList">1. Lista</button>
   <button id="btn-checklist">☑ Tareas</button>
@@ -95,8 +108,17 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   <button id="btn-callout">💡 Destacado</button>
   <button id="btn-table">▦ Tabla</button>
   <button id="btn-equation">∑ Ecuación</button>
+  <button id="btn-toc">☰ Índice</button>
+  <select id="sel-columns" title="Distribuir en columnas">
+    <option value="" disabled selected>⬛ Columnas</option>
+    <option value="2">2 columnas</option>
+    <option value="3">3 columnas</option>
+    <option value="4">4 columnas</option>
+    <option value="5">5 columnas</option>
+  </select>
   <span class="sep"></span>
   <button id="btn-link">🔗 Enlace</button>
+  <button id="btn-bookmark">🌐 Web</button>
   <button id="btn-image">🖼 Imagen</button>
   <span class="sep"></span>
   <button data-cmd="undo">↺</button>
@@ -221,6 +243,90 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
       return;
     }
     originalApplyEquation(latex);
+  };
+
+  // Tipografías: mismo criterio que loadGoogleFont en dashboard/src/utils/googleFonts.ts — el
+  // <link> de una familia solo se inyecta la primera vez que se usa de verdad, no las 8 de golpe.
+  var GOOGLE_FONTS = ["Inter", "Roboto", "Playfair Display", "Merriweather", "Lora", "Poppins", "Space Mono", "Caveat"];
+  var loadedFonts = {};
+  function loadGoogleFont(family) {
+    if (loadedFonts[family]) return;
+    loadedFonts[family] = true;
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family) + ":wght@400;600;700&display=swap";
+    document.head.appendChild(link);
+  }
+  var fontSelect = document.getElementById("sel-font");
+  GOOGLE_FONTS.forEach(function (font) {
+    var opt = document.createElement("option");
+    opt.value = font;
+    opt.textContent = font;
+    fontSelect.appendChild(opt);
+  });
+  fontSelect.addEventListener("mousedown", saveSelection);
+  fontSelect.addEventListener("change", function () {
+    var family = fontSelect.value;
+    fontSelect.value = "";
+    if (!family) return;
+    loadGoogleFont(family);
+    exec("fontName", family);
+  });
+
+  // Columnas: mismo HTML que insertColumns en el editor de escritorio.
+  var columnsSelect = document.getElementById("sel-columns");
+  columnsSelect.addEventListener("mousedown", saveSelection);
+  columnsSelect.addEventListener("change", function () {
+    var n = Number(columnsSelect.value);
+    columnsSelect.value = "";
+    if (!n) return;
+    var cols = '<div class="col"><p><br></p></div>'.repeat(n);
+    exec("insertHTML", '<div class="col-layout cols-' + n + '">' + cols + "</div><p><br></p>");
+  });
+
+  // Índice: puerto directo de insertToc en el editor de escritorio — foto fija de los títulos
+  // (H1/H2/H3) que haya AHORA MISMO en el editor, no se recalcula solo si se añaden más después.
+  document.getElementById("btn-toc").addEventListener("mousedown", function (e) { e.preventDefault(); saveSelection(); });
+  document.getElementById("btn-toc").addEventListener("click", function () {
+    var headings = Array.prototype.slice.call(editor.querySelectorAll("h1, h2, h3"));
+    if (headings.length === 0) {
+      post({ type: "alert", message: "Añade algún título (H1, H2 o H3) antes de insertar el índice." });
+      return;
+    }
+    var items = headings
+      .map(function (h, i) {
+        if (!h.id) h.id = "heading-" + Date.now() + "-" + i;
+        var indentClass = h.tagName === "H2" ? " toc-indent-1" : h.tagName === "H3" ? " toc-indent-2" : "";
+        var text = (h.textContent || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return '<li class="' + indentClass + '"><a href="#' + h.id + '">' + text + "</a></li>";
+      })
+      .join("");
+    exec("insertHTML", '<div class="toc" contenteditable="false"><p class="toc-title">Índice</p><ul>' + items + "</ul></div><p><br></p>");
+  });
+
+  // Miniatura web: pide la URL a RN (mismo motivo que enlace/ecuación) — RN llama a GET
+  // /link-preview y devuelve los datos ya listos con applyBookmark, esta página solo construye el
+  // HTML de la tarjeta (misma estructura que insertWebBookmark en el editor de escritorio).
+  document.getElementById("btn-bookmark").addEventListener("mousedown", function (e) { e.preventDefault(); saveSelection(); });
+  document.getElementById("btn-bookmark").addEventListener("click", function () { post({ type: "request-bookmark" }); });
+  window.applyBookmark = function (previewJson) {
+    if (!previewJson) return;
+    var preview;
+    try {
+      preview = JSON.parse(previewJson);
+    } catch (e) {
+      return;
+    }
+    var esc = function (s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+    var escAttr = function (s) { return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;"); };
+    var title = esc(preview.title || preview.url);
+    var desc = preview.description ? '<div class="bookmark-desc">' + esc(preview.description) + "</div>" : "";
+    var thumb = preview.image ? '<div class="bookmark-thumb"><img src="' + escAttr(preview.image) + '" alt="" /></div>' : "";
+    var card =
+      '<a class="bookmark-card" href="' + escAttr(preview.url) + '" target="_blank" rel="noopener noreferrer" contenteditable="false">' +
+      '<div class="bookmark-text"><div class="bookmark-title">' + title + "</div>" + desc +
+      '<div class="bookmark-url">\\ud83c\\udf10 ' + esc(preview.siteName) + "</div></div>" + thumb + "</a><p><br></p>";
+    exec("insertHTML", card);
   };
 
   editor.addEventListener("input", emitChange);
