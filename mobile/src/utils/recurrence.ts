@@ -15,6 +15,10 @@ export interface RecurringEventLike {
   recurringPattern: string | null;
   startTime: Date;
   endTime: Date;
+  // Solo con recurringPattern = "weekday_range" — ver el mismo comentario en el backend
+  // (src/utils/recurrence.ts) y en types.ts.
+  recurringWeekdayStart?: number | null;
+  recurringWeekdayEnd?: number | null;
 }
 
 export interface EventExceptionLike {
@@ -61,6 +65,7 @@ function addMonthsUTC(date: Date, n: number): Date {
 function occurrenceAt(originalStart: Date, pattern: string, n: number): Date {
   switch (pattern) {
     case "daily":
+    case "weekday_range":
       return new Date(originalStart.getTime() + n * 86_400_000);
     case "weekly":
       return new Date(originalStart.getTime() + n * 7 * 86_400_000);
@@ -71,6 +76,29 @@ function occurrenceAt(originalStart: Date, pattern: string, n: number): Date {
     default:
       return new Date(originalStart.getTime() + n * 7 * 86_400_000);
   }
+}
+
+/** 1=lunes .. 7=domingo (ISO) — `Date.getUTCDay()` da 0=domingo..6=sábado, hay que rotarlo. */
+function isoWeekday(date: Date): number {
+  const day = date.getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+/** ¿Cae `date` dentro de [start, end] (ambos inclusive, convención ISO)? Si `start > end` el rango
+ * da la vuelta a la semana (p.ej. 5 a 1 = viernes, sábado, domingo, lunes). Puerto directo del
+ * backend, ver ese fichero para el porqué. */
+function matchesWeekdayRange(date: Date, start: number, end: number): boolean {
+  const weekday = isoWeekday(date);
+  if (start <= end) return weekday >= start && weekday <= end;
+  return weekday >= start || weekday <= end;
+}
+
+/** Si el patrón es "weekday_range", ¿es `naturalStart` uno de los días que le tocan? Para el resto
+ * de patrones siempre es true — cada `naturalStart` que calcula `occurrenceAt` ya es, por
+ * definición, un día válido de esa cadencia. */
+function matchesRecurrencePattern<T extends RecurringEventLike>(event: T, naturalStart: Date): boolean {
+  if (event.recurringPattern !== "weekday_range") return true;
+  return matchesWeekdayRange(naturalStart, event.recurringWeekdayStart ?? 1, event.recurringWeekdayEnd ?? 5);
 }
 
 function findException(exceptions: EventExceptionLike[], naturalStart: Date): EventExceptionLike | undefined {
@@ -99,23 +127,26 @@ export function expandRecurringEvent<T extends RecurringEventLike>(
 
   while (cursorStart.getTime() <= rangeEnd.getTime() && n < MAX_OCCURRENCES) {
     const naturalStart = cursorStart;
-    const exception = findException(exceptions, naturalStart);
 
-    if (!exception || exception.status !== "cancelled") {
-      const moved = exception?.status === "moved";
-      const effectiveStart = moved && exception?.newStartTime ? exception.newStartTime : naturalStart;
-      const effectiveEnd = moved && exception?.newEndTime ? exception.newEndTime : new Date(naturalStart.getTime() + durationMs);
+    if (matchesRecurrencePattern(event, naturalStart)) {
+      const exception = findException(exceptions, naturalStart);
 
-      if (effectiveStart.getTime() >= rangeStart.getTime() && effectiveEnd.getTime() <= rangeEnd.getTime()) {
-        occurrences.push({
-          event,
-          startTime: effectiveStart,
-          endTime: effectiveEnd,
-          isRecurringInstance: true,
-          seriesId: event.id,
-          originalStartTime: naturalStart,
-          ...(exception ? { isException: true, exceptionStatus: "moved" as const } : {}),
-        });
+      if (!exception || exception.status !== "cancelled") {
+        const moved = exception?.status === "moved";
+        const effectiveStart = moved && exception?.newStartTime ? exception.newStartTime : naturalStart;
+        const effectiveEnd = moved && exception?.newEndTime ? exception.newEndTime : new Date(naturalStart.getTime() + durationMs);
+
+        if (effectiveStart.getTime() >= rangeStart.getTime() && effectiveEnd.getTime() <= rangeEnd.getTime()) {
+          occurrences.push({
+            event,
+            startTime: effectiveStart,
+            endTime: effectiveEnd,
+            isRecurringInstance: true,
+            seriesId: event.id,
+            originalStartTime: naturalStart,
+            ...(exception ? { isException: true, exceptionStatus: "moved" as const } : {}),
+          });
+        }
       }
     }
 

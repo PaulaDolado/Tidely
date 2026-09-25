@@ -12,13 +12,13 @@ export async function upsertCustomPages(pages: ServerCustomPage[]): Promise<void
     for (const p of pages) {
       const id = String(p.id);
       await db.runAsync(
-        `INSERT INTO custom_pages (id, title, subtitle, template, content, "order", updatedAt, synced, pendingOp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL)
+        `INSERT INTO custom_pages (id, title, subtitle, icon, template, content, "order", updatedAt, synced, pendingOp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
          ON CONFLICT(id) DO UPDATE SET title = excluded.title, subtitle = excluded.subtitle,
-           template = excluded.template, content = excluded.content, "order" = excluded."order",
+           icon = excluded.icon, template = excluded.template, content = excluded.content, "order" = excluded."order",
            updatedAt = excluded.updatedAt, synced = 1
          WHERE custom_pages.pendingOp IS NULL`,
-        [id, p.title, p.subtitle, p.template, JSON.stringify(p.content), p.order, p.updatedAt]
+        [id, p.title, p.subtitle, p.icon, p.template, JSON.stringify(p.content), p.order, p.updatedAt]
       );
     }
   });
@@ -92,8 +92,8 @@ export async function createCustomPageLocal(title: string, template: string, def
   const id = Crypto.randomUUID();
   const now = new Date().toISOString();
   await db.runAsync(
-    `INSERT INTO custom_pages (id, title, subtitle, template, content, "order", updatedAt, synced, pendingOp)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL)`,
+    `INSERT INTO custom_pages (id, title, subtitle, icon, template, content, "order", updatedAt, synced, pendingOp)
+     VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, 0, NULL)`,
     [id, title.trim(), template, JSON.stringify(defaultContent), order, now]
   );
   return id;
@@ -104,7 +104,7 @@ export async function createCustomPageLocal(title: string, template: string, def
  * caller es responsable de no perder lo que ya hubiera). */
 export async function updateCustomPageLocal(
   id: string,
-  input: { title?: string; subtitle?: string | null; content?: unknown; order?: number }
+  input: { title?: string; subtitle?: string | null; icon?: string | null; content?: unknown; order?: number }
 ): Promise<void> {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -117,6 +117,10 @@ export async function updateCustomPageLocal(
   if (input.subtitle !== undefined) {
     sets.push("subtitle = ?");
     params.push(input.subtitle?.trim() || null);
+  }
+  if (input.icon !== undefined) {
+    sets.push("icon = ?");
+    params.push(input.icon?.trim() || null);
   }
   if (input.content !== undefined) {
     sets.push("content = ?");

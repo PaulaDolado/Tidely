@@ -44,7 +44,9 @@ import {
   KanbanColumn,
   KanbanContent,
   NotaContent,
+  PAGE_ICON_OPTIONS,
   SimpleGoal,
+  TEMPLATE_ICONS,
   TEMPLATE_LABELS,
 } from "../api/customPages";
 import { RichTextEditor } from "../components/RichTextEditor";
@@ -84,6 +86,8 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [customIconDraft, setCustomIconDraft] = useState("");
   const [editingEntry, setEditingEntry] = useState<GalleryEntry | null>(null);
   const [notaHtml, setNotaHtml] = useState("");
   const [notaDirty, setNotaDirty] = useState(false);
@@ -131,7 +135,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   /** Guarda un patch en SQLite, refresca `page` desde ahí (en vez de fusionar a mano) y dispara
    * sync — mismo criterio "guardado inmediato en cada acción" que ya tenía esta pantalla, ahora
    * offline-first (ver customPagesRepo.updateCustomPageLocal). */
-  const persist = async (patch: { title?: string; subtitle?: string | null; content?: unknown }) => {
+  const persist = async (patch: { title?: string; subtitle?: string | null; icon?: string | null; content?: unknown }) => {
     await updateCustomPageLocal(id, patch);
     await reload();
     await sync();
@@ -143,6 +147,16 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     const nextTitle = title.trim() || page.title;
     await persist({ title: nextTitle, subtitle: subtitle.trim() || null });
     navigation.setParams({ title: nextTitle });
+  };
+
+  // Elegir de la paleta o escribir uno propio guarda al momento (no hace falta perder el foco) —
+  // mismo criterio que dashboard/src/pages/CustomPagePage.tsx (saveIcon ahí). `null` quita el
+  // icono propio y vuelve a mostrar el de la plantilla (ver TEMPLATE_ICONS).
+  const saveIcon = async (next: string | null) => {
+    if (!page) return;
+    await persist({ icon: next });
+    setShowIconPicker(false);
+    setCustomIconDraft("");
   };
 
   const saveGalleryItems = async (items: GalleryEntry[]) => {
@@ -263,6 +277,10 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     <SafeAreaView style={styles.container}>
       {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
       <ScrollView contentContainerStyle={styles.content}>
+        <Pressable style={styles.iconButton} onPress={() => setShowIconPicker(true)} hitSlop={8}>
+          <Text style={styles.iconButtonText}>{page.icon ?? TEMPLATE_ICONS[page.template as CustomPageTemplate] ?? "📝"}</Text>
+          <Text style={styles.iconButtonLabel}>Cambiar icono</Text>
+        </Pressable>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} onBlur={saveTitleAndSubtitle} placeholder="Título" />
         <TextInput
           style={styles.subtitleInput}
@@ -363,6 +381,49 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
                 onClose={() => setEditingEntry(null)}
               />
             )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={showIconPicker} animationType="slide" transparent onRequestClose={() => setShowIconPicker(false)}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <Text style={styles.modalTitle}>Icono de la página</Text>
+            <View style={styles.iconGrid}>
+              {PAGE_ICON_OPTIONS.map((opt) => (
+                <Pressable
+                  key={opt}
+                  style={[styles.iconOption, page.icon === opt && styles.iconOptionSelected]}
+                  onPress={() => saveIcon(opt)}
+                >
+                  <Text style={styles.iconOptionText}>{opt}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.customIconRow}>
+              <TextInput
+                style={styles.customIconInput}
+                value={customIconDraft}
+                onChangeText={setCustomIconDraft}
+                placeholder="O escribe el tuyo…"
+                maxLength={8}
+              />
+              <Pressable
+                style={styles.customIconSubmit}
+                onPress={() => customIconDraft.trim() && saveIcon(customIconDraft.trim())}
+                disabled={!customIconDraft.trim()}
+              >
+                <Text style={styles.customIconSubmitText}>Usar</Text>
+              </Pressable>
+            </View>
+            {page.icon && (
+              <Pressable style={styles.iconResetButton} onPress={() => saveIcon(null)}>
+                <Text style={styles.iconResetButtonText}>Quitar icono propio (usar el de la plantilla)</Text>
+              </Pressable>
+            )}
+            <Pressable style={styles.cancelButton} onPress={() => setShowIconPicker(false)}>
+              <Text style={styles.cancelButtonText}>Cerrar</Text>
+            </Pressable>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -610,6 +671,12 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
   const [newColumnTitle, setNewColumnTitle] = useState("");
   const [editingCard, setEditingCard] = useState<{ columnId: string; card: KanbanCard } | null>(null);
   const [managingFields, setManagingFields] = useState(false);
+  // Alternativa en lista a las columnas (ver KanbanTableView) — mismo `columns`, solo cambia cómo
+  // se pintan, igual criterio que `kanbanView` en dashboard/src/pages/CustomPagePage.tsx.
+  const [boardView, setBoardView] = useState<"kanban" | "table">("kanban");
+  // Tarjeta cuya columna se está cambiando desde la vista de lista (ver KanbanTableView) — un
+  // único selector compartido por todas las filas, en vez de un Modal por fila.
+  const [movingCard, setMovingCard] = useState<{ columnId: string; cardId: string } | null>(null);
   const fieldDefs = content.fieldDefs ?? [];
 
   // --- Arrastrar y soltar (ver DraggableKanbanCard) ---
@@ -818,27 +885,51 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
         <Text style={styles.manageFieldsButtonText}>Propiedades personalizadas</Text>
       </Pressable>
 
-      {displayColumns.length === 0 && <Text style={styles.emptyText}>Sin columnas todavía.</Text>}
+      <View style={styles.boardViewRow}>
+        {(["kanban", "table"] as const).map((mode) => (
+          <Pressable
+            key={mode}
+            style={[styles.boardViewChip, boardView === mode && styles.boardViewChipSelected]}
+            onPress={() => setBoardView(mode)}
+          >
+            <Text style={[styles.boardViewChipText, boardView === mode && styles.boardViewChipTextSelected]}>
+              {mode === "kanban" ? "Kanban" : "Tabla"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
-      {displayColumns.map((column, index) => (
-        <KanbanColumnView
-          key={column.id}
-          column={column}
-          tone={KANBAN_COLUMN_STYLES[index % KANBAN_COLUMN_STYLES.length]}
-          onRename={(t) => renameColumn(column.id, t)}
-          onDelete={() => deleteColumn(column.id)}
-          onAddCard={(text) => addCard(column.id, text)}
-          onOpenCard={(card) => setEditingCard({ columnId: column.id, card })}
-          onLayout={(e) => handleColumnLayout(column.id, e)}
-          isDragOver={dragOverColumnId === column.id}
-          draggingCardId={draggingCardId}
-          onCardLayout={handleCardLayout}
-          onCardDragStart={(cardId) => handleDragStart(cardId, column.id)}
-          onCardDragMove={handleDragMove}
-          onCardDragEnd={handleDragEnd}
-          onCardDragCancel={handleDragCancel}
+      {boardView === "table" ? (
+        <KanbanTableView
+          columns={content.columns}
+          onOpenCard={(columnId, card) => setEditingCard({ columnId, card })}
+          onMoveCard={(columnId, cardId) => setMovingCard({ columnId, cardId })}
         />
-      ))}
+      ) : (
+        <>
+          {displayColumns.length === 0 && <Text style={styles.emptyText}>Sin columnas todavía.</Text>}
+
+          {displayColumns.map((column, index) => (
+            <KanbanColumnView
+              key={column.id}
+              column={column}
+              tone={KANBAN_COLUMN_STYLES[index % KANBAN_COLUMN_STYLES.length]}
+              onRename={(t) => renameColumn(column.id, t)}
+              onDelete={() => deleteColumn(column.id)}
+              onAddCard={(text) => addCard(column.id, text)}
+              onOpenCard={(card) => setEditingCard({ columnId: column.id, card })}
+              onLayout={(e) => handleColumnLayout(column.id, e)}
+              isDragOver={dragOverColumnId === column.id}
+              draggingCardId={draggingCardId}
+              onCardLayout={handleCardLayout}
+              onCardDragStart={(cardId) => handleDragStart(cardId, column.id)}
+              onCardDragMove={handleDragMove}
+              onCardDragEnd={handleDragEnd}
+              onCardDragCancel={handleDragCancel}
+            />
+          ))}
+        </>
+      )}
 
       {addingColumn ? (
         <View style={styles.addColumnForm}>
@@ -911,6 +1002,32 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
               onMove={moveFieldDef}
               onClose={() => setManagingFields(false)}
             />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={movingCard !== null} animationType="slide" transparent onRequestClose={() => setMovingCard(null)}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <Text style={styles.modalTitle}>Mover a columna</Text>
+            <View style={styles.chipRow}>
+              {content.columns.map((column) => (
+                <Pressable
+                  key={column.id}
+                  style={[styles.chip, movingCard?.columnId === column.id && styles.chipSelected]}
+                  onPress={async () => {
+                    if (!movingCard) return;
+                    await moveCard(movingCard.columnId, movingCard.cardId, column.id);
+                    setMovingCard(null);
+                  }}
+                >
+                  <Text style={[styles.chipText, movingCard?.columnId === column.id && styles.chipTextSelected]}>{column.title}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable style={styles.cancelButton} onPress={() => setMovingCard(null)}>
+              <Text style={styles.cancelButtonText}>Cerrar</Text>
+            </Pressable>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1173,6 +1290,61 @@ function CustomFieldValueEditor({
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+/** Alternativa en lista al tablero — puerto de KanbanTableView en dashboard/src/pages/
+ * CustomPagePage.tsx: todas las tarjetas de todas las columnas en una sola lista plana, con la
+ * columna de cada una como una etiqueta tocable (en vez del `<select>` de la web) en vez de una
+ * agrupación visual. Sin arrastrar y soltar propio: mover una tarjeta de columna es tocar su
+ * etiqueta (ver `onMoveCard`, que abre el selector compartido en KanbanBoard). Simplificación
+ * deliberada frente a la web: sin columnas de propiedades personalizadas inline (no caben en una
+ * pantalla de teléfono) — se siguen editando desde el propio diálogo de la tarjeta (onOpenCard).
+ */
+function KanbanTableView({
+  columns,
+  onOpenCard,
+  onMoveCard,
+}: {
+  columns: KanbanColumn[];
+  onOpenCard: (columnId: string, card: KanbanCard) => void;
+  onMoveCard: (columnId: string, cardId: string) => void;
+}) {
+  const rows = columns.flatMap((column) => column.cards.map((card) => ({ column, card })));
+
+  if (columns.length === 0) {
+    return <Text style={styles.emptyText}>Añade una columna para empezar.</Text>;
+  }
+  if (rows.length === 0) {
+    return <Text style={styles.emptyText}>Sin tarjetas todavía.</Text>;
+  }
+
+  return (
+    <View style={styles.kanbanTable}>
+      {rows.map(({ column, card }) => (
+        <Pressable key={card.id} style={styles.kanbanTableRow} onPress={() => onOpenCard(column.id, card)}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={styles.kanbanTableRowTitleRow}>
+              {card.image ? <Text style={styles.kanbanTableRowIcon}>🖼</Text> : null}
+              <Text numberOfLines={1} style={styles.kanbanTableRowTitle}>
+                {card.text}
+              </Text>
+              {card.notes ? <Text style={styles.kanbanTableRowIcon}>📝</Text> : null}
+            </View>
+            {card.description ? (
+              <Text numberOfLines={1} style={styles.kanbanTableRowDescription}>
+                {card.description}
+              </Text>
+            ) : null}
+          </View>
+          <Pressable style={styles.kanbanTableColumnTag} onPress={() => onMoveCard(column.id, card.id)} hitSlop={6}>
+            <Text style={styles.kanbanTableColumnTagText} numberOfLines={1}>
+              {column.title}
+            </Text>
+          </Pressable>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -1835,6 +2007,37 @@ const styles = StyleSheet.create({
 
   titleInput: { fontFamily: fonts.serif, fontSize: 28, color: colors.foreground, padding: 0 },
   subtitleInput: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, padding: 0, marginBottom: 8 },
+  iconButton: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 4 },
+  iconButtonText: { fontSize: 22 },
+  iconButtonLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  iconOption: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.input,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.muted,
+  },
+  iconOptionSelected: { backgroundColor: withAlpha(colors.primary, 0.15), borderWidth: 1, borderColor: colors.primary },
+  iconOptionText: { fontSize: 18 },
+  customIconRow: { flexDirection: "row", gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 },
+  customIconInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.foreground,
+    backgroundColor: colors.card,
+  },
+  customIconSubmit: { backgroundColor: colors.foreground, borderRadius: radius.input, paddingHorizontal: 14, justifyContent: "center" },
+  customIconSubmitText: { fontFamily: fonts.sansMedium, color: colors.background, fontSize: 13 },
+  iconResetButton: { alignItems: "center", padding: 10, marginTop: 4 },
+  iconResetButtonText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
 
   addButton: { alignSelf: "flex-start", backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 16, paddingVertical: 10 },
   addButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 13 },
@@ -2159,6 +2362,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   manageFieldsButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+
+  // --- Alternar Kanban/Tabla (KanbanTableView) ---
+  boardViewRow: { flexDirection: "row", gap: 8, alignSelf: "flex-start" },
+  boardViewChip: { borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted },
+  boardViewChipSelected: { backgroundColor: colors.foreground },
+  boardViewChipText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  boardViewChipTextSelected: { color: colors.background },
+  kanbanTable: { gap: 8 },
+  kanbanTableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.card,
+    padding: 12,
+    ...shadow,
+  },
+  kanbanTableRowTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  kanbanTableRowIcon: { fontSize: 12 },
+  kanbanTableRowTitle: { flex: 1, minWidth: 0, fontFamily: fonts.sansMedium, fontSize: 14, color: colors.foreground },
+  kanbanTableRowDescription: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
+  kanbanTableColumnTag: {
+    maxWidth: 110,
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: colors.muted,
+  },
+  kanbanTableColumnTagText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.mutedForeground },
 
   // Fila de una propiedad en KanbanFieldsManager — mismo patrón que FieldRow en
   // dashboard/src/pages/PlanificadorPage.tsx/CustomPagePage.tsx (nombre editable + badge de tipo +

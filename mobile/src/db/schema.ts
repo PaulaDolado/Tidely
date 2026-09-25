@@ -27,6 +27,8 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       location TEXT,
       isRecurring INTEGER NOT NULL DEFAULT 0,
       recurringPattern TEXT,
+      recurringWeekdayStart INTEGER,
+      recurringWeekdayEnd INTEGER,
       reminderMinutesBefore TEXT NOT NULL DEFAULT '[]',
       guests TEXT NOT NULL DEFAULT '[]',
       source TEXT NOT NULL DEFAULT 'tidely',
@@ -258,6 +260,7 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       subtitle TEXT,
+      icon TEXT,
       template TEXT NOT NULL,
       content TEXT NOT NULL DEFAULT '{}',
       "order" REAL NOT NULL DEFAULT 0,
@@ -301,5 +304,23 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
     } catch {
       // Ya existía — nada que hacer.
     }
+  }
+
+  // Mismo criterio que arriba: `recurringWeekdayStart`/`recurringWeekdayEnd` en `events`
+  // (patrón de recurrencia "weekday_range", paridad con dashboard/src/pages/AgendaPage.tsx).
+  for (const column of ["recurringWeekdayStart INTEGER", "recurringWeekdayEnd INTEGER"]) {
+    try {
+      await db.execAsync(`ALTER TABLE events ADD COLUMN ${column};`);
+    } catch {
+      // Ya existía — nada que hacer.
+    }
+  }
+
+  // Mismo criterio que arriba: `icon` en `custom_pages` (icono propio de la página, paridad con
+  // dashboard/src/pages/CustomPagePage.tsx).
+  try {
+    await db.execAsync(`ALTER TABLE custom_pages ADD COLUMN icon TEXT;`);
+  } catch {
+    // Ya existía — nada que hacer.
   }
 }

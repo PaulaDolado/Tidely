@@ -40,6 +40,7 @@ import {
   RecurringPattern,
   REMINDER_PRESETS_MINUTES,
   REMINDER_PRESET_LABELS,
+  WEEKDAYS,
 } from "../types";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
@@ -48,7 +49,7 @@ import { RecentEntriesCard } from "../components/RecentEntriesCard";
 import { GoalsProgressCard } from "../components/GoalsProgressCard";
 import { QuickNotesCard } from "../components/QuickNotesCard";
 
-type AgendaViewMode = "week" | "month" | "year";
+type AgendaViewMode = "day" | "week" | "month" | "year" | "agenda";
 
 // Etiquetas de día en el mismo criterio "clave UTC" que `todayKey()` usa en el resto de la app
 // (ver eventsRepo.ts) — una simplificación deliberada frente al manejo de timezone del backend
@@ -109,6 +110,8 @@ interface EventForm {
   location: string;
   isRecurring: boolean;
   recurringPattern: RecurringPattern;
+  recurringWeekdayStart: number;
+  recurringWeekdayEnd: number;
   reminders: Set<number>;
   guestsText: string;
 }
@@ -128,6 +131,8 @@ function defaultForm(dateKey: string): EventForm {
     location: "",
     isRecurring: false,
     recurringPattern: "weekly",
+    recurringWeekdayStart: 1,
+    recurringWeekdayEnd: 5,
     reminders: new Set(),
     guestsText: "",
   };
@@ -144,6 +149,8 @@ function formToOccurrenceEditor(event: ParsedEvent): EventForm {
     location: event.location ?? "",
     isRecurring: event.isRecurring,
     recurringPattern: (event.recurringPattern ?? "weekly") as RecurringPattern,
+    recurringWeekdayStart: event.recurringWeekdayStart ?? 1,
+    recurringWeekdayEnd: event.recurringWeekdayEnd ?? 5,
     reminders: new Set(event.reminderMinutesBefore),
     guestsText: event.guests.join(", "),
   };
@@ -240,8 +247,14 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
   // entero — así una sola `occurrences` sirve a la vista activa Y a la lista del día seleccionado
   // debajo, sin mantener dos estados de eventos por separado.
   const activeRange = (): [Date, Date] => {
-    if (viewMode === "month") return [monthDays[0], addDaysUTC(monthDays[monthDays.length - 1], 1)];
+    // "Agenda" (lista cronológica) usa el mismo rango que "Mes" — solo cambia cómo se pintan,
+    // igual criterio que dashboard/src/pages/AgendaPage.tsx.
+    if (viewMode === "month" || viewMode === "agenda") return [monthDays[0], addDaysUTC(monthDays[monthDays.length - 1], 1)];
     if (viewMode === "year") return [startOfYearUTC(new Date(Date.UTC(yearAnchor, 0, 1))), new Date(Date.UTC(yearAnchor + 1, 0, 1))];
+    if (viewMode === "day") {
+      const day = new Date(`${selectedDateKey}T00:00:00.000Z`);
+      return [day, addDaysUTC(day, 1)];
+    }
     return [weekStart, addDaysUTC(weekStart, 7)];
   };
 
@@ -250,7 +263,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
     const rows = await listExpandedEvents(rangeStart, rangeEnd);
     setOccurrences(rows);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, viewMode, monthAnchor, yearAnchor]);
+  }, [weekStart, viewMode, monthAnchor, yearAnchor, selectedDateKey]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -270,7 +283,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
       sync();
       reloadPendingInvitations();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [weekStart, viewMode, monthAnchor, yearAnchor])
+    }, [weekStart, viewMode, monthAnchor, yearAnchor, selectedDateKey])
   );
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDaysUTC(weekStart, i));
@@ -284,6 +297,8 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
   const goToWeek = (deltaWeeks: number) => setWeekStart((w) => addDaysUTC(w, deltaWeeks * 7));
   const goToMonth = (delta: number) => setMonthAnchor((m) => addMonthsUTC(m, delta));
   const goToYear = (delta: number) => setYearAnchor((y) => y + delta);
+  const goToDay = (delta: number) =>
+    setSelectedDateKey((key) => dateKeyOf(addDaysUTC(new Date(`${key}T00:00:00.000Z`), delta)));
   const goToToday = () => {
     const today = new Date();
     setWeekStart(mondayOfWeek(today));
@@ -357,6 +372,8 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
       location: form.location.trim() || null,
       isRecurring: form.isRecurring,
       recurringPattern: form.isRecurring ? form.recurringPattern : null,
+      recurringWeekdayStart: form.isRecurring && form.recurringPattern === "weekday_range" ? form.recurringWeekdayStart : null,
+      recurringWeekdayEnd: form.isRecurring && form.recurringPattern === "weekday_range" ? form.recurringWeekdayEnd : null,
       reminderMinutesBefore: Array.from(form.reminders),
       guests,
     };
@@ -413,33 +430,60 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
       )}
 
       <View style={styles.viewModeRow}>
-        {(["week", "month", "year"] as AgendaViewMode[]).map((mode) => (
+        {(["day", "week", "month", "year", "agenda"] as AgendaViewMode[]).map((mode) => (
           <Pressable
             key={mode}
             style={[styles.viewModeChip, viewMode === mode && styles.viewModeChipSelected]}
             onPress={() => setViewMode(mode)}
           >
             <Text style={[styles.viewModeChipText, viewMode === mode && styles.viewModeChipTextSelected]}>
-              {mode === "week" ? "Semana" : mode === "month" ? "Mes" : "Año"}
+              {mode === "day" ? "Día" : mode === "week" ? "Semana" : mode === "month" ? "Mes" : mode === "year" ? "Año" : "Agenda"}
             </Text>
           </Pressable>
         ))}
       </View>
 
       <View style={styles.weekNav}>
-        <Pressable onPress={() => (viewMode === "week" ? goToWeek(-1) : viewMode === "month" ? goToMonth(-1) : goToYear(-1))}>
+        <Pressable
+          onPress={() =>
+            viewMode === "week"
+              ? goToWeek(-1)
+              : viewMode === "month" || viewMode === "agenda"
+                ? goToMonth(-1)
+                : viewMode === "day"
+                  ? goToDay(-1)
+                  : goToYear(-1)
+          }
+        >
           <Text style={styles.navButton}>‹</Text>
         </Pressable>
         <Pressable onPress={goToToday}>
           <Text style={styles.navButtonToday}>
             {viewMode === "week"
               ? "Hoy"
-              : viewMode === "month"
+              : viewMode === "month" || viewMode === "agenda"
                 ? monthAnchor.toLocaleDateString("es-ES", { month: "long", year: "numeric", timeZone: "UTC" })
-                : String(yearAnchor)}
+                : viewMode === "day"
+                  ? new Date(`${selectedDateKey}T00:00:00.000Z`).toLocaleDateString("es-ES", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                      timeZone: "UTC",
+                    })
+                  : String(yearAnchor)}
           </Text>
         </Pressable>
-        <Pressable onPress={() => (viewMode === "week" ? goToWeek(1) : viewMode === "month" ? goToMonth(1) : goToYear(1))}>
+        <Pressable
+          onPress={() =>
+            viewMode === "week"
+              ? goToWeek(1)
+              : viewMode === "month" || viewMode === "agenda"
+                ? goToMonth(1)
+                : viewMode === "day"
+                  ? goToDay(1)
+                  : goToYear(1)
+          }
+        >
           <Text style={styles.navButton}>›</Text>
         </Pressable>
       </View>
@@ -467,7 +511,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
         <YearGrid year={yearAnchor} selectedDateKey={selectedDateKey} daysWithEvents={daysWithEvents} onSelectDay={selectDay} />
       )}
 
-      {viewMode !== "week" && (
+      {viewMode !== "week" && viewMode !== "agenda" && (
         <Text style={styles.selectedDayLabel}>
           {new Date(`${selectedDateKey}T00:00:00.000Z`).toLocaleDateString("es-ES", {
             weekday: "long",
@@ -479,26 +523,37 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
       )}
 
       <ScrollView contentContainerStyle={styles.list}>
-        {dayEvents.length === 0 && <Text style={styles.emptyText}>Sin eventos este día</Text>}
-        {dayEvents.map((occ) => (
-          <Pressable key={`${occ.event.id}-${occ.startTime.toISOString()}`} style={styles.eventCard} onPress={() => openEdit(occ)}>
-            <Text style={styles.eventTime}>
-              {occ.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
-              {occ.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
-            </Text>
-            <View style={styles.eventInfo}>
-              <Text style={styles.eventTitle}>{occ.event.title}</Text>
-              <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
-                <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
-                  {eventCategoryLabel(categories, occ.event)}
+        {viewMode === "agenda" ? (
+          <AgendaListView
+            occurrences={occurrences}
+            categories={categories}
+            onSelect={openEdit}
+            onSelectDay={(key) => setSelectedDateKey(key)}
+          />
+        ) : (
+          <>
+            {dayEvents.length === 0 && <Text style={styles.emptyText}>Sin eventos este día</Text>}
+            {dayEvents.map((occ) => (
+              <Pressable key={`${occ.event.id}-${occ.startTime.toISOString()}`} style={styles.eventCard} onPress={() => openEdit(occ)}>
+                <Text style={styles.eventTime}>
+                  {occ.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
+                  {occ.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
                 </Text>
-              </View>
-              {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
-            </View>
-            {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
-            {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
-          </Pressable>
-        ))}
+                <View style={styles.eventInfo}>
+                  <Text style={styles.eventTitle}>{occ.event.title}</Text>
+                  <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
+                    <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
+                      {eventCategoryLabel(categories, occ.event)}
+                    </Text>
+                  </View>
+                  {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
+                </View>
+                {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
+                {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
+              </Pressable>
+            ))}
+          </>
+        )}
 
         <Pressable style={styles.freeTimeToggle} onPress={() => setShowFreeTime((v) => !v)}>
           <Text style={styles.freeTimeToggleText}>{showFreeTime ? "Ocultar tiempo libre" : "⏱ Tiempo libre"}</Text>
@@ -630,6 +685,38 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
                   ))}
                 </View>
               )}
+              {form?.isRecurring && form.recurringPattern === "weekday_range" && (
+                <View style={styles.weekdayRangeRow}>
+                  <Text style={styles.fieldLabel}>Desde</Text>
+                  <View style={styles.chipRow}>
+                    {WEEKDAYS.map((d) => (
+                      <Pressable
+                        key={d.value}
+                        style={[styles.chip, form.recurringWeekdayStart === d.value && styles.chipSelected]}
+                        onPress={() => setForm({ ...form, recurringWeekdayStart: d.value })}
+                      >
+                        <Text style={[styles.chipText, form.recurringWeekdayStart === d.value && styles.chipTextSelected]}>
+                          {d.label.slice(0, 3)}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.fieldLabel}>Hasta</Text>
+                  <View style={styles.chipRow}>
+                    {WEEKDAYS.map((d) => (
+                      <Pressable
+                        key={d.value}
+                        style={[styles.chip, form.recurringWeekdayEnd === d.value && styles.chipSelected]}
+                        onPress={() => setForm({ ...form, recurringWeekdayEnd: d.value })}
+                      >
+                        <Text style={[styles.chipText, form.recurringWeekdayEnd === d.value && styles.chipTextSelected]}>
+                          {d.label.slice(0, 3)}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
 
               <Text style={styles.fieldLabel}>Avisos</Text>
               <View style={styles.chipRow}>
@@ -717,6 +804,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
               weekStart={weekStart}
               monthAnchor={monthAnchor}
               yearAnchor={yearAnchor}
+              selectedDateKey={selectedDateKey}
               categories={categories}
               onClose={() => setShowExportMenu(false)}
               onImported={async () => {
@@ -881,6 +969,74 @@ function YearGrid({
   );
 }
 
+/** Lista cronológica de eventos agrupados por día — puerto de AgendaListView en
+ * dashboard/src/pages/AgendaPage.tsx: mismo rango que "Mes" (ver activeRange en AgendaScreen),
+ * pero pintada como una lista con cabecera de día en vez de una rejilla. Tocar la cabecera de un
+ * día lo selecciona (así "Tiempo libre", debajo, sigue refiriéndose a un día concreto). */
+function AgendaListView({
+  occurrences,
+  categories,
+  onSelect,
+  onSelectDay,
+}: {
+  occurrences: EventOccurrence<ParsedEvent>[];
+  categories: EventCategory[];
+  onSelect: (occ: EventOccurrence<ParsedEvent>) => void;
+  onSelectDay: (dateKey: string) => void;
+}) {
+  const todayKey = dateKeyOf(new Date());
+  const groups = new Map<string, EventOccurrence<ParsedEvent>[]>();
+  for (const occ of occurrences) {
+    const key = dateKeyOf(occ.startTime);
+    const group = groups.get(key);
+    if (group) group.push(occ);
+    else groups.set(key, [occ]);
+  }
+  const sortedKeys = Array.from(groups.keys()).sort();
+
+  if (sortedKeys.length === 0) {
+    return <Text style={styles.emptyText}>Sin eventos este mes</Text>;
+  }
+
+  return (
+    <>
+      {sortedKeys.map((key) => (
+        <View key={key} style={styles.agendaGroup}>
+          <Pressable onPress={() => onSelectDay(key)}>
+            <Text style={[styles.agendaGroupHeader, key === todayKey && styles.agendaGroupHeaderToday]}>
+              {new Date(`${key}T00:00:00.000Z`).toLocaleDateString("es-ES", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                timeZone: "UTC",
+              })}
+            </Text>
+          </Pressable>
+          {groups.get(key)!.map((occ) => (
+            <Pressable key={`${occ.event.id}-${occ.startTime.toISOString()}`} style={styles.eventCard} onPress={() => onSelect(occ)}>
+              <Text style={styles.eventTime}>
+                {occ.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
+                {occ.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+              </Text>
+              <View style={styles.eventInfo}>
+                <Text style={styles.eventTitle}>{occ.event.title}</Text>
+                <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
+                  <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
+                    {eventCategoryLabel(categories, occ.event)}
+                  </Text>
+                </View>
+                {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
+              </View>
+              {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
+              {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
+            </Pressable>
+          ))}
+        </View>
+      ))}
+    </>
+  );
+}
+
 // Exportar (.ics / PDF) el periodo actualmente visible (semana/mes/año, según `viewMode`) e
 // importar eventos desde un .ics ajeno — puerto de IcsMenu/AgendaExportDialog en
 // dashboard/src/pages/AgendaPage.tsx, pero sobre los eventos YA CARGADOS en el dispositivo (ver
@@ -890,6 +1046,7 @@ function AgendaExportImportForm({
   weekStart,
   monthAnchor,
   yearAnchor,
+  selectedDateKey,
   categories,
   onClose,
   onImported,
@@ -898,6 +1055,7 @@ function AgendaExportImportForm({
   weekStart: Date;
   monthAnchor: Date;
   yearAnchor: number;
+  selectedDateKey: string;
   categories: EventCategory[];
   onClose: () => void;
   onImported: () => Promise<void>;
@@ -905,13 +1063,31 @@ function AgendaExportImportForm({
   const [busy, setBusy] = useState<"ics" | "pdf" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const scopeLabel = viewMode === "week" ? "esta semana" : viewMode === "month" ? "este mes" : "este año";
+  const scopeLabel =
+    viewMode === "week"
+      ? "esta semana"
+      : viewMode === "month" || viewMode === "agenda"
+        ? "este mes"
+        : viewMode === "day"
+          ? "este día"
+          : "este año";
   const scopeRange = (): [Date, Date] => {
-    if (viewMode === "month") return [monthAnchor, addMonthsUTC(monthAnchor, 1)];
+    if (viewMode === "month" || viewMode === "agenda") return [monthAnchor, addMonthsUTC(monthAnchor, 1)];
     if (viewMode === "year") return [new Date(Date.UTC(yearAnchor, 0, 1)), new Date(Date.UTC(yearAnchor + 1, 0, 1))];
+    if (viewMode === "day") {
+      const day = new Date(`${selectedDateKey}T00:00:00.000Z`);
+      return [day, addDaysUTC(day, 1)];
+    }
     return [weekStart, addDaysUTC(weekStart, 7)];
   };
-  const scopeFilenamePart = viewMode === "week" ? dateKeyOf(weekStart) : viewMode === "month" ? dateKeyOf(monthAnchor).slice(0, 7) : String(yearAnchor);
+  const scopeFilenamePart =
+    viewMode === "week"
+      ? dateKeyOf(weekStart)
+      : viewMode === "month" || viewMode === "agenda"
+        ? dateKeyOf(monthAnchor).slice(0, 7)
+        : viewMode === "day"
+          ? selectedDateKey
+          : String(yearAnchor);
 
   const exportIcs = async () => {
     setBusy("ics");
@@ -1568,6 +1744,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 4,
   },
+  // --- Vista "Agenda" (AgendaListView) ---
+  agendaGroup: { marginBottom: 12 },
+  agendaGroupHeader: {
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 13,
+    color: colors.foreground,
+    textTransform: "capitalize",
+    paddingHorizontal: 20,
+    paddingBottom: 6,
+  },
+  agendaGroupHeaderToday: { color: colors.primary },
   // --- Vista mensual (MonthGrid) ---
   monthGrid: { paddingHorizontal: 16, paddingBottom: 8 },
   monthGridWeekdayRow: { flexDirection: "row", marginBottom: 4 },
@@ -1707,6 +1894,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  weekdayRangeRow: { marginBottom: 6 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,

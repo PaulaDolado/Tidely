@@ -6,7 +6,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { runSync } from "../sync";
 import { listCustomPages, createCustomPageLocal, deleteCustomPageLocal, movePageLocal, defaultContentFor } from "../db/customPagesRepo";
-import { CustomPageTemplate, TEMPLATE_LABELS } from "../api/customPages";
+import { CustomPageTemplate, TEMPLATE_ICONS, TEMPLATE_LABELS } from "../api/customPages";
 import { LocalCustomPage } from "../types";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
@@ -115,6 +115,7 @@ export function PaginasListScreen({ navigation }: Props) {
               style={styles.pageRow}
               onPress={() => navigation.navigate("Detalle", { id: page.id, title: page.title })}
             >
+              <Text style={styles.pageIcon}>{page.icon ?? TEMPLATE_ICONS[page.template as CustomPageTemplate] ?? "📝"}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.pageTitle}>{page.title}</Text>
                 <Text style={styles.pageMeta}>{page.subtitle || TEMPLATE_LABELS[page.template as CustomPageTemplate] || page.template}</Text>
@@ -169,6 +170,7 @@ const styles = StyleSheet.create({
     padding: 14,
     ...shadow,
   },
+  pageIcon: { fontSize: 22 },
   pageTitle: { fontFamily: fonts.sansSemiBold, fontSize: 16, color: colors.foreground },
   pageMeta: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
   pageActions: { flexDirection: "row", alignItems: "center", gap: 12 },

@@ -22,10 +22,29 @@ export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
   hoy: "Hoy",
 };
 
+// Icono por defecto de cada plantilla (se muestra mientras el usuario no elija uno propio, ver
+// PaginaDetailScreen.tsx) — mismos emojis que CUSTOM_PAGE_TEMPLATE_META en
+// dashboard/src/utils/customPageTemplates.ts.
+export const TEMPLATE_ICONS: Record<CustomPageTemplate, string> = {
+  nota: "📝",
+  kanban: "🗂️",
+  galeria: "🖼️",
+  finanzas: "💰",
+  proyectos: "📁",
+  objetivos: "🎯",
+  agenda: "📅",
+  hoy: "☀️",
+};
+
+// Paleta rápida del selector de icono de la página (ver "Cambiar icono" en PaginaDetailScreen.tsx)
+// — mismos emojis que PAGE_ICON_OPTIONS en dashboard/src/pages/CustomPagePage.tsx.
+export const PAGE_ICON_OPTIONS = ["📝", "🗂️", "🖼️", "💰", "📁", "🎯", "📅", "☀️", "⭐", "✅", "📌", "📚", "💡", "🔥", "❤️", "🏆"];
+
 export interface CustomPageSummary {
   id: number;
   title: string;
   subtitle: string | null;
+  icon: string | null;
   template: CustomPageTemplate;
   order: number;
   createdAt: string;
@@ -158,5 +177,7 @@ export const createCustomPage = (title: string, template: CustomPageTemplate) =>
 export const deleteCustomPage = (id: number) => api.delete<{ message: string }>(`/custom-pages/${id}`);
 export const moveCustomPage = (id: number, direction: "up" | "down") => api.put<CustomPageSummary>(`/custom-pages/${id}/move`, { direction });
 
-export const updateCustomPage = (id: number, patch: { title?: string; subtitle?: string | null; content?: CustomPageContent }) =>
-  api.put<CustomPage>(`/custom-pages/${id}`, patch);
+export const updateCustomPage = (
+  id: number,
+  patch: { title?: string; subtitle?: string | null; icon?: string | null; content?: CustomPageContent }
+) => api.put<CustomPage>(`/custom-pages/${id}`, patch);

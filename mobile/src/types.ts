@@ -72,7 +72,7 @@ export interface AuthResponse {
 // --- Constantes compartidas por los formularios (mismos valores que agendaValidators.ts /
 // plannerValidators.ts en el backend — ver comentarios ahí para el porqué de cada uno) ---
 
-export const RECURRING_PATTERNS = ["daily", "weekly", "biweekly", "monthly"] as const;
+export const RECURRING_PATTERNS = ["daily", "weekly", "biweekly", "monthly", "weekday_range"] as const;
 export type RecurringPattern = (typeof RECURRING_PATTERNS)[number];
 
 export const RECURRING_PATTERN_LABELS: Record<RecurringPattern, string> = {
@@ -80,7 +80,21 @@ export const RECURRING_PATTERN_LABELS: Record<RecurringPattern, string> = {
   weekly: "Cada semana",
   biweekly: "Cada 2 semanas",
   monthly: "Cada mes",
+  weekday_range: "Rango de días de la semana",
 };
+
+// 1=lunes .. 7=domingo (ISO) — mismo orden que recurringWeekdayStart/End en el backend y en
+// dashboard/src/pages/AgendaPage.tsx (WEEKDAYS ahí). Solo se usan cuando recurringPattern =
+// "weekday_range" (ver LocalEvent/ServerEvent más abajo).
+export const WEEKDAYS: { value: number; label: string }[] = [
+  { value: 1, label: "Lunes" },
+  { value: 2, label: "Martes" },
+  { value: 3, label: "Miércoles" },
+  { value: 4, label: "Jueves" },
+  { value: 5, label: "Viernes" },
+  { value: 6, label: "Sábado" },
+  { value: 7, label: "Domingo" },
+];
 
 // Mismos presets que el formulario de evento en dashboard/src/pages/AgendaPage.tsx.
 export const REMINDER_PRESETS_MINUTES = [15, 30, 60, 1440] as const;
@@ -153,6 +167,10 @@ export interface ServerEvent {
   location: string | null;
   isRecurring: boolean;
   recurringPattern: RecurringPattern | null;
+  // Solo con recurringPattern = "weekday_range" (p.ej. de lunes a viernes) — convención ISO
+  // (1=lunes..7=domingo), ver WEEKDAYS arriba.
+  recurringWeekdayStart: number | null;
+  recurringWeekdayEnd: number | null;
   reminderMinutesBefore: number[];
   guests: string[];
   source: "tidely" | "google";
@@ -385,6 +403,10 @@ export interface ServerCustomPage {
   id: number;
   title: string;
   subtitle: string | null;
+  // Emoji propio de la página — null si el usuario no ha elegido uno, en cuyo caso se muestra el
+  // de la plantilla por defecto (ver TEMPLATE_ICONS en api/customPages.ts), mismo criterio que
+  // `subtitle` y que CustomPageSummary.icon en dashboard/src/types.ts.
+  icon: string | null;
   template: string;
   content: unknown; // JSON por plantilla — blob opaco para el sync, ver mobile/src/api/customPages.ts
   order: number;
@@ -467,6 +489,9 @@ export interface LocalEvent {
   location: string | null;
   isRecurring: 0 | 1;
   recurringPattern: RecurringPattern | null;
+  // Solo con recurringPattern = "weekday_range" — ver el mismo comentario en ServerEvent arriba.
+  recurringWeekdayStart: number | null;
+  recurringWeekdayEnd: number | null;
   reminderMinutesBefore: string; // JSON de number[] — ver utils/json.ts
   guests: string; // JSON de string[]
   source: "tidely" | "google";
@@ -700,6 +725,7 @@ export interface LocalCustomPage {
   id: string;
   title: string;
   subtitle: string | null;
+  icon: string | null;
   template: string;
   content: unknown;
   order: number;

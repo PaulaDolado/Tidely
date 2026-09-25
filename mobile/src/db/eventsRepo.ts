@@ -18,6 +18,8 @@ export interface ParsedEvent {
   location: string | null;
   isRecurring: boolean;
   recurringPattern: RecurringPattern | null;
+  recurringWeekdayStart: number | null;
+  recurringWeekdayEnd: number | null;
   reminderMinutesBefore: number[];
   guests: string[];
   // Reconstruido a partir de las columnas planas sharingRole/sharingOwnerName/... (ver LocalEvent
@@ -55,6 +57,8 @@ export function parseEvent(row: LocalEvent): ParsedEvent {
     location: row.location,
     isRecurring: row.isRecurring === 1,
     recurringPattern: row.recurringPattern,
+    recurringWeekdayStart: row.recurringWeekdayStart,
+    recurringWeekdayEnd: row.recurringWeekdayEnd,
     reminderMinutesBefore: parseJsonArray<number>(row.reminderMinutesBefore),
     guests: parseJsonArray<string>(row.guests),
     sharing: sharingOf(row),
@@ -78,15 +82,16 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
       await db.runAsync(
         `INSERT INTO events
            (id, title, description, type, categoryId, startTime, endTime, location, isRecurring,
-            recurringPattern, reminderMinutesBefore, guests, source, googleEventId,
-            createdAt, updatedAt, synced, pendingOp,
+            recurringPattern, recurringWeekdayStart, recurringWeekdayEnd, reminderMinutesBefore, guests,
+            source, googleEventId, createdAt, updatedAt, synced, pendingOp,
             sharingRole, sharingOwnerName, sharingOwnerUsername, sharingInvitationId)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title, description = excluded.description, type = excluded.type,
            categoryId = excluded.categoryId,
            startTime = excluded.startTime, endTime = excluded.endTime, location = excluded.location,
            isRecurring = excluded.isRecurring, recurringPattern = excluded.recurringPattern,
+           recurringWeekdayStart = excluded.recurringWeekdayStart, recurringWeekdayEnd = excluded.recurringWeekdayEnd,
            reminderMinutesBefore = excluded.reminderMinutesBefore, guests = excluded.guests,
            source = excluded.source, googleEventId = excluded.googleEventId, updatedAt = excluded.updatedAt,
            synced = 1,
@@ -104,6 +109,8 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
           e.location,
           e.isRecurring ? 1 : 0,
           e.recurringPattern,
+          e.recurringWeekdayStart,
+          e.recurringWeekdayEnd,
           toJsonArray(e.reminderMinutesBefore),
           toJsonArray(e.guests),
           e.source,
@@ -176,6 +183,8 @@ export async function listExpandedEvents(rangeStart: Date, rangeEnd: Date): Prom
       recurringPattern: parsed.recurringPattern,
       startTime: new Date(parsed.startTime),
       endTime: new Date(parsed.endTime),
+      recurringWeekdayStart: parsed.recurringWeekdayStart,
+      recurringWeekdayEnd: parsed.recurringWeekdayEnd,
     };
     const exceptions = exceptionsByEvent
       .filter((ex) => ex.eventId === row.id)
@@ -212,6 +221,8 @@ export async function createEventLocal(input: {
   location: string | null;
   isRecurring: boolean;
   recurringPattern: RecurringPattern | null;
+  recurringWeekdayStart?: number | null;
+  recurringWeekdayEnd?: number | null;
   reminderMinutesBefore: number[];
   guests: string[];
 }): Promise<string> {
@@ -221,8 +232,9 @@ export async function createEventLocal(input: {
   await db.runAsync(
     `INSERT INTO events
        (id, title, description, type, categoryId, startTime, endTime, location, isRecurring, recurringPattern,
-        reminderMinutesBefore, guests, source, googleEventId, createdAt, updatedAt, synced, pendingOp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tidely', NULL, ?, ?, 0, NULL)`,
+        recurringWeekdayStart, recurringWeekdayEnd, reminderMinutesBefore, guests, source, googleEventId,
+        createdAt, updatedAt, synced, pendingOp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tidely', NULL, ?, ?, 0, NULL)`,
     [
       id,
       input.title,
@@ -234,6 +246,8 @@ export async function createEventLocal(input: {
       input.location,
       input.isRecurring ? 1 : 0,
       input.recurringPattern,
+      input.recurringWeekdayStart ?? null,
+      input.recurringWeekdayEnd ?? null,
       toJsonArray(input.reminderMinutesBefore),
       toJsonArray(input.guests),
       now,
@@ -255,6 +269,8 @@ export async function updateEventLocal(
     location: string | null;
     isRecurring: boolean;
     recurringPattern: RecurringPattern | null;
+    recurringWeekdayStart?: number | null;
+    recurringWeekdayEnd?: number | null;
     reminderMinutesBefore: number[];
     guests: string[];
   }
@@ -264,7 +280,8 @@ export async function updateEventLocal(
   await db.runAsync(
     `UPDATE events SET
        title = ?, description = ?, type = ?, categoryId = ?, startTime = ?, endTime = ?, location = ?,
-       isRecurring = ?, recurringPattern = ?, reminderMinutesBefore = ?, guests = ?, updatedAt = ?,
+       isRecurring = ?, recurringPattern = ?, recurringWeekdayStart = ?, recurringWeekdayEnd = ?,
+       reminderMinutesBefore = ?, guests = ?, updatedAt = ?,
        pendingOp = CASE WHEN synced = 1 THEN 'update' ELSE pendingOp END
      WHERE id = ?`,
     [
@@ -277,6 +294,8 @@ export async function updateEventLocal(
       input.location,
       input.isRecurring ? 1 : 0,
       input.recurringPattern,
+      input.recurringWeekdayStart ?? null,
+      input.recurringWeekdayEnd ?? null,
       toJsonArray(input.reminderMinutesBefore),
       toJsonArray(input.guests),
       now,

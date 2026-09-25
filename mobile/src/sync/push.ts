@@ -298,6 +298,8 @@ export async function pushToServer(): Promise<void> {
           location: p.location,
           isRecurring: p.isRecurring,
           recurringPattern: p.recurringPattern,
+          recurringWeekdayStart: p.recurringWeekdayStart,
+          recurringWeekdayEnd: p.recurringWeekdayEnd,
           reminderMinutesBefore: p.reminderMinutesBefore,
           guests: p.guests,
         };
@@ -315,6 +317,8 @@ export async function pushToServer(): Promise<void> {
           location: p.location,
           isRecurring: p.isRecurring,
           recurringPattern: p.recurringPattern,
+          recurringWeekdayStart: p.recurringWeekdayStart,
+          recurringWeekdayEnd: p.recurringWeekdayEnd,
           reminderMinutesBefore: p.reminderMinutesBefore,
           guests: p.guests,
         };
@@ -537,6 +541,7 @@ export async function pushToServer(): Promise<void> {
         clientUpdatedAt: p.updatedAt,
         title: p.title,
         subtitle: p.subtitle,
+        icon: p.icon,
         content: p.content,
         order: p.order,
       })),
