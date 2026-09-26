@@ -32,8 +32,12 @@ export function PaginasScreen() {
           // ahí siempre volvía a "Hoy" (la pestaña activa al abrirlo), no a ningún sitio
           // relacionado con la propia página — más confuso que útil. Para las páginas SÍ abiertas
           // desde "Lista" (tocando una en el listado), el menú lateral y la pestaña "Páginas" de
-          // la barra inferior siguen sirviendo para volver.
-          headerLeft: () => null,
+          // la barra inferior siguen sirviendo para volver. `headerBackVisible: false`, no
+          // `headerLeft: () => null`: en native-stack solo la primera oculta de verdad la flecha
+          // nativa — con `headerLeft` a secas, la flecha por defecto de Android seguía apareciendo
+          // (y quedando tapada bajo el clip flotante del menú, el mismo problema que ya arregló
+          // DetailBackButton en Proyectos).
+          headerBackVisible: false,
         })}
       />
     </Stack.Navigator>
