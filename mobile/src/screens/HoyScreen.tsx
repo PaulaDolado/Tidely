@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, FlatList, StyleSheet, ActivityIndicator, Linking } from "react-native";
+import { View, Pressable, FlatList, StyleSheet, ActivityIndicator, Linking, Alert } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNetInfo } from "@react-native-community/netinfo";
@@ -281,6 +281,9 @@ export function HoyScreen() {
         keyExtractor={(item) => item.key}
         renderItem={() => (
           <View style={styles.content}>
+            {/* TEMPORIZADOR DE CONCENTRACIÓN */}
+            <FocusTimerCard />
+
             {/* EVENTOS */}
             <Section title="📅 Eventos de hoy">
               {events.length === 0 && (
@@ -473,6 +476,80 @@ function Section({
       <Text style={[styles.sectionTitle, { color: sectionStyle.titleColor }]}>{title}</Text>
       <View style={styles.sectionContent}>{children}</View>
     </View>
+  );
+}
+
+function formatRemaining(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * Temporizador de concentración — nuevo, sin equivalente en la web todavía. El usuario indica los
+ * minutos y le da a "Start"; "Stop" lo cancela antes de tiempo. Puramente en memoria (sin SQLite/
+ * sync): es una cuenta atrás de esta sesión, no un dato que interese guardar ni compartir entre
+ * dispositivos.
+ *
+ * Cuenta atrás por MARCA DE TIEMPO (`endAt`, un instante real) en vez de restar un segundo a un
+ * contador en cada tick: si la app pasa un rato en segundo plano (los timers de JS se frenan o se
+ * pausan ahí), al volver a primer plano el tiempo restante se recalcula de golpe contra el reloj
+ * real en vez de haberse quedado "atrasado" respecto a lo que de verdad ha pasado.
+ */
+function FocusTimerCard() {
+  const [minutesInput, setMinutesInput] = useState("25");
+  const [endAt, setEndAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (endAt === null) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [endAt]);
+
+  const remainingSeconds = endAt !== null ? Math.max(0, Math.ceil((endAt - now) / 1000)) : null;
+
+  useEffect(() => {
+    if (endAt !== null && remainingSeconds === 0) {
+      setEndAt(null);
+      Alert.alert("Concentración completada", "Se acabó el tiempo que marcaste.");
+    }
+  }, [endAt, remainingSeconds]);
+
+  const start = () => {
+    // Entre 1 y 300 minutos (5h) — un campo vacío o no numérico cae en 1, no en "no hacer nada".
+    const minutes = Math.min(Math.max(Math.round(Number(minutesInput) || 0), 1), 300);
+    setMinutesInput(String(minutes));
+    setNow(Date.now());
+    setEndAt(Date.now() + minutes * 60_000);
+  };
+
+  const stop = () => setEndAt(null);
+
+  return (
+    <Section title="⏳ Temporizador de concentración">
+      {endAt !== null ? (
+        <View style={styles.focusTimerRunning}>
+          <Text style={styles.focusTimerClock}>{formatRemaining(remainingSeconds ?? 0)}</Text>
+          <Pressable style={styles.focusTimerStopButton} onPress={stop}>
+            <Text style={styles.focusTimerStopButtonText}>Stop</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.focusTimerSetup}>
+          <TextInput
+            style={styles.focusTimerInput}
+            keyboardType="number-pad"
+            value={minutesInput}
+            onChangeText={(t) => setMinutesInput(t.replace(/[^0-9]/g, ""))}
+          />
+          <Text style={styles.focusTimerInputLabel}>min</Text>
+          <Pressable style={styles.focusTimerStartButton} onPress={start}>
+            <Text style={styles.focusTimerStartButtonText}>Start</Text>
+          </Pressable>
+        </View>
+      )}
+    </Section>
   );
 }
 
@@ -847,6 +924,40 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     paddingVertical: 8,
   },
+
+  // ========== TEMPORIZADOR DE CONCENTRACIÓN ==========
+  focusTimerSetup: { flexDirection: "row", alignItems: "center", gap: 10 },
+  focusTimerInput: {
+    width: 64,
+    backgroundColor: colors.background,
+    borderRadius: radius.input,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 16,
+    color: colors.foreground,
+    textAlign: "center",
+  },
+  focusTimerInputLabel: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
+  focusTimerStartButton: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  focusTimerStartButtonText: { fontFamily: fonts.sansBold, fontSize: 14, color: colors.primaryForeground },
+  focusTimerRunning: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  focusTimerClock: { fontFamily: fonts.serif, fontSize: 34, color: colors.foreground, fontVariant: ["tabular-nums"] },
+  focusTimerStopButton: {
+    backgroundColor: colors.destructive,
+    borderRadius: radius.full,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  focusTimerStopButtonText: { fontFamily: fonts.sansBold, fontSize: 14, color: colors.primaryForeground },
 
   // ========== LOGOUT ==========
   logoutButton: {
