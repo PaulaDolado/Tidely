@@ -28,10 +28,16 @@ export function createApp(): Application {
   // personalizadas (/custom-pages) comparten el mismo problema con la plantilla "nota" (HTML
   // con imágenes), "kanban" (imagen embebida por tarjeta) y "galeria" (imagen por entrada, ver
   // CustomPagePage en el dashboard). /planner también: cada tarea del tablero admite ahora su
-  // propia imagen (ver Task.image).
+  // propia imagen (ver Task.image). /sync (sincronización offline del móvil) reenvía la fila
+  // ENTERA de cada entidad tocada, así que hereda el mismo problema en cuanto una tarea, evento,
+  // página o tarjeta de kanban con imagen pasa por ahí — con un límite mayor porque un lote puede
+  // traer varias entidades a la vez, no solo una. /agenda necesita su propio límite por la
+  // importación de .ics (ver importIcsSchema, que ya admite hasta 2MB de contenido).
   app.use("/projects", express.json({ limit: "10mb" }));
   app.use("/custom-pages", express.json({ limit: "10mb" }));
   app.use("/planner", express.json({ limit: "10mb" }));
+  app.use("/sync", express.json({ limit: "25mb" }));
+  app.use("/agenda", express.json({ limit: "5mb" }));
   app.use(express.json({ limit: "100kb" }));
   app.use(
     morgan(env.isProduction ? "combined" : "dev", {

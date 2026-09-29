@@ -489,7 +489,15 @@ export function PlanificadorScreen() {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    const estimatedMinutes = form.estimatedMinutesText.trim() ? Number(form.estimatedMinutesText.trim()) : null;
+    const estimatedMinutesRaw = form.estimatedMinutesText.trim() ? Number(form.estimatedMinutesText.trim()) : null;
+    // El servidor exige min(1).max(100000) (ver plannerValidators.ts) y allow(null) — no "0": un
+    // "0" (el campo vacío ya da null) o un número fuera de rango pasaban el filtro de solo dígitos
+    // del propio input y quedaban guardados así en local, pero el siguiente /sync/push rechazaba
+    // el lote entero por esta tarea, bloqueando también el resto sin avisar de por qué.
+    const estimatedMinutes =
+      estimatedMinutesRaw != null && Number.isFinite(estimatedMinutesRaw) && estimatedMinutesRaw >= 1
+        ? Math.min(estimatedMinutesRaw, 100_000)
+        : null;
     await updateTaskLocal(form.id, {
       title: form.title.trim(),
       description: form.description.trim() || null,
@@ -497,7 +505,7 @@ export function PlanificadorScreen() {
       notes: form.notes.trim() || null,
       priority: form.priority,
       dueDate: form.dueDate ? form.dueDate.toISOString() : null,
-      estimatedMinutes: estimatedMinutes != null && Number.isFinite(estimatedMinutes) ? estimatedMinutes : null,
+      estimatedMinutes,
       tags,
     });
     // Los campos de texto/número de propiedades personalizadas esperan a "Guardar" (o a perder el
@@ -539,7 +547,10 @@ export function PlanificadorScreen() {
     const taskId = Number(form.id);
     if (!Number.isFinite(taskId)) return;
     const minutes = Number(minutesToLogText.trim());
-    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    // El servidor exige max(1000) por registro (ver logTimeSchema en plannerValidators.ts) — sin
+    // este tope, un valor mayor daba un 400 que el catch de abajo mostraba como "comprueba tu
+    // conexión", un mensaje engañoso para lo que en realidad era un valor fuera de rango.
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1000) return;
     setLoggingTime(true);
     try {
       const result = await logTaskTime(taskId, minutes);
@@ -965,6 +976,11 @@ export function PlanificadorScreen() {
                 placeholder="Notas libres (opcional)"
                 value={form?.notes ?? ""}
                 onChangeText={(t) => form && setForm({ ...form, notes: t })}
+                // El servidor corta en 20000 (ver notesSchema en plannerValidators.ts) y rechaza
+                // el PATCH entero si se pasa — sin este límite aquí, un texto más largo se guardaba
+                // bien en local (SQLite) pero el siguiente /sync/push fallaba entero por esta tarea
+                // y se quedaba sin sincronizar ninguna otra hasta arreglarlo a mano.
+                maxLength={20_000}
                 multiline
                 placeholderTextColor={colors.mutedForeground}
               />

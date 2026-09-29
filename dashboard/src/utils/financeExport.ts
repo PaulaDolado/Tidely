@@ -19,9 +19,15 @@ function csvCell(value: string): string {
 }
 
 function amountCell(t: Transaction): string {
-  // Coma decimal (formato español) y signo según tipo, para que sume/reste bien de un vistazo
-  // sin tener que mirar también la columna "Tipo".
-  const signed = t.type === "expense" ? -t.amount : t.amount;
+  // Number(...) a propósito: GET /finance/transactions/export devuelve las filas de Prisma tal
+  // cual, y su campo `amount` (Decimal) serializa a JSON como STRING (p.ej. "12.50"), no como
+  // number a pesar de lo que dice el tipo Transaction. Para un gasto, el "-" delante ya fuerza la
+  // conversión a number de forma implícita y por eso parecía funcionar; para un ingreso,
+  // t.amount.toFixed(2) se llamaba sobre un string y no existe, y el CSV entero fallaba en cuanto
+  // el periodo tenía algún ingreso. Coma decimal (formato español) y signo según tipo, para que
+  // sume/reste bien de un vistazo sin tener que mirar también la columna "Tipo".
+  const amount = Number(t.amount);
+  const signed = t.type === "expense" ? -amount : amount;
   return signed.toFixed(2).replace(".", ",");
 }
 

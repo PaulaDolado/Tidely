@@ -24,12 +24,21 @@ import { filterXSS, IFilterXSSOptions } from "xss";
 // los quita de cualquier atributo de tipo URL, como href/src).
 const GLOBAL_ATTRS = ["class", "style", "data-latex", "contenteditable"];
 const TABLE_CELL_ATTRS = [...GLOBAL_ATTRS, "colspan", "rowspan"];
+// Los títulos llevan `id` cuando el botón "Índice" (ver richEditorHtml.ts/RichTextEditor.tsx) les
+// añade uno para poder enlazarlos (`<a href="#heading-...">`) — sin permitirlo aquí, ese id
+// desaparecía al guardar y los enlaces del índice dejaban de encontrar su título tras recargar.
+const HEADING_ATTRS = [...GLOBAL_ATTRS, "id"];
 
 const RICH_TEXT_OPTIONS: IFilterXSSOptions = {
   whiteList: {
-    h1: GLOBAL_ATTRS, h2: GLOBAL_ATTRS, h3: GLOBAL_ATTRS,
+    h1: HEADING_ATTRS, h2: HEADING_ATTRS, h3: HEADING_ATTRS,
     p: GLOBAL_ATTRS, br: GLOBAL_ATTRS, div: GLOBAL_ATTRS, span: GLOBAL_ATTRS,
     strong: GLOBAL_ATTRS, b: GLOBAL_ATTRS, em: GLOBAL_ATTRS, i: GLOBAL_ATTRS, u: GLOBAL_ATTRS, s: GLOBAL_ATTRS, strike: GLOBAL_ATTRS,
+    // `font`: lo que produce `execCommand("fontName", ...)` en el editor (ver richEditorHtml.ts)
+    // al no fijar `styleWithCSS` — sin permitirlo, cualquier texto con tipografía elegida se
+    // perdía entero al guardar (stripIgnoreTagBody quita también el contenido, no solo la
+    // etiqueta).
+    font: [...GLOBAL_ATTRS, "face"],
     ul: GLOBAL_ATTRS, ol: GLOBAL_ATTRS, li: GLOBAL_ATTRS, blockquote: GLOBAL_ATTRS, pre: GLOBAL_ATTRS, code: GLOBAL_ATTRS, hr: GLOBAL_ATTRS,
     table: GLOBAL_ATTRS, thead: GLOBAL_ATTRS, tbody: GLOBAL_ATTRS, tr: GLOBAL_ATTRS,
     td: TABLE_CELL_ATTRS, th: TABLE_CELL_ATTRS,
