@@ -21,6 +21,7 @@ API REST de organización personal integral: **Agenda · Metas · Finanzas · Pr
 
 ## Stack
 
+**API** (este repo, raíz):
 - Node.js 20+ / TypeScript
 - Express.js
 - Prisma ORM + PostgreSQL
@@ -30,6 +31,16 @@ API REST de organización personal integral: **Agenda · Metas · Finanzas · Pr
 - Jest + Supertest (testing)
 - Swagger (OpenAPI)
 - Docker + docker-compose
+
+**[Dashboard](dashboard/README.md)** (web + escritorio):
+- React 18 + TypeScript + Vite
+- Tailwind CSS v4
+- Tauri (instalador de escritorio `.msi`)
+
+**[Móvil](mobile/README.md)** (Expo/React Native):
+- Expo + React Native + TypeScript
+- SQLite (`expo-sqlite`) offline-first con sincronización propia
+- React Navigation (bottom-tabs + native-stack)
 
 ## Setup
 
