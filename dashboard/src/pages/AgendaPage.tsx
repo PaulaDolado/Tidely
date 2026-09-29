@@ -76,6 +76,16 @@ function toKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** "45 min" hasta una hora justa, "1h 30min"/"2h" a partir de ahí — usado en "Tiempo libre" (ver
+ * FreeTimePanel) para que un hueco o una tarea de varias horas no se lea como un número de
+ * minutos larguísimo. */
+function formatMinutes(minutes: number): string {
+  if (minutes <= 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}min`;
+}
+
 function dayKeyOf(event: Event): string {
   return event.startTime.slice(0, 10);
 }
@@ -1017,14 +1027,14 @@ function FreeTimePanel({ date, categories, onScheduled }: { date: string; catego
               <div key={block.start} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border px-4 py-2.5">
                 <span className="text-sm">
                   {fmtTime(block.start)} – {fmtTime(block.end)}{" "}
-                  <span className="text-xs text-muted-foreground">({block.durationMinutes} min libres)</span>
+                  <span className="text-xs text-muted-foreground">({formatMinutes(block.durationMinutes)} libres)</span>
                 </span>
                 {suggestion ? (
                   <button
                     onClick={() => scheduleSuggestion(suggestion)}
                     className="cursor-pointer rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
                   >
-                    + Meter "{suggestion.task.title}" ({suggestion.task.estimatedMinutes} min)
+                    + Meter "{suggestion.task.title}" ({formatMinutes(suggestion.task.estimatedMinutes)})
                   </button>
                 ) : (
                   <span className="text-xs text-muted-foreground/60">Sin tarea pendiente que encaje</span>

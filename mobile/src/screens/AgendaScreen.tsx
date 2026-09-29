@@ -60,6 +60,16 @@ function dateKeyOf(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** "45 min" hasta una hora justa, "1h 30min"/"2h" a partir de ahí — usado en "Tiempo libre" (ver
+ * FreeTimePanel) para que un hueco o una tarea de varias horas no se lea como un número de
+ * minutos larguísimo. */
+function formatMinutes(minutes: number): string {
+  if (minutes <= 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}min`;
+}
+
 function mondayOfWeek(date: Date): Date {
   const day = date.getUTCDay(); // 0 = domingo
   const diff = day === 0 ? -6 : 1 - day;
@@ -1257,7 +1267,7 @@ function FreeTimePanel({
               <View key={block.start} style={styles.freeBlockRow}>
                 <Text style={styles.freeBlockText}>
                   {fmtTime(block.start)} – {fmtTime(block.end)}{" "}
-                  <Text style={styles.freeBlockDuration}>({block.durationMinutes} min libres)</Text>
+                  <Text style={styles.freeBlockDuration}>({formatMinutes(block.durationMinutes)} libres)</Text>
                 </Text>
                 {suggestion ? (
                   <Pressable
@@ -1266,7 +1276,9 @@ function FreeTimePanel({
                     disabled={schedulingStart !== null}
                   >
                     <Text style={styles.freeBlockSuggestText} numberOfLines={2}>
-                      {schedulingStart === block.start ? "Metiendo…" : `+ Meter "${suggestion.task.title}" (${suggestion.task.estimatedMinutes} min)`}
+                      {schedulingStart === block.start
+                        ? "Metiendo…"
+                        : `+ Meter "${suggestion.task.title}" (${formatMinutes(suggestion.task.estimatedMinutes)})`}
                     </Text>
                   </Pressable>
                 ) : (
