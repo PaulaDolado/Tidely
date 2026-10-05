@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🗓️ Tidely
+# Tidely
 
 **Organizador personal todo en uno: agenda, hábitos, metas, finanzas, proyectos y páginas propias — en la web, en escritorio y en el móvil, con sincronización offline.**
 
