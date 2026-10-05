@@ -1,10 +1,33 @@
-# Tidely API
+<div align="center">
 
-API REST de organización personal integral: **Agenda · Metas · Finanzas · Proyectos**, con notificaciones automáticas, eventos recurrentes de verdad y páginas personalizadas (notas, kanban, galería...).
+# 🗓️ Tidely
+
+**Organizador personal todo en uno: agenda, hábitos, metas, finanzas, proyectos y páginas propias — en la web, en escritorio y en el móvil, con sincronización offline.**
+
+[![CI](https://github.com/PaulaDolado/Tidely/actions/workflows/ci.yml/badge.svg)](https://github.com/PaulaDolado/Tidely/actions/workflows/ci.yml)
+[![Deploy](https://github.com/PaulaDolado/Tidely/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/PaulaDolado/Tidely/actions/workflows/deploy-pages.yml)
+[![Release](https://img.shields.io/github/v/release/PaulaDolado/Tidely?label=release&logo=github)](https://github.com/PaulaDolado/Tidely/releases/latest)
+![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-5-2D3748?logo=prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
+![Expo](https://img.shields.io/badge/Expo-57-000020?logo=expo&logoColor=white)
+
+[**🔗 Sitio en vivo**](https://pauladolado.github.io/Tidely/) · [**⬇️ Descargar la app (APK / Windows)**](https://github.com/PaulaDolado/Tidely/releases/latest)
+
+<img src="docs/miniatura.jpg" alt="Vista previa de Tidely: la Agenda con la vista semanal, hábitos diarios y progreso de objetivos" width="720" />
+
+</div>
+
+API REST de organización personal integral: **Agenda · Metas · Finanzas · Proyectos**, con notificaciones automáticas, eventos recurrentes de verdad y páginas personalizadas (notas, kanban, galería...). Este repo incluye la API (raíz), el [dashboard web/escritorio](dashboard/README.md) y la [app móvil](mobile/README.md).
 
 > Estado: **Sprints 1-5 completos** + hardening post-sprint (notificaciones, recurrencia real, paginación, timezone). Los 5 módulos de negocio + notificaciones están implementados, testeados (189 tests unitarios + integración) y endurecidos.
 >
-> ⚠️ **Deployment real requiere acción tuya**: no puedo crear una cuenta en Railway/Render ni desplegar en tu nombre. Todo lo necesario — Dockerfile, `render.yaml`, CI, guía paso a paso — está listo en [DEPLOYMENT.md](DEPLOYMENT.md).
+> 🚀 Dashboard desplegado en GitHub Pages y API en Render; las apps de escritorio (`.msi`) y Android (`.apk`) se publican en cada [release](https://github.com/PaulaDolado/Tidely/releases/latest). Guía para desplegar tu propia instancia en [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Documentación
 
