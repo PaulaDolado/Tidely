@@ -4,6 +4,7 @@ import { useFetch } from "../hooks/useFetch";
 import { Loading, ErrorMessage, EmptyState } from "../components/Feedback";
 import { RichTextEditor } from "../components/RichTextEditor";
 import { CustomFieldInput, formatCustomFieldValue } from "../components/CustomFieldInput";
+import { TravelPlannerTemplate } from "../components/TravelPlannerTemplate";
 import { newId } from "../utils/id";
 import { CUSTOM_PAGE_TEMPLATE_META } from "../utils/customPageTemplates";
 import { placeholderColorFor, frameHeightFor } from "../utils/galleryPalette";
@@ -392,6 +393,13 @@ export function CustomPagePage({
           emptyLabel="Añade lo que tengas que hacer hoy."
           items={(content as CustomPageContentMap["hoy"]).items}
           onChange={(items) => updateContent({ items })}
+        />
+      )}
+      {page.template === "viajes" && (
+        <TravelPlannerTemplate
+          trips={(content as CustomPageContentMap["viajes"]).trips ?? []}
+          places={(content as CustomPageContentMap["viajes"]).places ?? []}
+          onChange={updateContent}
         />
       )}
     </div>

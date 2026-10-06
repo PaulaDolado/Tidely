@@ -74,6 +74,13 @@ describe("Custom Pages Endpoints", () => {
       expect(response.body.content).toEqual({ items: [] });
     });
 
+    it("crea una página de tipo viajes sin viajes ni lugares guardados", async () => {
+      const response = await request(app).post("/custom-pages").set(authed()).send({ title: "Mis viajes", template: "viajes" });
+
+      expect(response.status).toBe(201);
+      expect(response.body.content).toEqual({ trips: [], places: [] });
+    });
+
     it("rechaza un modelo desconocido", async () => {
       const response = await request(app).post("/custom-pages").set(authed()).send({ title: "X", template: "no-existe" });
       expect(response.status).toBe(400);

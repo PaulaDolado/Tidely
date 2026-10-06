@@ -54,6 +54,8 @@ export function defaultContentFor(template: string): unknown {
       return { items: [] };
     case "hoy":
       return { items: [] };
+    case "viajes":
+      return { trips: [], places: [] };
     case "nota":
     default:
       return { html: "" };

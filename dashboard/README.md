@@ -9,7 +9,7 @@ Dashboard en React + TypeScript + Vite que consume la [Tidely API](../README.md)
 - **Metas**: tarjetas con barra de progreso, registro de avance, pestañas activas/completadas/vencidas/todas
 - **Finanzas**: balance del mes, movimientos (alta/baja), metas de ahorro como grid de casillas (progreso calculado por la API, no guardado)
 - **Proyectos**: cuaderno con tarjetas por proyecto, tareas como notas marcables, ciclo de estado
-- **Páginas personalizadas** ("+ Nueva página"): crea todas las que quieras a partir de un modelo — nota en blanco, kanban, checklist, y **galería** (collage de fotos y notas en columnas estilo pared de marcos, foto subida como data URL, diálogo ampliable a pantalla completa para escribir)
+- **Páginas personalizadas** ("+ Nueva página"): crea todas las que quieras a partir de un modelo — nota en blanco, kanban, checklist, **planificación de viajes** (viajes con fechas, presupuesto e itinerario, más lugares guardados con favoritos y foto) y **galería** (collage de fotos y notas en columnas estilo pared de marcos, foto subida como data URL, diálogo ampliable a pantalla completa para escribir)
 - Widget de notificaciones (recordatorios de eventos, alertas de metas en riesgo) y "próximo evento" en la barra lateral
 
 ## Setup

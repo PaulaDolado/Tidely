@@ -435,7 +435,7 @@ export interface IcsImportResult {
 // Páginas personalizadas ("+ Nueva página" en el menú lateral, ver AppShell/CreatePageModal).
 // Cada `template` determina la forma de `content` — el dashboard interpreta cada una con su
 // propio componente (ver CustomPageView).
-export type CustomPageTemplate = "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy";
+export type CustomPageTemplate = "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy" | "viajes";
 
 // Fila devuelta por GET /custom-pages (lista para el menú) — sin `content`, que solo llega en el
 // detalle (GET /custom-pages/:id) para no cargar el JSON completo de cada página solo para pintar
@@ -523,6 +523,36 @@ export interface AgendaNote {
   text: string;
 }
 
+// Plantilla "viajes" (ver TravelPlannerTemplate): todo vive dentro del JSON de CustomPage.content,
+// sin tablas propias — los ids son uuids generados en el cliente (ver newId), igual que en
+// GalleryEntry/KanbanCard.
+export interface TravelItineraryItem {
+  id: string;
+  date: string; // YYYY-MM-DD
+  title: string;
+  notes?: string;
+}
+
+export interface Trip {
+  id: string;
+  destination: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD, nunca anterior a startDate
+  imageData?: string | null;
+  notes?: string;
+  // Presupuesto estimado total, en EUR (mismo criterio que la plantilla "finanzas").
+  budget?: number | null;
+  itinerary: TravelItineraryItem[];
+}
+
+export interface SavedPlace {
+  id: string;
+  name: string;
+  description?: string;
+  imageData?: string | null;
+  favorite?: boolean;
+}
+
 // Forma de `content` según `template` — union discriminada a mano (no hay un campo `type` dentro
 // del propio JSON: quien discrimina es el `template` de la página que lo contiene).
 export interface CustomPageContentMap {
@@ -536,6 +566,7 @@ export interface CustomPageContentMap {
   objetivos: { goals: SimpleGoal[] };
   agenda: { items: AgendaNote[] };
   hoy: { items: ChecklistItem[] };
+  viajes: { trips: Trip[]; places: SavedPlace[] };
 }
 
 export interface CustomPage extends CustomPageSummary {

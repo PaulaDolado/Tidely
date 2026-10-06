@@ -625,7 +625,7 @@ model CustomPage {
   // escribe cualquier otro; si es null se muestra el icono de la plantilla por defecto (ver
   // meta.icon en customPageTemplates.ts), mismo criterio que `subtitle`.
   icon      String?
-  // "nota" | "kanban" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy"
+  // "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy" | "viajes"
   template  String
   order     Float    @default(0) // Float: permite reordenar offline, mismo motivo que Schedule.order.
   content   Json     @default("{}")

@@ -8,7 +8,7 @@ import { api } from "./client";
 // Las 8 plantillas de `CUSTOM_PAGE_TEMPLATES` en dashboard/src/utils/customPageTemplates.ts ya
 // tienen todas editor propio en el móvil (ver PaginaDetailScreen.tsx) — "hoy" reutiliza el mismo
 // componente que "proyectos" (mismo tipo ChecklistContent, igual que en la propia web).
-export const CUSTOM_PAGE_TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy"] as const;
+export const CUSTOM_PAGE_TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes"] as const;
 export type CustomPageTemplate = (typeof CUSTOM_PAGE_TEMPLATES)[number];
 
 export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
@@ -20,6 +20,7 @@ export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
   objetivos: "Objetivos",
   agenda: "Agenda",
   hoy: "Hoy",
+  viajes: "Planificación de viajes",
 };
 
 // Icono por defecto de cada plantilla (se muestra mientras el usuario no elija uno propio, ver
@@ -34,6 +35,7 @@ export const TEMPLATE_ICONS: Record<CustomPageTemplate, string> = {
   objetivos: "🎯",
   agenda: "📅",
   hoy: "☀️",
+  viajes: "✈️",
 };
 
 // Paleta rápida del selector de icono de la página (ver "Cambiar icono" en PaginaDetailScreen.tsx)
@@ -153,6 +155,36 @@ export interface AgendaContent {
   items: AgendaNote[];
 }
 
+// Plantilla "viajes" — mismos tipos que Trip/SavedPlace/TravelItineraryItem en
+// dashboard/src/types.ts (todo vive dentro del JSON de `content`, ids = uuid del cliente).
+export interface TravelItineraryItem {
+  id: string;
+  date: string; // YYYY-MM-DD
+  title: string;
+  notes?: string;
+}
+export interface Trip {
+  id: string;
+  destination: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD, nunca anterior a startDate
+  imageData?: string | null;
+  notes?: string;
+  budget?: number | null; // EUR
+  itinerary: TravelItineraryItem[];
+}
+export interface SavedPlace {
+  id: string;
+  name: string;
+  description?: string;
+  imageData?: string | null;
+  favorite?: boolean;
+}
+export interface TravelContent {
+  trips: Trip[];
+  places: SavedPlace[];
+}
+
 export type CustomPageContent =
   | GalleryContent
   | NotaContent
@@ -161,6 +193,7 @@ export type CustomPageContent =
   | ChecklistContent
   | GoalsContent
   | AgendaContent
+  | TravelContent
   | Record<string, unknown>;
 
 export interface CustomPage extends CustomPageSummary {

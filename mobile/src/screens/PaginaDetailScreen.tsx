@@ -48,8 +48,10 @@ import {
   SimpleGoal,
   TEMPLATE_ICONS,
   TEMPLATE_LABELS,
+  TravelContent,
 } from "../api/customPages";
 import { RichTextEditor } from "../components/RichTextEditor";
+import { TravelPlannerEditor } from "../components/TravelPlanner";
 import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
 import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
@@ -224,6 +226,11 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     await persist({ content: { items } });
   };
 
+  const saveTravel = async (content: TravelContent) => {
+    if (!page) return;
+    await persist({ content });
+  };
+
   const handleAddEntry = async () => {
     const entry: GalleryEntry = { id: Crypto.randomUUID() };
     await saveGalleryItems([entry, ...galleryItems]);
@@ -350,6 +357,14 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
             items={(page.content as ChecklistContent)?.items ?? []}
             onChange={saveChecklistItems}
             emptyLabel="Añade lo que tengas que hacer hoy."
+          />
+        ) : page?.template === "viajes" ? (
+          <TravelPlannerEditor
+            content={{
+              trips: (page.content as TravelContent)?.trips ?? [],
+              places: (page.content as TravelContent)?.places ?? [],
+            }}
+            onChange={saveTravel}
           />
         ) : page ? (
           <View style={styles.fallbackCard}>

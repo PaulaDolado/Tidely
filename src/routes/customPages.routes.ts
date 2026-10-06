@@ -24,7 +24,7 @@ router.use(authMiddleware);
  *       200: { description: "{ pages: [...] }, sin `content` (ver GET /custom-pages/{id})" }
  *   post:
  *     tags: [CustomPages]
- *     summary: Crea una página nueva a partir de un modelo (nota, kanban, galeria, finanzas, proyectos, objetivos, agenda u hoy)
+ *     summary: Crea una página nueva a partir de un modelo (nota, kanban, galeria, finanzas, proyectos, objetivos, agenda, hoy o viajes)
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       201: { description: Página creada, con el contenido inicial de su modelo }

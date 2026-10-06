@@ -33,6 +33,8 @@ function defaultContent(template: string): Prisma.InputJsonValue {
       return { items: [] };
     case "hoy":
       return { items: [] };
+    case "viajes":
+      return { trips: [], places: [] };
     case "nota":
     default:
       return { html: "" };
