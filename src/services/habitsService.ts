@@ -2,8 +2,10 @@ import { prisma } from "../config/database";
 import { ForbiddenError, NotFoundError } from "../utils/errorHandler";
 import { recordTombstone } from "./tombstoneService";
 
-// Cuántos días de historial devolvemos para la tira tipo mapa de calor del frontend.
-const HISTORY_DAYS = 30;
+// Cuántos días de historial devolvemos: la tira semanal y el gráfico de progreso del dashboard
+// (mes en curso y mes anterior completos — el peor caso, a final de mes, son ~61 días atrás) y el
+// tope de la racha.
+const HISTORY_DAYS = 62;
 
 function dateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
