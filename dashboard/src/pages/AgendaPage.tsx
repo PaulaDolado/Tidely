@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, SearchFocus, Tab } from "../components/AppShell";
 import { api, ApiError } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
+import { useReloadOnFocus } from "../hooks/useReloadOnFocus";
 import { Loading, ErrorMessage } from "../components/Feedback";
 import { GoalsDonutChart, GOALS_DONUT_PALETTE } from "../components/GoalsDonutChart";
 import { HabitsTrackerCard } from "../components/HabitsTrackerCard";
@@ -200,7 +201,15 @@ export function AgendaPage({
   const { data: goalsData } = useFetch(() => api.get<{ goals: Goal[] }>("/goals?status=active"), []);
   const { data: habitsData, reload: reloadHabits } = useFetch(() => api.get<{ habits: Habit[] }>("/habits"), []);
   const { data: notesData, reload: reloadNotes } = useFetch(() => api.get<{ notes: Note[] }>("/notes"), []);
-  const { data: recentEntriesData } = useFetch(() => api.get<{ entries: RecentProjectEntry[] }>("/projects/recent-entries"), []);
+  const {
+    data: recentEntriesData,
+    error: recentEntriesError,
+    reload: reloadRecentEntries,
+  } = useFetch(() => api.get<{ entries: RecentProjectEntry[] }>("/projects/recent-entries"), []);
+  // La Agenda se queda abierta mientras se escribe en una libreta desde otra pestaña o desde el
+  // móvil: sin esto "Entradas recientes" mostraría lo que había al abrirla (como pasaba en el
+  // móvil). Solo esta tarjeta — recargar también la semana de eventos haría parpadear la cuadrícula.
+  useReloadOnFocus(reloadRecentEntries);
   // Categorías de evento (Agenda > + Nuevo evento): el propio usuario las gestiona —añadir,
   // renombrar, cambiar el color o borrar, incluidas las que trae la cuenta por defecto— desde
   // EventCategoryManager, embebido tanto en NewEventForm como en EventDialog.
@@ -457,6 +466,7 @@ export function AgendaPage({
           <HabitsTrackerCard habits={habitsData?.habits ?? []} onChanged={reloadHabits} />
           <RecentEntriesCard
             entries={recentEntriesData?.entries}
+            failed={recentEntriesError !== null}
             onOpenProject={(projectId) => onNavigate?.("proyectos", { type: "project", id: projectId })}
           />
         </div>

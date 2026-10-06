@@ -48,18 +48,25 @@ function RecentEntryRow({ entry, onOpen }: { entry: RecentProjectEntry; onOpen: 
 export function RecentEntriesCard({
   entries,
   onOpenProject,
+  failed = false,
 }: {
   entries: RecentProjectEntry[] | undefined;
   onOpenProject: (projectId: number) => void;
+  // La petición de las entradas falló (sin red, servidor caído...): se explica en la tarjeta en
+  // vez de ocultarla, igual que en el móvil. Solo aplica si no hay entradas ya cargadas.
+  failed?: boolean;
 }) {
   const { user } = useAuth();
   const libretaEnabled = (user?.enabledSections ?? ENABLED_SECTIONS).includes("proyectos");
-  if (entries === undefined || !libretaEnabled) return null;
+  if (!libretaEnabled) return null;
+  if (entries === undefined && !failed) return null;
 
   return (
     <section className="rounded-3xl border border-border bg-card p-6">
       <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">📓 Entradas recientes en tus libretas</h2>
-      {entries.length === 0 ? (
+      {entries === undefined ? (
+        <p className="text-sm text-muted-foreground">No se pudieron cargar tus libretas — comprueba tu conexión.</p>
+      ) : entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">Todavía no has escrito en ninguna libreta.</p>
       ) : (
         <ul className="flex flex-col gap-2">
