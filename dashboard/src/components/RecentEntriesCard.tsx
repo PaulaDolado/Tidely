@@ -1,8 +1,7 @@
-import { RecentProjectEntry } from "../types";
+import { useAuth } from "../context/AuthContext";
+import { ENABLED_SECTIONS, RecentProjectEntry } from "../types";
 
-// "hace 5 min" / "hace 3h" / "ayer" / "27 ago" — igual de reciente que la propia ventana de
-// 7 días que usa el backend (ver projectsService.listRecentEntries), así que nunca hace falta
-// más granularidad que "ayer".
+// "hace 5 min" / "hace 3h" / "ayer" / "27 ago" — a partir de 2 días ya se enseña la fecha.
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffMin = Math.round(diffMs / 60000);
@@ -38,20 +37,37 @@ function RecentEntryRow({ entry, onOpen }: { entry: RecentProjectEntry; onOpen: 
 /**
  * Últimas páginas de libreta tocadas (ver projectsService.listRecentEntries) — aparece en la
  * vista Hoy y en la Agenda (debajo de Hábitos diarios), compartido para no duplicar el marcado
- * ni el formateo de fecha relativa. Sin estado "vacío": si no hay entradas, simplemente no
- * renderiza nada (cada página decide si eso implica ocultar todo el hueco o no).
+ * ni el formateo de fecha relativa.
+ *
+ * `entries` = undefined significa "todavía cargando" (o la petición falló): no se pinta nada, para
+ * no enseñar un "no tienes libretas" falso mientras llegan los datos. Un array vacío, en cambio,
+ * es un vacío de verdad (ninguna página en ninguna libreta) y se explica con un mensaje en vez de
+ * hacer desaparecer la tarjeta sin más. Si el usuario ha desactivado el apartado Libreta
+ * ("proyectos", ver Ajustes), la tarjeta no tiene sentido y tampoco se pinta.
  */
-export function RecentEntriesCard({ entries, onOpenProject }: { entries: RecentProjectEntry[]; onOpenProject: (projectId: number) => void }) {
-  if (entries.length === 0) return null;
+export function RecentEntriesCard({
+  entries,
+  onOpenProject,
+}: {
+  entries: RecentProjectEntry[] | undefined;
+  onOpenProject: (projectId: number) => void;
+}) {
+  const { user } = useAuth();
+  const libretaEnabled = (user?.enabledSections ?? ENABLED_SECTIONS).includes("proyectos");
+  if (entries === undefined || !libretaEnabled) return null;
 
   return (
     <section className="rounded-3xl border border-border bg-card p-6">
       <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">📓 Entradas recientes en tus libretas</h2>
-      <ul className="flex flex-col gap-2">
-        {entries.map((entry) => (
-          <RecentEntryRow key={entry.id} entry={entry} onOpen={() => onOpenProject(entry.projectId)} />
-        ))}
-      </ul>
+      {entries.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Todavía no has escrito en ninguna libreta.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {entries.map((entry) => (
+            <RecentEntryRow key={entry.id} entry={entry} onOpen={() => onOpenProject(entry.projectId)} />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

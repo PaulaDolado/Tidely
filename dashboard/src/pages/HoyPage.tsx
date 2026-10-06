@@ -149,7 +149,7 @@ export function HoyPage({ onNavigate }: { onNavigate: (tab: Tab, focus?: SearchF
             </section>
 
             <RecentEntriesCard
-              entries={data?.recentProjectEntries ?? []}
+              entries={data?.recentProjectEntries}
               onOpenProject={(projectId) => onNavigate("proyectos", { type: "project", id: projectId })}
             />
           </div>

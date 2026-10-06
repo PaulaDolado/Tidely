@@ -200,7 +200,6 @@ export async function deleteTask(userId: number, projectId: number, taskId: numb
 }
 
 const RECENT_ENTRIES_LIMIT = 5;
-const RECENT_ENTRIES_WINDOW_DAYS = 7; // "reciente" = tocada en la última semana
 
 /** Quita etiquetas HTML para un avance en texto plano del contenido de una página (que se
  * edita como HTML enriquecido, ver ProjectPages en el dashboard). */
@@ -214,18 +213,16 @@ function stripHtml(html: string): string {
 const RECENT_ENTRY_PREVIEW_LENGTH = 160;
 
 /**
- * Últimas páginas de libreta tocadas (creadas o editadas) por el usuario en cualquiera de sus
- * proyectos, en la última semana — la usa `todayService` para la vista "Hoy": conecta Hoy con
- * Proyectos igual que ya conecta con Agenda/Planificador/Hábitos/Notas. Vacío si no ha tocado
- * ninguna libreta recientemente, no hace falta "página en blanco" — la sección simplemente no
- * aparece (ver HoyPage en el dashboard).
+ * Las últimas páginas de libreta tocadas (creadas o editadas) por el usuario en cualquiera de sus
+ * proyectos — la usa `todayService` para la vista "Hoy" y el dashboard/móvil en Agenda: conecta
+ * Hoy con Proyectos igual que ya conecta con Agenda/Planificador/Hábitos/Notas. Sin filtro de
+ * antigüedad a propósito: antes solo contaban las de la última semana y, pasado ese tiempo, la
+ * tarjeta desaparecía sola aunque el usuario tuviera libretas; ahora siempre salen las últimas
+ * `limit` (con su fecha relativa). Vacío solo si no tiene ninguna página.
  */
 export async function listRecentEntries(userId: number, limit: number = RECENT_ENTRIES_LIMIT) {
-  const since = new Date();
-  since.setDate(since.getDate() - RECENT_ENTRIES_WINDOW_DAYS);
-
   const pages = await prisma.projectPage.findMany({
-    where: { project: { userId }, updatedAt: { gte: since } },
+    where: { project: { userId } },
     orderBy: { updatedAt: "desc" },
     take: limit,
     include: { project: { select: { id: true, title: true } } },

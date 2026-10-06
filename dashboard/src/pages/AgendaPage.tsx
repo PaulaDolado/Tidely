@@ -456,7 +456,7 @@ export function AgendaPage({
         <div className="flex flex-col gap-6 lg:flex-1">
           <HabitsTrackerCard habits={habitsData?.habits ?? []} onChanged={reloadHabits} />
           <RecentEntriesCard
-            entries={recentEntriesData?.entries ?? []}
+            entries={recentEntriesData?.entries}
             onOpenProject={(projectId) => onNavigate?.("proyectos", { type: "project", id: projectId })}
           />
         </div>

@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { View, Pressable, StyleSheet } from "react-native";
 import { Text } from "./AppText";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useAuth } from "../auth/AuthContext";
 import { listRecentEntries, RecentProjectEntry } from "../api/projects";
+import { ENABLED_SECTIONS } from "../types";
 import { colors, fonts, radius } from "../theme";
 
 // Puerto de dashboard/src/components/RecentEntriesCard.tsx — últimas páginas de libreta tocadas
-// (ver GET /projects/recent-entries), en la vista "Hoy". Sin estado vacío explícito: si no hay
-// entradas, no renderiza nada, igual que la web (no hace falta un hueco de "nada por aquí" para
-// una tarjeta que ni siquiera es el foco principal de la pantalla).
+// (ver GET /projects/recent-entries), en las vistas "Hoy" y "Agenda". Va directa a la API (no pasa
+// por SQLite), así que necesita conexión: sin ella se avisa en la propia tarjeta en vez de
+// desaparecer, y si ya había entradas cargadas se conservan en pantalla.
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffMin = Math.round(diffMs / 60000);
@@ -22,18 +24,43 @@ function formatRelative(iso: string): string {
 }
 
 export function RecentEntriesCard() {
+  const { user } = useAuth();
   const [entries, setEntries] = useState<RecentProjectEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const navigation = useNavigation();
 
-  useEffect(() => {
-    listRecentEntries()
-      .then(setEntries)
-      .catch(() => setEntries([])) // sin conexión / error: se calla, no es la sección principal de "Hoy"
-      .finally(() => setLoaded(true));
-  }, []);
+  // useFocusEffect (no un useEffect de montaje único): Hoy y Agenda son pestañas que se quedan
+  // montadas de fondo, así que con un solo fetch al montar la tarjeta se quedaba con las entradas
+  // de la primera vez hasta reiniciar la app, aunque el usuario hubiera editado una libreta entre
+  // medias. Mismo patrón que GoalsProgressCard.
+  useFocusEffect(
+    useCallback(() => {
+      listRecentEntries()
+        .then((next) => {
+          setEntries(next);
+          setFailed(false);
+        })
+        .catch(() => setFailed(true)) // se conservan las entradas ya cargadas, si las había
+        .finally(() => setLoaded(true));
+    }, [])
+  );
 
-  if (!loaded || entries.length === 0) return null;
+  // Si el usuario ha desactivado el apartado Libreta ("proyectos", ver Ajustes) la tarjeta no
+  // tiene sentido — igual criterio que en la web.
+  if (!(user?.enabledSections ?? ENABLED_SECTIONS).includes("proyectos")) return null;
+  if (!loaded) return null;
+
+  if (entries.length === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.title}>📓 Entradas recientes en tus libretas</Text>
+        <Text style={styles.emptyText}>
+          {failed ? "Sin conexión: no se pueden cargar tus libretas ahora mismo." : "Todavía no has escrito en ninguna libreta."}
+        </Text>
+      </View>
+    );
+  }
 
   const openEntry = (entry: RecentProjectEntry) => {
     // Navegación entre pestañas: "Proyectos" monta su propia pila anidada (ver
@@ -49,6 +76,7 @@ export function RecentEntriesCard() {
   return (
     <View style={styles.card}>
       <Text style={styles.title}>📓 Entradas recientes en tus libretas</Text>
+      {failed && <Text style={styles.staleNotice}>Sin conexión: puede que no estén al día.</Text>}
       <View style={styles.list}>
         {entries.map((entry) => (
           <Pressable key={entry.id} style={styles.row} onPress={() => openEntry(entry)}>
@@ -88,6 +116,8 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginBottom: 16,
   },
+  emptyText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground, fontStyle: "italic" },
+  staleNotice: { fontFamily: fonts.sans, fontSize: 11, color: colors.warning, marginTop: -8, marginBottom: 10 },
   list: { gap: 8 },
   row: {
     borderWidth: 1,

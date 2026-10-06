@@ -150,14 +150,15 @@ describe("projectsService", () => {
   });
 
   describe("listRecentEntries", () => {
-    it("solo consulta páginas del propio usuario, tocadas en la última semana", async () => {
+    it("solo consulta páginas del propio usuario, las últimas 5 sin importar su antigüedad", async () => {
       prismaMock.projectPage.findMany.mockResolvedValue([]);
 
       await projectsService.listRecentEntries(1);
 
-      const whereArg = prismaMock.projectPage.findMany.mock.calls[0][0].where;
-      expect(whereArg.project).toEqual({ userId: 1 });
-      expect(whereArg.updatedAt.gte).toBeInstanceOf(Date);
+      const args = prismaMock.projectPage.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({ project: { userId: 1 } }); // sin filtro por fecha
+      expect(args.orderBy).toEqual({ updatedAt: "desc" });
+      expect(args.take).toBe(5);
     });
 
     it("quita las etiquetas HTML del contenido para el avance en texto plano", async () => {
@@ -196,7 +197,7 @@ describe("projectsService", () => {
       expect(entries[0].preview).toHaveLength(160);
     });
 
-    it("devuelve [] si no hay páginas tocadas recientemente", async () => {
+    it("devuelve [] si el usuario no tiene ninguna página de libreta", async () => {
       prismaMock.projectPage.findMany.mockResolvedValue([]);
 
       const entries = await projectsService.listRecentEntries(1);
