@@ -71,7 +71,7 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
             ancho de la ventana y desborda igual aunque la ventana sea grande. */}
         {/* A partir de xl (1280px) la columna derecha pasa de 4 a 5 de 12: "Resumen del presupuesto" necesita
             sitio para poner las categorías a los lados del donut sin partir los nombres. */}
-        <div className="@container space-y-8 lg:col-span-8 xl:col-span-7">
+        <div className="@container space-y-8 lg:col-span-8 xl:col-span-7 2xl:col-span-8">
           {balanceError && <ErrorMessage message={balanceError} />}
           {loadingBalance ? (
             <Loading label="Cargando balance..." />
@@ -147,7 +147,7 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
           )}
         </div>
 
-        <div className="space-y-6 lg:col-span-4 xl:col-span-5">
+        <div className="space-y-6 lg:col-span-4 xl:col-span-5 2xl:col-span-4">
           <BudgetSummaryCard summary={budget} onChanged={reloadBudget} />
 
           <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
