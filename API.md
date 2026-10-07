@@ -177,6 +177,7 @@ Una meta que pasa su `periodEnd` sin completarse queda `expired=true` automátic
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
+| GET | `/finance/balance/total` | JWT | Ingresos, gastos y balance acumulados de todo el histórico (`income`, `expense`, `balance`; lo aportado a metas resta de ingresos, igual que en el balance mensual) |
 | GET | `/finance/balance/:month/:year` | JWT | Balance del mes (`income`, `expense`, `balance`) |
 | GET | `/finance/balance/year/:year` | JWT | Balance anual + `monthlyBreakdown` (12 meses) |
 | GET | `/finance/transactions` | JWT | Filtros: `type`, `category`, `from`, `to`, `page`, `limit` |

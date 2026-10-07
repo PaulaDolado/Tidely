@@ -183,12 +183,22 @@ export async function getMonthlyBalanceLocal(month: number, year: number): Promi
     const d = new Date(t.date);
     return d.getFullYear() === year && d.getMonth() === month - 1;
   });
-  const real = inMonth.filter((t) => !goalCategories.includes(t.category));
-  const goalTx = inMonth.filter((t) => goalCategories.includes(t.category));
+  return { month, year, ...balanceOf(inMonth, goalCategories) };
+}
 
+/** Ingresos, gastos y balance acumulados de TODO el histórico (tarjetas de arriba de Finanzas) —
+ * puerto de financeService.getTotalBalance, mismo criterio que el balance mensual. */
+export async function getTotalBalanceLocal(): Promise<{ income: number; expense: number; balance: number }> {
+  const [all, goalCategories] = await Promise.all([listAllTransactions(), getGoalCategoriesLocal()]);
+  return balanceOf(all, goalCategories);
+}
+
+function balanceOf(rows: LocalTransaction[], goalCategories: string[]): { income: number; expense: number; balance: number } {
+  const real = rows.filter((t) => !goalCategories.includes(t.category));
+  const goalTx = rows.filter((t) => goalCategories.includes(t.category));
   const { income: rawIncome, expense } = sumByType(real);
   const income = rawIncome - goalContributionsNet(goalTx);
-  return { month, year, income, expense, balance: income - expense };
+  return { income, expense, balance: income - expense };
 }
 
 export interface FinanceAnalytics {

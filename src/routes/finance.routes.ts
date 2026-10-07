@@ -25,6 +25,18 @@ router.use(authMiddleware);
 
 /**
  * @openapi
+ * /finance/balance/total:
+ *   get:
+ *     tags: [Finance]
+ *     summary: Ingresos, gastos y balance acumulados de todo el histórico
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "{ income, expense, balance }" }
+ */
+router.get("/balance/total", financeController.getTotalBalance);
+
+/**
+ * @openapi
  * /finance/balance/{month}/{year}:
  *   get:
  *     tags: [Finance]

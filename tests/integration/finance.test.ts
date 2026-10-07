@@ -104,6 +104,35 @@ describe("Finance Endpoints", () => {
     });
   });
 
+  describe("GET /finance/balance/total", () => {
+    it("acumula todo el histórico, no solo el mes en curso, y resta lo aportado a metas", async () => {
+      const longAgo = new Date(year - 1, 0, 15).toISOString();
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "income", amount: 500, category: "salary", date: longAgo });
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "expense", amount: 120, category: "food", date: longAgo });
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "income", amount: 1000, category: "salary" });
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "expense", amount: 300, category: "food" });
+
+      await request(app).post("/finance/savings-goals").set(authed()).send({ name: "Vacaciones", targetAmount: 1000, category: "savings-vacation" });
+      const goals = await request(app).get("/finance/savings-goals").set(authed());
+      await request(app).post(`/finance/savings-goals/${goals.body.savingsGoals[0].id}/contribute`).set(authed()).send({ amount: 200 });
+
+      const response = await request(app).get("/finance/balance/total").set(authed());
+
+      expect(response.status).toBe(200);
+      expect(response.body.income).toBe(1300); // 500 + 1000 - 200 aportados a la meta
+      expect(response.body.expense).toBe(420); // 120 + 300
+      expect(response.body.balance).toBe(880);
+
+      const month = await request(app).get(`/finance/balance/${new Date().getMonth() + 1}/${year}`).set(authed());
+      expect(month.body.income).toBe(800); // el mes en curso sigue siendo solo el mes
+    });
+
+    it("requiere autenticación", async () => {
+      const response = await request(app).get("/finance/balance/total");
+      expect(response.status).toBe(401);
+    });
+  });
+
   describe("GET /finance/transactions", () => {
     it("debería filtrar por categoría", async () => {
       await request(app).post("/finance/transactions").set(authed()).send({

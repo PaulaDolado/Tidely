@@ -6,7 +6,7 @@ import { Loading, ErrorMessage } from "../components/Feedback";
 import { MiniLineChart } from "../components/MiniLineChart";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
 import { downloadCsv, transactionsToCsv } from "../utils/financeExport";
-import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, Transaction } from "../types";
+import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, TotalBalance, Transaction } from "../types";
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -30,6 +30,12 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
     reload: reloadTx,
   } = useFetch(() => api.get<{ transactions: Transaction[]; pagination: Pagination }>("/finance/transactions?limit=15"), []);
   const { data: analytics, reload: reloadAnalytics } = useFetch(() => api.get<FinanceAnalytics>("/finance/analytics"), []);
+  // Ingresos/gastos/balance acumulados de todo el histórico (tarjetas de arriba); lo del mes en curso
+  // está en "Resumen del mes".
+  const { data: total, loading: loadingTotal, error: totalError, reload: reloadTotal } = useFetch(
+    () => api.get<TotalBalance>("/finance/balance/total"),
+    []
+  );
   // Solo para los totales de las tarjetas resumen (Ahorro/Inversión) — las metas en sí (crear,
   // ver casillas, eliminar) viven únicamente en "Metas de ahorro", no se duplican aquí.
   const { data: savingsData, reload: reloadSavings } = useFetch(
@@ -46,6 +52,7 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
 
   const reloadAll = () => {
     reloadBalance();
+    reloadTotal();
     reloadTx();
     reloadAnalytics();
     reloadSavings();
@@ -72,16 +79,16 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
         {/* A partir de xl (1280px) la columna derecha pasa de 4 a 5 de 12: "Resumen del presupuesto" necesita
             sitio para poner las categorías a los lados del donut sin partir los nombres. */}
         <div className="@container space-y-8 lg:col-span-8 xl:col-span-7 2xl:col-span-8">
-          {balanceError && <ErrorMessage message={balanceError} />}
-          {loadingBalance ? (
+          {(balanceError || totalError) && <ErrorMessage message={(balanceError || totalError) as string} />}
+          {loadingBalance || loadingTotal ? (
             <Loading label="Cargando balance..." />
           ) : (
             // Por ANCHO DE LA COLUMNA (container query), no del viewport: con la columna principal
             // más estrecha (ver arriba) cinco tarjetas en fila no caben y se cortaban.
             <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @2xl:grid-cols-5">
-              <SummaryCard label="Ingresos" value={eur(balance?.income ?? 0)} tone="positive" />
-              <SummaryCard label="Gastos" value={eur(balance?.expense ?? 0)} tone="negative" />
-              <SummaryCard label="Balance" value={eur(balance?.balance ?? 0)} tone={(balance?.balance ?? 0) >= 0 ? "positive" : "negative"} />
+              <SummaryCard label="Ingresos" hint="Total acumulado" value={eur(total?.income ?? 0)} tone="positive" />
+              <SummaryCard label="Gastos" hint="Total acumulado" value={eur(total?.expense ?? 0)} tone="negative" />
+              <SummaryCard label="Balance" hint="Total acumulado" value={eur(total?.balance ?? 0)} tone={(total?.balance ?? 0) >= 0 ? "positive" : "negative"} />
               <SummaryCard label="Ahorro" value={eur(totalAhorro)} tone="positive" onClick={() => onOpenSavings("ahorro")} />
               <SummaryCard label="Inversión" value={eur(totalInversion)} tone="positive" onClick={() => onOpenSavings("inversion")} />
             </div>
@@ -347,11 +354,24 @@ function Row({ label, value }: { label: string; value: string }) {
 
 // Con `onClick` la tarjeta es un botón (Ahorro/Inversión llevan a "Metas de ahorro", ver
 // DashboardPage.openSavings); sin él, una tarjeta informativa normal.
-function SummaryCard({ label, value, tone, onClick }: { label: string; value: string; tone: "positive" | "negative"; onClick?: () => void }) {
+function SummaryCard({
+  label,
+  value,
+  tone,
+  hint,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  tone: "positive" | "negative";
+  hint?: string;
+  onClick?: () => void;
+}) {
   const content = (
     <>
       <p className="text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
       <p className={`mt-2 font-serif text-3xl ${tone === "negative" ? "text-destructive" : "text-primary"}`}>{value}</p>
+      {hint && <p className="mt-1 text-[10px] text-muted-foreground">{hint}</p>}
     </>
   );
   if (!onClick) return <div className="card-soft">{content}</div>;

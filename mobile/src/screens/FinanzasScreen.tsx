@@ -11,6 +11,7 @@ import {
   FinanceAnalytics,
   getAnalyticsLocal,
   getMonthlyBalanceLocal,
+  getTotalBalanceLocal,
   listTransactions,
   MonthlyBalance,
   updateTransactionLocal,
@@ -51,6 +52,8 @@ export function FinanzasScreen() {
   const { collapsed } = useSidebar();
   const insets = useSafeAreaInsets();
   const [balance, setBalance] = useState<MonthlyBalance | null>(null);
+  // Acumulado de todo el histórico (tarjetas de arriba); lo del mes va en "Resumen del mes".
+  const [total, setTotal] = useState<{ income: number; expense: number; balance: number } | null>(null);
   const [transactions, setTransactions] = useState<LocalTransaction[]>([]);
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
   const [savingsTotal, setSavingsTotal] = useState(0);
@@ -67,13 +70,15 @@ export function FinanzasScreen() {
   const reload = useCallback(async () => {
     setLoading(true);
     const now = new Date();
-    const [bal, txs, stats, savingsGoals] = await Promise.all([
+    const [bal, tot, txs, stats, savingsGoals] = await Promise.all([
       getMonthlyBalanceLocal(now.getMonth() + 1, now.getFullYear()),
+      getTotalBalanceLocal(),
       listTransactions(15),
       getAnalyticsLocal(),
       listSavingsGoals(),
     ]);
     setBalance(bal);
+    setTotal(tot);
     setTransactions(txs);
     setAnalytics(stats);
     setSavingsTotal(savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0));
@@ -148,12 +153,13 @@ export function FinanzasScreen() {
         ) : (
           <>
             <View style={styles.summaryRow}>
-              <SummaryCard label="Ingresos" value={formatMoney(balance?.income ?? 0)} color={colors.positive} />
-              <SummaryCard label="Gastos" value={formatMoney(balance?.expense ?? 0)} color={colors.destructive} />
+              <SummaryCard label="Ingresos" hint="Total acumulado" value={formatMoney(total?.income ?? 0)} color={colors.positive} />
+              <SummaryCard label="Gastos" hint="Total acumulado" value={formatMoney(total?.expense ?? 0)} color={colors.destructive} />
               <SummaryCard
                 label="Balance"
-                value={formatMoney(balance?.balance ?? 0)}
-                color={(balance?.balance ?? 0) >= 0 ? colors.positive : colors.destructive}
+                hint="Total acumulado"
+                value={formatMoney(total?.balance ?? 0)}
+                color={(total?.balance ?? 0) >= 0 ? colors.positive : colors.destructive}
               />
               {/* Ahorro e Inversión usan el mismo verde que Ingresos en la web (tone="positive" en
                   las cinco, ver FinanzasPage.tsx) — no un color por categoría propio. */}
@@ -429,13 +435,14 @@ function FinanceExportForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+function SummaryCard({ label, value, color, hint }: { label: string; value: string; color: string; hint?: string }) {
   return (
     <View style={styles.summaryCard}>
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={[styles.summaryValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
+      {hint ? <Text style={styles.summaryHint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -588,6 +595,7 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
   },
   summaryValue: { fontFamily: fonts.serif, fontSize: 18 },
+  summaryHint: { fontFamily: fonts.sans, fontSize: 9, color: colors.mutedForeground },
 
   // card-soft de la web — p-6 (24px), no los 16px que llevaba antes.
   card: {

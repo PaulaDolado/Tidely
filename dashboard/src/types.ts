@@ -310,6 +310,9 @@ export interface Transaction {
   date: string;
 }
 
+// Acumulado de todo el histórico (GET /finance/balance/total).
+export type TotalBalance = Pick<MonthlyBalance, "income" | "expense" | "balance">;
+
 export interface MonthlyBalance {
   month: number;
   year: number;

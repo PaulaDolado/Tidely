@@ -70,6 +70,13 @@ export async function getMonthlyBalance(userId: number, month: number, year: num
   return { month, year, ...totals };
 }
 
+// Totales acumulados de TODO el histórico (tarjetas de arriba de Finanzas) — mismo criterio que el
+// balance mensual (lo aportado a metas resta de Ingresos), sin acotar por fechas.
+export async function getTotalBalance(userId: number) {
+  // Límites amplios pero que PostgreSQL acepta (el máximo de Date en JS no cabe en un timestamp).
+  return sumByType(userId, new Date("1900-01-01T00:00:00Z"), new Date("9999-12-31T23:59:59Z"));
+}
+
 // "Sobrante disponible" del dashboard de ahorro: dinero que ya quedó acumulado en meses ANTERIORES
 // al de referencia (ingresos - gastos de todo lo previo, sin límite inferior — no `date` de alta
 // de cuenta que acotar) y que todavía no está comprometido en ninguna meta de ahorro. El mes de
