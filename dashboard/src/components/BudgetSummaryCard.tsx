@@ -37,7 +37,7 @@ interface Slice {
 function Donut({ slices, total }: { slices: Slice[]; total: number }) {
   let offset = 0;
   return (
-    <div className="relative size-40 shrink-0 @min-[21rem]:size-36 @min-[28rem]:size-40">
+    <div className="relative size-40 shrink-0 @min-[18rem]:size-[6.75rem] @min-[22rem]:size-36 @min-[30rem]:size-40">
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="size-full -rotate-90" role="img" aria-label="Gastos del mes por categoría">
         <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke="var(--muted)" strokeWidth={STROKE} />
         {total > 0 &&
@@ -65,7 +65,7 @@ function Donut({ slices, total }: { slices: Slice[]; total: number }) {
             })}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="font-serif text-2xl leading-tight @min-[21rem]:text-xl @min-[28rem]:text-2xl">{eur(total)}</span>
+        <span className="font-serif text-2xl leading-tight @min-[18rem]:text-lg @min-[22rem]:text-xl @min-[30rem]:text-2xl">{eur(total)}</span>
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground">gastado</span>
       </div>
     </div>
@@ -225,10 +225,10 @@ function CategoryLabel({
   const right = side === "right";
   const over = budget !== undefined && spent > budget;
   return (
-    <div className={`flex min-w-0 flex-col gap-0.5 rounded-xl px-1.5 py-1 ${right ? "items-end text-right" : "items-start text-left"} ${active ? "bg-muted" : ""}`}>
-      <div className={`flex min-w-0 max-w-full items-center gap-1.5 ${right ? "flex-row-reverse" : ""}`}>
-        <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: colorVar(color) }} aria-hidden="true" />
-        <span lang="es" className="min-w-0 hyphens-auto text-[11px] font-medium leading-tight [overflow-wrap:anywhere]" title={name}>
+    <div className={`flex min-w-0 flex-col gap-0.5 rounded-xl px-1 py-1 ${right ? "items-end text-right" : "items-start text-left"} ${active ? "bg-muted" : ""}`}>
+      <div className={`flex min-w-0 max-w-full items-center gap-1 ${right ? "flex-row-reverse" : ""}`}>
+        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: colorVar(color) }} aria-hidden="true" />
+        <span lang="es" className="min-w-0 hyphens-auto text-[10px] font-medium leading-tight [overflow-wrap:anywhere]" title={name}>
           {name}
         </span>
       </div>
@@ -257,7 +257,7 @@ function CategoryLabel({
  *
  * La columna de la derecha de Finanzas es estrecha en pantallas pequeñas, y con los lados al
  * lado del donut ahí no quedaría sitio para los nombres: por eso la tarjeta es un contenedor
- * (`@container`) y, si su ancho útil es menor de 21rem, el donut pasa arriba, centrado, y las dos
+ * (`@container`) y, si su ancho útil es menor de 18rem, el donut pasa arriba, centrado, y las dos
  * columnas quedan debajo.
  *
  * Las categorías (nombre, color y %) se crean con "+" y se editan con el lápiz de cada una; se
@@ -350,9 +350,9 @@ export function BudgetSummaryCard({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 @min-[21rem]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] @min-[21rem]:items-center @min-[21rem]:gap-x-2">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-3 @min-[18rem]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] @min-[18rem]:items-center @min-[18rem]:gap-x-2">
         <div className="flex flex-col gap-2">{left.map((c) => labelFor(c, "left"))}</div>
-        <div className="order-first col-span-2 justify-self-center @min-[21rem]:order-none @min-[21rem]:col-span-1">
+        <div className="order-first col-span-2 justify-self-center @min-[18rem]:order-none @min-[18rem]:col-span-1">
           <Donut slices={slices} total={total} />
         </div>
         <div className="flex flex-col gap-2">

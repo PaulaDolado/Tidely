@@ -69,12 +69,16 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
             del viewport — esta columna es solo 8/12 del grid de la página (y el <aside> de la
             web le resta más aún), así que un breakpoint normal (sm:/xl:) sigue basándose en el
             ancho de la ventana y desborda igual aunque la ventana sea grande. */}
-        <div className="@container space-y-8 lg:col-span-8">
+        {/* A partir de xl (1280px) la columna derecha pasa de 4 a 5 de 12: "Resumen del presupuesto" necesita
+            sitio para poner las categorías a los lados del donut sin partir los nombres. */}
+        <div className="@container space-y-8 lg:col-span-8 xl:col-span-7">
           {balanceError && <ErrorMessage message={balanceError} />}
           {loadingBalance ? (
             <Loading label="Cargando balance..." />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            // Por ANCHO DE LA COLUMNA (container query), no del viewport: con la columna principal
+            // más estrecha (ver arriba) cinco tarjetas en fila no caben y se cortaban.
+            <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @2xl:grid-cols-5">
               <SummaryCard label="Ingresos" value={eur(balance?.income ?? 0)} tone="positive" />
               <SummaryCard label="Gastos" value={eur(balance?.expense ?? 0)} tone="negative" />
               <SummaryCard label="Balance" value={eur(balance?.balance ?? 0)} tone={(balance?.balance ?? 0) >= 0 ? "positive" : "negative"} />
@@ -143,7 +147,7 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
           )}
         </div>
 
-        <div className="space-y-6 lg:col-span-4">
+        <div className="space-y-6 lg:col-span-4 xl:col-span-5">
           <BudgetSummaryCard summary={budget} onChanged={reloadBudget} />
 
           <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
