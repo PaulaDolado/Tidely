@@ -362,7 +362,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
           <TravelPlannerEditor
             content={{
               trips: (page.content as TravelContent)?.trips ?? [],
-              places: (page.content as TravelContent)?.places ?? [],
+              places: (page.content as TravelContent)?.places,
             }}
             onChange={saveTravel}
           />

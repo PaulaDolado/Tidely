@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, Image, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet, Modal, Image, Alert, Platform, KeyboardAvoidingView, Linking } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { SavedPlace, TravelContent, TravelItineraryItem, Trip } from "../api/customPages";
+import { fetchLinkPreview, hostnameOf, normalizePlaceUrl, normalizeTravelContent, pickDefaultTrip } from "../utils/travel";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 
 // Plantilla "viajes" de las páginas personalizadas — puerto de
@@ -14,10 +15,13 @@ import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 // sola columna en vez de la rejilla de escritorio. Simplificaciones deliberadas frente a la web: el
 // texto de un viaje/lugar se edita en un diálogo con botón "Guardar" (igual que el resto de
 // editores del móvil, ver KanbanCardForm), no al vuelo en cada tecla.
+//
+// El itinerario y los lugares guardados son DEL viaje seleccionado (Trip.itinerary / Trip.places).
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // igual límite que el resto de imágenes de páginas
 const ITINERARY_PREVIEW = 4;
-const PLACES_PREVIEW = 3;
+const PLACES_PREVIEW = 4;
+const PLACE_DESCRIPTION_MAX = 160;
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -91,13 +95,16 @@ function DateField({ label, value, onChange, compact }: { label?: string; value:
 
 export function TravelPlannerEditor({ content, onChange }: { content: TravelContent; onChange: (next: TravelContent) => Promise<void> }) {
   const insets = useSafeAreaInsets();
-  const trips = content.trips ?? [];
-  const places = content.places ?? [];
   const today = todayKey();
+  // Lugares ya dentro de cada viaje (los sueltos de una página antigua, plegados en el viaje por defecto).
+  const normalized = useMemo(() => normalizeTravelContent(content, today), [content, today]);
+  const trips = normalized.trips;
+  const legacyPlaces = normalized.places;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
-  const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
+  // "new" = lugar nuevo (el "+" de la cabecera de "Lugares guardados").
+  const [editingPlaceId, setEditingPlaceId] = useState<string | "new" | null>(null);
   const [showFullItinerary, setShowFullItinerary] = useState(false);
   const [showAllPlaces, setShowAllPlaces] = useState(false);
 
@@ -106,24 +113,24 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const [to, setTo] = useState(today);
   const [activityDate, setActivityDate] = useState<string | null>(null);
   const [activityTitle, setActivityTitle] = useState("");
-  const [placeName, setPlaceName] = useState("");
 
-  const update = (patch: Partial<TravelContent>) => onChange({ trips, places, ...patch });
+  const update = (patch: Partial<TravelContent>) => onChange({ trips, places: legacyPlaces, ...patch });
 
   const sortedTrips = useMemo(() => [...trips].sort((a, b) => a.startDate.localeCompare(b.startDate)), [trips]);
   const upcoming = sortedTrips.filter((t) => t.endDate >= today);
-  const defaultTrip = upcoming[0] ?? sortedTrips[sortedTrips.length - 1] ?? null;
-  const selected = trips.find((t) => t.id === selectedId) ?? defaultTrip;
+  const selected = trips.find((t) => t.id === selectedId) ?? pickDefaultTrip(trips, today);
   const itinerary = useMemo(() => [...(selected?.itinerary ?? [])].sort((a, b) => a.date.localeCompare(b.date)), [selected]);
+  const places = selected?.places ?? [];
   const favorites = places.filter((p) => p.favorite).length;
 
   const addTrip = async () => {
     const trimmed = destination.trim();
     if (!trimmed) return;
-    const trip: Trip = { id: Crypto.randomUUID(), destination: trimmed, startDate: from, endDate: to < from ? from : to, itinerary: [] };
+    // Si la página aún no tiene viajes, sus lugares sueltos pasan al primero.
+    const trip: Trip = { id: Crypto.randomUUID(), destination: trimmed, startDate: from, endDate: to < from ? from : to, itinerary: [], places: legacyPlaces };
     setSelectedId(trip.id);
     setDestination("");
-    await update({ trips: [...trips, trip] });
+    await update({ trips: [...trips, trip], places: [] });
   };
 
   const patchTrip = (id: string, patch: Partial<Trip>) => update({ trips: trips.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
@@ -144,18 +151,22 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
 
   const removeActivity = (itemId: string) => selected && patchTrip(selected.id, { itinerary: selected.itinerary.filter((it) => it.id !== itemId) });
 
-  const addPlace = async () => {
-    const name = placeName.trim();
-    if (!name) return;
-    setPlaceName("");
-    await update({ places: [...places, { id: Crypto.randomUUID(), name }] });
+  // Los lugares son del viaje seleccionado: cualquier cambio reescribe `places` de ESE viaje.
+  const setPlaces = async (next: SavedPlace[]) => {
+    if (selected) await patchTrip(selected.id, { places: next });
   };
 
-  const patchPlace = (id: string, patch: Partial<SavedPlace>) => update({ places: places.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  const patchPlace = (id: string, patch: Partial<SavedPlace>) => setPlaces(places.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
   const removePlace = async (id: string) => {
     setEditingPlaceId(null);
-    await update({ places: places.filter((p) => p.id !== id) });
+    await setPlaces(places.filter((p) => p.id !== id));
+  };
+
+  const savePlace = async (id: string | "new", values: Omit<SavedPlace, "id">) => {
+    if (id === "new") await setPlaces([...places, { id: Crypto.randomUUID(), ...values }]);
+    else await patchPlace(id, values);
+    setEditingPlaceId(null);
   };
 
   const daysToGo = selected ? diffDays(selected.startDate, today) : null;
@@ -173,7 +184,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
       color: colors.positive,
       value: String(places.length),
       label: "Lugares guardados",
-      hint: favorites === 0 ? "Tus sitios por visitar" : `${favorites} ${favorites === 1 ? "favorito" : "favoritos"}`,
+      hint: !selected ? "Sin viaje seleccionado" : favorites === 0 ? `En ${selected.destination}` : `${favorites} ${favorites === 1 ? "favorito" : "favoritos"} en ${selected.destination}`,
     },
     {
       icon: "🗓️",
@@ -194,6 +205,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const tripPanelTitle = !selected ? "Próximo viaje" : selected.endDate < today ? "Último viaje" : selected.id === upcoming[0]?.id ? "Próximo viaje" : "Viaje";
   const editingTrip = trips.find((t) => t.id === editingTripId) ?? null;
   const editingPlace = places.find((p) => p.id === editingPlaceId) ?? null;
+  const placeDialogOpen = selected !== null && (editingPlaceId === "new" || editingPlace !== null);
 
   return (
     <View style={{ gap: 16 }}>
@@ -257,6 +269,9 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
             <Text style={styles.mutedSmall}>
               📅 {fmtRange(selected)} · {diffDays(selected.endDate, selected.startDate) + 1} {diffDays(selected.endDate, selected.startDate) === 0 ? "día" : "días"}
             </Text>
+            <Text style={styles.mutedSmall}>
+              🗓️ {itinerary.length} {itinerary.length === 1 ? "actividad" : "actividades"} · 📍 {places.length} {places.length === 1 ? "lugar" : "lugares"}
+            </Text>
             {selected.notes ? (
               <Text style={styles.tripNotes} numberOfLines={3}>
                 {selected.notes}
@@ -313,28 +328,41 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Lugares guardados</Text>
-        {places.length === 0 ? (
-          <Text style={styles.emptyText}>Guarda aquí los sitios que quieres visitar.</Text>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Lugares guardados</Text>
+          {selected && (
+            <Pressable style={styles.plusButton} onPress={() => setEditingPlaceId("new")} hitSlop={8} accessibilityLabel="Añadir lugar">
+              <Text style={styles.plusButtonText}>+</Text>
+            </Pressable>
+          )}
+        </View>
+        {!selected ? (
+          <Text style={styles.emptyText}>Los lugares guardados aparecen aquí al elegir un viaje.</Text>
+        ) : places.length === 0 ? (
+          <Text style={styles.emptyText}>Guarda aquí los sitios de {selected.destination} que quieres visitar, con su enlace.</Text>
         ) : (
           <View style={{ gap: 12 }}>
             {(showAllPlaces ? places : places.slice(0, PLACES_PREVIEW)).map((p) => (
               <View key={p.id} style={styles.placeRow}>
-                <Pressable style={styles.placeMain} onPress={() => setEditingPlaceId(p.id)}>
-                  {p.imageData ? (
-                    <Image source={{ uri: p.imageData }} style={styles.placeThumb} />
-                  ) : (
-                    <View style={[styles.placeThumb, styles.placeThumbPlaceholder]}>
-                      <Text style={{ fontSize: 20 }}>📍</Text>
-                    </View>
-                  )}
+                {/* Con URL, tocar el marcador la abre; sin ella, abre la edición. */}
+                <Pressable
+                  style={styles.placeMain}
+                  onPress={() => (p.url ? Linking.openURL(p.url).catch(() => setEditingPlaceId(p.id)) : setEditingPlaceId(p.id))}
+                  onLongPress={() => setEditingPlaceId(p.id)}
+                >
+                  <PlaceThumb place={p} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.placeName} numberOfLines={1}>
                       {p.name}
                     </Text>
                     {p.description ? (
-                      <Text style={styles.mutedSmall} numberOfLines={1}>
+                      <Text style={styles.mutedSmall} numberOfLines={2}>
                         {p.description}
+                      </Text>
+                    ) : null}
+                    {p.url ? (
+                      <Text style={styles.placeHost} numberOfLines={1}>
+                        {hostnameOf(p.url)}
                       </Text>
                     ) : null}
                   </View>
@@ -342,16 +370,13 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
                 <Pressable onPress={() => patchPlace(p.id, { favorite: !p.favorite })} hitSlop={8}>
                   <Text style={[styles.heart, p.favorite && styles.heartOn]}>{p.favorite ? "♥" : "♡"}</Text>
                 </Pressable>
+                <Pressable onPress={() => setEditingPlaceId(p.id)} hitSlop={8} accessibilityLabel={`Editar ${p.name}`}>
+                  <Text style={styles.editPencil}>✎</Text>
+                </Pressable>
               </View>
             ))}
           </View>
         )}
-        <View style={styles.addRow}>
-          <TextInput style={[styles.input, styles.addInput]} placeholder="Nuevo lugar…" value={placeName} onChangeText={setPlaceName} onSubmitEditing={addPlace} />
-          <Pressable style={styles.addButton} onPress={addPlace}>
-            <Text style={styles.addButtonText}>+</Text>
-          </Pressable>
-        </View>
         {places.length > PLACES_PREVIEW && (
           <Pressable style={styles.outlineButton} onPress={() => setShowAllPlaces((v) => !v)}>
             <Text style={styles.outlineButtonText}>{showAllPlaces ? "Ver menos" : `Ver todos (${places.length})`}</Text>
@@ -383,18 +408,15 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={editingPlace !== null} animationType="slide" transparent onRequestClose={() => setEditingPlaceId(null)}>
+      <Modal visible={placeDialogOpen} animationType="slide" transparent onRequestClose={() => setEditingPlaceId(null)}>
         <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
-            {editingPlace && (
+            {placeDialogOpen && editingPlaceId && (
               <PlaceForm
-                key={editingPlace.id}
-                place={editingPlace}
-                onSave={async (patch) => {
-                  await patchPlace(editingPlace.id, patch);
-                  setEditingPlaceId(null);
-                }}
-                onDelete={() => removePlace(editingPlace.id)}
+                key={editingPlaceId}
+                place={editingPlace ?? undefined}
+                onSave={(values) => savePlace(editingPlaceId, values)}
+                onDelete={editingPlace ? () => removePlace(editingPlace.id) : undefined}
                 onClose={() => setEditingPlaceId(null)}
               />
             )}
@@ -507,35 +529,107 @@ function TripForm({
   );
 }
 
+// Miniatura del marcador: la imagen de la página y, si no hay o no carga, su icono; sin ninguno de
+// los dos (o sin URL), un 📍. `imageData` es la foto subida a mano de los lugares antiguos.
+function PlaceThumb({ place }: { place: SavedPlace }) {
+  const sources = [
+    ...(place.imageData ? [{ uri: place.imageData, icon: false }] : []),
+    ...(place.thumbnailUrl ? [{ uri: place.thumbnailUrl, icon: false }] : []),
+    ...(place.faviconUrl ? [{ uri: place.faviconUrl, icon: true }] : []),
+  ];
+  const [failed, setFailed] = useState(0);
+  const current = sources[failed];
+  return (
+    <View style={[styles.placeThumb, styles.placeThumbPlaceholder]}>
+      {current ? (
+        <Image
+          source={{ uri: current.uri }}
+          style={current.icon ? styles.placeFavicon : styles.placeThumbImage}
+          resizeMode={current.icon ? "contain" : "cover"}
+          onError={() => setFailed((n) => n + 1)}
+        />
+      ) : (
+        <Text style={{ fontSize: 20 }}>📍</Text>
+      )}
+    </View>
+  );
+}
+
+// Alta/edición de un lugar: nombre, URL y descripción. Al guardar con URL se pide su previsualización
+// (miniatura, y título/descripción si faltan); si falla, el lugar se guarda igual sin miniatura.
 function PlaceForm({
   place,
   onSave,
   onDelete,
   onClose,
 }: {
-  place: SavedPlace;
-  onSave: (patch: Partial<SavedPlace>) => Promise<void>;
-  onDelete: () => void;
+  place?: SavedPlace; // undefined = lugar nuevo
+  onSave: (values: Omit<SavedPlace, "id">) => Promise<void>;
+  onDelete?: () => void;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(place.name);
-  const [description, setDescription] = useState(place.description ?? "");
-  const [imageData, setImageData] = useState(place.imageData ?? null);
-  const [favorite, setFavorite] = useState(!!place.favorite);
+  const [name, setName] = useState(place?.name ?? "");
+  const [url, setUrl] = useState(place?.url ?? "");
+  const [description, setDescription] = useState(place?.description ?? "");
+  const [favorite, setFavorite] = useState(!!place?.favorite);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    if (!name.trim()) return;
+    setError(null);
+    const rawUrl = url.trim();
+    const normalizedUrl = rawUrl ? normalizePlaceUrl(rawUrl) : null;
+    if (rawUrl && !normalizedUrl) {
+      setError("La URL no es válida. Usa una dirección http o https.");
+      return;
+    }
+    if (!name.trim() && !normalizedUrl) {
+      setError("Ponle un nombre o una URL al lugar.");
+      return;
+    }
+
     setSaving(true);
-    await onSave({ name: name.trim(), description: description.trim() || undefined, imageData, favorite });
+    let thumbnailUrl = place?.thumbnailUrl;
+    let faviconUrl = place?.faviconUrl;
+    let fallbackName = "";
+    let fallbackDescription = "";
+    if (!normalizedUrl) {
+      thumbnailUrl = undefined;
+      faviconUrl = undefined;
+    } else if (normalizedUrl !== place?.url || (!thumbnailUrl && !faviconUrl)) {
+      const preview = await fetchLinkPreview(normalizedUrl);
+      thumbnailUrl = preview?.image ?? undefined;
+      faviconUrl = preview?.favicon ?? undefined;
+      fallbackName = preview?.title?.trim() || "";
+      fallbackDescription = preview?.description?.trim() || "";
+    }
+
+    await onSave({
+      name: name.trim() || fallbackName || (normalizedUrl ? hostnameOf(normalizedUrl) : ""),
+      url: normalizedUrl ?? undefined,
+      description: description.trim() || fallbackDescription.slice(0, PLACE_DESCRIPTION_MAX) || undefined,
+      thumbnailUrl,
+      faviconUrl,
+      imageData: place?.imageData ?? null,
+      favorite,
+    });
     setSaving(false);
   };
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled">
-      <Text style={styles.modalTitle}>Lugar guardado</Text>
-      <ImageBlock value={imageData} onChange={setImageData} />
+      <Text style={styles.modalTitle}>{place ? "Editar lugar" : "Nuevo lugar"}</Text>
       <TextInput style={styles.input} placeholder="Nombre del lugar" value={name} onChangeText={setName} />
+      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Dirección (URL)</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="https://…"
+        value={url}
+        onChangeText={setUrl}
+        keyboardType="url"
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
       <TextInput
         style={[styles.input, styles.inputMultiline]}
         placeholder="Por qué quieres ir, qué ver allí…"
@@ -547,12 +641,15 @@ function PlaceForm({
         <Text style={[styles.heart, favorite && styles.heartOn]}>{favorite ? "♥" : "♡"}</Text>
         <Text style={styles.favoriteToggleText}>Favorito</Text>
       </Pressable>
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <Pressable style={styles.primaryButton} onPress={submit} disabled={saving}>
         <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
       </Pressable>
-      <Pressable style={styles.deleteButton} onPress={onDelete}>
-        <Text style={styles.deleteButtonText}>Eliminar lugar</Text>
-      </Pressable>
+      {onDelete ? (
+        <Pressable style={styles.deleteButton} onPress={onDelete}>
+          <Text style={styles.deleteButtonText}>Eliminar lugar</Text>
+        </Pressable>
+      ) : null}
       <Pressable style={styles.cancelButton} onPress={onClose}>
         <Text style={styles.cancelButtonText}>Cancelar</Text>
       </Pressable>
@@ -651,7 +748,15 @@ const styles = StyleSheet.create({
   placeRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   placeMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 },
   placeThumb: { width: 52, height: 52, borderRadius: radius.input },
-  placeThumbPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: withAlpha(colors.positive, 0.12) },
+  placeThumbPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: withAlpha(colors.positive, 0.12), overflow: "hidden" },
+  placeThumbImage: { width: "100%", height: "100%" },
+  placeFavicon: { width: 28, height: 28 },
+  placeHost: { fontFamily: fonts.sans, fontSize: 10, color: withAlpha(colors.mutedForeground, 0.8) },
+  editPencil: { fontSize: 14, color: colors.mutedForeground },
+  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  plusButton: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.foreground, alignItems: "center", justifyContent: "center" },
+  plusButtonText: { fontFamily: fonts.sansBold, fontSize: 16, lineHeight: 18, color: colors.background },
+  errorText: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, marginBottom: 8 },
   placeName: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.foreground },
   heart: { fontSize: 22, color: withAlpha(colors.mutedForeground, 0.6) },
   heartOn: { color: colors.destructive },

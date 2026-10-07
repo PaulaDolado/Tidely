@@ -19,8 +19,8 @@ export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
   proyectos: "Proyectos",
   objetivos: "Objetivos",
   agenda: "Agenda",
-  hoy: "Hoy",
-  viajes: "Planificación de viajes",
+  hoy: "Lista",
+  viajes: "Planificador de viajes o rutas",
 };
 
 // Icono por defecto de cada plantilla (se muestra mientras el usuario no elija uno propio, ver
@@ -172,17 +172,23 @@ export interface Trip {
   notes?: string;
   budget?: number | null; // EUR
   itinerary: TravelItineraryItem[];
+  places?: SavedPlace[]; // lugares guardados DE este viaje
 }
 export interface SavedPlace {
   id: string;
   name: string;
+  url?: string;
   description?: string;
-  imageData?: string | null;
+  thumbnailUrl?: string | null; // imagen de la página (og:image), vía /link-preview
+  faviconUrl?: string | null;
+  imageData?: string | null; // foto subida a mano (lugares antiguos)
   favorite?: boolean;
 }
 export interface TravelContent {
   trips: Trip[];
-  places: SavedPlace[];
+  // LEGADO: antes los lugares eran comunes a todos los viajes de la página; ahora van dentro de cada
+  // viaje (ver normalizeTravelContent en utils/travel.ts).
+  places?: SavedPlace[];
 }
 
 export type CustomPageContent =

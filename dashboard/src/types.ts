@@ -570,13 +570,22 @@ export interface Trip {
   // Presupuesto estimado total, en EUR (mismo criterio que la plantilla "finanzas").
   budget?: number | null;
   itinerary: TravelItineraryItem[];
+  // Lugares guardados DE ESTE VIAJE (marcadores). Opcional: las páginas guardadas antes de que
+  // pertenecieran a cada viaje no lo tienen — ver normalizeTravelContent en utils/travel.ts.
+  places?: SavedPlace[];
 }
 
+// Un lugar guardado: se ve como un marcador (miniatura de la URL + nombre + descripción).
 export interface SavedPlace {
   id: string;
   name: string;
+  url?: string; // http/https, ya normalizada
   description?: string;
-  imageData?: string | null;
+  // Miniatura de la URL: la imagen de la página (og:image) y, si no hay o no carga, su favicon —
+  // sacados de GET /link-preview al guardar el lugar, no se vuelven a pedir al verlo.
+  thumbnailUrl?: string;
+  faviconUrl?: string;
+  imageData?: string | null; // LEGADO: foto subida a mano (antes de que los lugares llevaran URL)
   favorite?: boolean;
 }
 
@@ -593,7 +602,8 @@ export interface CustomPageContentMap {
   objetivos: { goals: SimpleGoal[] };
   agenda: { items: AgendaNote[] };
   hoy: { items: ChecklistItem[] };
-  viajes: { trips: Trip[]; places: SavedPlace[] };
+  // `places` suelto = LEGADO (ver SavedPlace/Trip.places): los lugares ahora viven dentro de cada viaje.
+  viajes: { trips: Trip[]; places?: SavedPlace[] };
 }
 
 export interface CustomPage extends CustomPageSummary {

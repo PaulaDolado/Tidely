@@ -1,13 +1,17 @@
 import { ChangeEvent, FormEvent, ReactNode, useMemo, useRef, useState } from "react";
 import { EmptyState } from "./Feedback";
 import { newId } from "../utils/id";
+import { fetchLinkPreview, hostnameOf, normalizePlaceUrl, normalizeTravelContent, pickDefaultTrip, TravelContent } from "../utils/travel";
 import { SavedPlace, TravelItineraryItem, Trip } from "../types";
 
 // Plantilla "viajes" de las páginas personalizadas (ver CustomPagePage): un panel de control de
 // viajes — formulario para añadir un viaje, cuatro indicadores y tres paneles (viaje seleccionado,
-// itinerario y lugares guardados). Todo vive en `content` ({ trips, places }), sin tablas propias,
-// igual que el resto de plantillas; este componente es "controlado": recibe su parte del contenido
-// y devuelve el objeto completo actualizado vía `onChange`.
+// itinerario y lugares guardados). Todo vive en `content` ({ trips }), sin tablas propias, igual
+// que el resto de plantillas; este componente es "controlado": recibe su parte del contenido y
+// devuelve el objeto completo actualizado vía `onChange`.
+//
+// El itinerario y los lugares guardados son DEL VIAJE seleccionado (Trip.itinerary / Trip.places):
+// al cambiar de viaje, los dos paneles muestran lo de ese viaje.
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3MB, igual límite que el resto de imágenes de páginas
 // Una foto de viaje a resolución de móvil pesa varios MB; se reduce y se recomprime antes de
@@ -15,12 +19,8 @@ const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3MB, igual límite que el resto de i
 // de la página (ver CONTENT_BYTE_LIMIT en el backend).
 const MAX_IMAGE_SIDE = 1200;
 const ITINERARY_PREVIEW = 4;
-const PLACES_PREVIEW = 3;
-
-interface TravelContent {
-  trips: Trip[];
-  places: SavedPlace[];
-}
+const PLACES_PREVIEW = 4;
+const PLACE_DESCRIPTION_MAX = 160;
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -51,6 +51,10 @@ function fmtRange(trip: Trip): string {
 
 function fmtMoney(n: number): string {
   return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function readResizedImage(file: File): Promise<string> {
@@ -85,12 +89,15 @@ export function TravelPlannerTemplate({
   onChange,
 }: {
   trips: Trip[];
-  places: SavedPlace[];
+  // LEGADO: lugares sueltos de páginas guardadas antes de que pertenecieran a cada viaje (ver
+  // normalizeTravelContent) — se pliegan solos dentro del viaje por defecto.
+  places?: SavedPlace[];
   onChange: (content: TravelContent) => void;
 }) {
   const today = todayKey();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<{ kind: "trip" | "place"; id: string } | null>(null);
+  // `placeId: null` = lugar nuevo (el "+" de la cabecera de "Lugares guardados").
+  const [dialog, setDialog] = useState<{ kind: "trip" } | { kind: "place"; placeId: string | null } | null>(null);
   const [showFullItinerary, setShowFullItinerary] = useState(false);
   const [showAllPlaces, setShowAllPlaces] = useState(false);
 
@@ -100,37 +107,49 @@ export function TravelPlannerTemplate({
 
   const [activityDate, setActivityDate] = useState("");
   const [activityTitle, setActivityTitle] = useState("");
-  const [placeName, setPlaceName] = useState("");
 
-  const update = (patch: Partial<TravelContent>) => onChange({ trips, places, ...patch });
+  // Contenido ya con los lugares dentro de cada viaje (los antiguos, plegados en el viaje por
+  // defecto) — todo lo de abajo lee de aquí, no de las props en bruto.
+  const content = useMemo(() => normalizeTravelContent({ trips, places }, today), [trips, places, today]);
+  const allTrips = content.trips;
 
-  const sortedTrips = useMemo(() => [...trips].sort((a, b) => a.startDate.localeCompare(b.startDate)), [trips]);
+  const update = (patch: Partial<TravelContent>) => onChange({ trips: allTrips, places: content.places, ...patch });
+
+  const sortedTrips = useMemo(() => [...allTrips].sort((a, b) => a.startDate.localeCompare(b.startDate)), [allTrips]);
   const upcoming = sortedTrips.filter((t) => t.endDate >= today);
-  // Sin elección explícita se enseña el próximo viaje; si ya no queda ninguno por delante, el último.
-  const defaultTrip = upcoming[0] ?? sortedTrips[sortedTrips.length - 1] ?? null;
-  const selected = trips.find((t) => t.id === selectedId) ?? defaultTrip;
+  // Sin elección explícita se enseña el viaje por defecto (el próximo; si no queda ninguno, el último).
+  const selected = allTrips.find((t) => t.id === selectedId) ?? pickDefaultTrip(allTrips, today);
 
   const itinerary = useMemo(
     () => [...(selected?.itinerary ?? [])].sort((a, b) => a.date.localeCompare(b.date)),
     [selected]
   );
-  const favorites = places.filter((p) => p.favorite).length;
+  const selectedPlaces = selected?.places ?? [];
+  const favorites = selectedPlaces.filter((p) => p.favorite).length;
 
   const addTrip = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = destination.trim();
     if (!trimmed || !from || !to) return;
-    const trip: Trip = { id: newId(), destination: trimmed, startDate: from, endDate: to < from ? from : to, itinerary: [] };
-    update({ trips: [...trips, trip] });
+    // Los lugares sueltos de una página antigua (sin viajes hasta ahora) pasan al primer viaje.
+    const trip: Trip = {
+      id: newId(),
+      destination: trimmed,
+      startDate: from,
+      endDate: to < from ? from : to,
+      itinerary: [],
+      places: content.places,
+    };
+    update({ trips: [...allTrips, trip], places: [] });
     setSelectedId(trip.id);
     setDestination("");
   };
 
   const patchTrip = (id: string, patch: Partial<Trip>) =>
-    update({ trips: trips.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
+    update({ trips: allTrips.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
 
   const removeTrip = (id: string) => {
-    update({ trips: trips.filter((t) => t.id !== id) });
+    update({ trips: allTrips.filter((t) => t.id !== id) });
     if (selectedId === id) setSelectedId(null);
     setDialog(null);
   };
@@ -149,23 +168,26 @@ export function TravelPlannerTemplate({
     patchTrip(selected.id, { itinerary: selected.itinerary.filter((it) => it.id !== itemId) });
   };
 
-  const addPlace = (e: FormEvent) => {
-    e.preventDefault();
-    const name = placeName.trim();
-    if (!name) return;
-    update({ places: [...places, { id: newId(), name }] });
-    setPlaceName("");
+  // Los lugares son del viaje seleccionado: cualquier cambio reescribe `places` de ESE viaje.
+  const setPlaces = (next: SavedPlace[]) => {
+    if (selected) patchTrip(selected.id, { places: next });
   };
 
-  const patchPlace = (id: string, patch: Partial<SavedPlace>) =>
-    update({ places: places.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
-
-  const removePlace = (id: string) => {
-    update({ places: places.filter((p) => p.id !== id) });
+  const savePlace = (placeId: string | null, values: Omit<SavedPlace, "id">) => {
+    if (placeId === null) setPlaces([...selectedPlaces, { id: newId(), ...values }]);
+    else setPlaces(selectedPlaces.map((p) => (p.id === placeId ? { ...p, ...values } : p)));
     setDialog(null);
   };
 
-  // Indicadores: el 3º y el 4º hablan del viaje seleccionado, no de "todos los viajes".
+  const removePlace = (placeId: string) => {
+    setPlaces(selectedPlaces.filter((p) => p.id !== placeId));
+    setDialog(null);
+  };
+
+  const toggleFavorite = (placeId: string) =>
+    setPlaces(selectedPlaces.map((p) => (p.id === placeId ? { ...p, favorite: !p.favorite } : p)));
+
+  // Indicadores: el 2º, el 3º y el 4º hablan del viaje seleccionado, no de "todos los viajes".
   const daysToGo = selected ? diffDays(selected.startDate, today) : null;
   const ongoing = selected ? selected.startDate <= today && selected.endDate >= today : false;
   const stats = [
@@ -179,9 +201,9 @@ export function TravelPlannerTemplate({
     {
       icon: "📍",
       tone: "border-positive/30 bg-positive/10",
-      value: String(places.length),
+      value: String(selectedPlaces.length),
       label: "Lugares guardados",
-      hint: favorites === 0 ? "Tus sitios por visitar" : `${favorites} ${favorites === 1 ? "favorito" : "favoritos"}`,
+      hint: !selected ? "Sin viaje seleccionado" : favorites > 0 ? `${plural(favorites, "favorito", "favoritos")} en ${selected.destination}` : `En ${selected.destination}`,
     },
     {
       icon: "🗓️",
@@ -199,8 +221,9 @@ export function TravelPlannerTemplate({
     },
   ];
 
-  const openTrip = dialog?.kind === "trip" ? trips.find((t) => t.id === dialog.id) : undefined;
-  const openPlace = dialog?.kind === "place" ? places.find((p) => p.id === dialog.id) : undefined;
+  const openTrip = dialog?.kind === "trip" ? selected : undefined;
+  const openPlaceId = dialog?.kind === "place" ? dialog.placeId : undefined; // undefined = diálogo cerrado
+  const openPlace = openPlaceId ? selectedPlaces.find((p) => p.id === openPlaceId) : undefined;
   const tripPanelTitle = !selected ? "Próximo viaje" : selected.endDate < today ? "Último viaje" : selected.id === upcoming[0]?.id ? "Próximo viaje" : "Viaje";
 
   return (
@@ -291,10 +314,15 @@ export function TravelPlannerTemplate({
               <p className="mt-1 text-xs text-muted-foreground">
                 📅 {fmtRange(selected)} · {diffDays(selected.endDate, selected.startDate) + 1} {diffDays(selected.endDate, selected.startDate) === 0 ? "día" : "días"}
               </p>
+              {/* El itinerario y los lugares de abajo son de ESTE viaje: aquí se ve de un vistazo
+                  cuánto llevan. */}
+              <p className="mt-1 text-xs text-muted-foreground">
+                🗓️ {plural(itinerary.length, "actividad", "actividades")} · 📍 {plural(selectedPlaces.length, "lugar", "lugares")}
+              </p>
               {selected.notes && <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{selected.notes}</p>}
               <button
                 type="button"
-                onClick={() => setDialog({ kind: "trip", id: selected.id })}
+                onClick={() => setDialog({ kind: "trip" })}
                 className="mt-auto cursor-pointer self-start rounded-full border border-primary/40 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
               >
                 Ver viaje
@@ -374,60 +402,47 @@ export function TravelPlannerTemplate({
           )}
         </section>
 
-        {/* Lugares guardados (compartidos por todos los viajes) */}
+        {/* Lugares guardados DEL viaje seleccionado: marcadores (miniatura de la URL + texto) */}
         <section className="card-soft flex flex-col">
-          <h3 className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">Lugares guardados</h3>
-          {places.length === 0 ? (
-            <p className="mb-4 text-sm text-muted-foreground">Guarda aquí los sitios que quieres visitar.</p>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Lugares guardados</h3>
+            {selected && (
+              <button
+                type="button"
+                onClick={() => setDialog({ kind: "place", placeId: null })}
+                aria-label="Añadir lugar"
+                title="Añadir lugar"
+                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-sm leading-none text-background transition-opacity hover:opacity-80"
+              >
+                +
+              </button>
+            )}
+          </div>
+
+          {!selected ? (
+            <EmptyState message="Los lugares guardados aparecen aquí al elegir un viaje." />
+          ) : selectedPlaces.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Guarda aquí los sitios de {selected.destination} que quieres visitar, con su enlace.</p>
           ) : (
-            <ul className="mb-4 space-y-3">
-              {(showAllPlaces ? places : places.slice(0, PLACES_PREVIEW)).map((p) => (
-                <li key={p.id} className="flex items-center gap-3">
-                  <button type="button" onClick={() => setDialog({ kind: "place", id: p.id })} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left">
-                    {p.imageData ? (
-                      <img src={p.imageData} alt={p.name} className="size-14 shrink-0 rounded-xl object-cover" />
-                    ) : (
-                      <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-positive/10 text-xl" aria-hidden="true">
-                        📍
-                      </span>
-                    )}
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{p.name}</span>
-                      {p.description && <span className="block truncate text-xs text-muted-foreground">{p.description}</span>}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => patchPlace(p.id, { favorite: !p.favorite })}
-                    title={p.favorite ? "Quitar de favoritos" : "Marcar como favorito"}
-                    className={`shrink-0 cursor-pointer text-lg ${p.favorite ? "text-destructive" : "text-muted-foreground/50 hover:text-destructive"}`}
-                  >
-                    {p.favorite ? "♥" : "♡"}
-                  </button>
-                </li>
+            <ul className="space-y-1">
+              {(showAllPlaces ? selectedPlaces : selectedPlaces.slice(0, PLACES_PREVIEW)).map((p) => (
+                <PlaceBookmark
+                  key={p.id}
+                  place={p}
+                  onEdit={() => setDialog({ kind: "place", placeId: p.id })}
+                  onToggleFavorite={() => toggleFavorite(p.id)}
+                />
               ))}
             </ul>
           )}
 
-          <form onSubmit={addPlace} className="mb-4 flex gap-2">
-            <input
-              value={placeName}
-              onChange={(e) => setPlaceName(e.target.value)}
-              placeholder="Nuevo lugar…"
-              className="field-input min-w-0 flex-1 px-3 py-2 text-xs"
-            />
-            <button type="submit" className="btn-dark px-4 py-2 text-xs">
-              +
-            </button>
-          </form>
-
-          {places.length > PLACES_PREVIEW && (
+          {selectedPlaces.length > PLACES_PREVIEW && (
             <button
               type="button"
               onClick={() => setShowAllPlaces((v) => !v)}
-              className="mt-auto cursor-pointer self-start rounded-full border border-primary/40 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+              className="mt-4 cursor-pointer self-start rounded-full border border-primary/40 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
             >
-              {showAllPlaces ? "Ver menos" : `Ver todos (${places.length})`}
+              {showAllPlaces ? "Ver menos" : `Ver todos (${selectedPlaces.length})`}
             </button>
           )}
         </section>
@@ -436,10 +451,102 @@ export function TravelPlannerTemplate({
       {openTrip && (
         <TripDialog trip={openTrip} onChange={(patch) => patchTrip(openTrip.id, patch)} onRemove={() => removeTrip(openTrip.id)} onClose={() => setDialog(null)} />
       )}
-      {openPlace && (
-        <PlaceDialog place={openPlace} onChange={(patch) => patchPlace(openPlace.id, patch)} onRemove={() => removePlace(openPlace.id)} onClose={() => setDialog(null)} />
+      {openPlaceId !== undefined && selected && (openPlaceId === null || openPlace) && (
+        <PlaceDialog
+          key={openPlaceId ?? "new"}
+          place={openPlace}
+          onSave={(values) => savePlace(openPlaceId, values)}
+          onRemove={openPlace ? () => removePlace(openPlace.id) : undefined}
+          onClose={() => setDialog(null)}
+        />
       )}
     </div>
+  );
+}
+
+// Miniatura del marcador: la imagen de la página y, si no hay o no carga, su icono; sin ninguno de
+// los dos (o sin URL), un 📍. `imageData` es la foto subida a mano de los lugares antiguos.
+function PlaceThumb({ place }: { place: SavedPlace }) {
+  const sources = [
+    ...(place.imageData ? [{ src: place.imageData, icon: false }] : []),
+    ...(place.thumbnailUrl ? [{ src: place.thumbnailUrl, icon: false }] : []),
+    ...(place.faviconUrl ? [{ src: place.faviconUrl, icon: true }] : []),
+  ];
+  const [failed, setFailed] = useState(0);
+  const current = sources[failed];
+
+  return (
+    <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-positive/10 text-xl">
+      {current ? (
+        <img
+          src={current.src}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed((n) => n + 1)}
+          // Un favicon es diminuto: se centra con margen en vez de estirarlo a todo el cuadrado.
+          className={current.icon ? "size-7 object-contain" : "size-full object-cover"}
+        />
+      ) : (
+        <span aria-hidden="true">📍</span>
+      )}
+    </span>
+  );
+}
+
+// Un lugar guardado como marcador: miniatura a la izquierda y el texto al lado. Con URL, todo el
+// marcador es un enlace que la abre en otra pestaña; sin ella, abre la edición. El corazón y el
+// lápiz van aparte, a la derecha.
+function PlaceBookmark({
+  place,
+  onEdit,
+  onToggleFavorite,
+}: {
+  place: SavedPlace;
+  onEdit: () => void;
+  onToggleFavorite: () => void;
+}) {
+  const body = (
+    <>
+      <PlaceThumb place={place} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{place.name}</span>
+        {place.description && <span className="line-clamp-2 block text-xs text-muted-foreground">{place.description}</span>}
+        {place.url && <span className="block truncate text-[10px] text-muted-foreground/70">{hostnameOf(place.url)}</span>}
+      </span>
+    </>
+  );
+  const rowClass = "flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-muted/60";
+
+  return (
+    <li className="group flex items-center gap-1">
+      {place.url ? (
+        <a href={place.url} target="_blank" rel="noopener noreferrer" title={place.url} className={rowClass}>
+          {body}
+        </a>
+      ) : (
+        <button type="button" onClick={onEdit} className={`${rowClass} cursor-pointer`}>
+          {body}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onToggleFavorite}
+        title={place.favorite ? "Quitar de favoritos" : "Marcar como favorito"}
+        className={`shrink-0 cursor-pointer text-lg ${place.favorite ? "text-destructive" : "text-muted-foreground/50 hover:text-destructive"}`}
+      >
+        {place.favorite ? "♥" : "♡"}
+      </button>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={`Editar ${place.name}`}
+        title="Editar"
+        className="shrink-0 cursor-pointer rounded p-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+      >
+        ✎
+      </button>
+    </li>
   );
 }
 
@@ -609,32 +716,109 @@ function TripDialog({
   );
 }
 
+// Alta/edición de un lugar guardado: nombre, URL y descripción. Al guardar con URL se pide su
+// previsualización (miniatura, y título/descripción si faltan) — ver fetchLinkPreview; si falla, el
+// lugar se guarda igual, solo que sin miniatura.
 function PlaceDialog({
   place,
-  onChange,
+  onSave,
   onRemove,
   onClose,
 }: {
-  place: SavedPlace;
-  onChange: (patch: Partial<SavedPlace>) => void;
-  onRemove: () => void;
+  place?: SavedPlace; // undefined = lugar nuevo
+  onSave: (values: Omit<SavedPlace, "id">) => void;
+  onRemove?: () => void;
   onClose: () => void;
 }) {
+  const [name, setName] = useState(place?.name ?? "");
+  const [url, setUrl] = useState(place?.url ?? "");
+  const [description, setDescription] = useState(place?.description ?? "");
+  const [favorite, setFavorite] = useState(!!place?.favorite);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const rawUrl = url.trim();
+    const normalizedUrl = rawUrl ? normalizePlaceUrl(rawUrl) : null;
+    if (rawUrl && !normalizedUrl) {
+      setError("La URL no es válida. Usa una dirección http o https.");
+      return;
+    }
+    if (!name.trim() && !normalizedUrl) {
+      setError("Ponle un nombre o una URL al lugar.");
+      return;
+    }
+
+    setSaving(true);
+    let thumbnailUrl = place?.thumbnailUrl;
+    let faviconUrl = place?.faviconUrl;
+    let fallbackName = "";
+    let fallbackDescription = "";
+
+    if (!normalizedUrl) {
+      thumbnailUrl = undefined;
+      faviconUrl = undefined;
+    } else if (normalizedUrl !== place?.url || (!thumbnailUrl && !faviconUrl)) {
+      const preview = await fetchLinkPreview(normalizedUrl);
+      thumbnailUrl = preview?.image ?? undefined;
+      faviconUrl = preview?.favicon ?? undefined;
+      fallbackName = preview?.title?.trim() || "";
+      fallbackDescription = preview?.description?.trim() || "";
+    }
+
+    onSave({
+      name: name.trim() || fallbackName || (normalizedUrl ? hostnameOf(normalizedUrl) : ""),
+      url: normalizedUrl ?? undefined,
+      description: description.trim() || fallbackDescription.slice(0, PLACE_DESCRIPTION_MAX) || undefined,
+      thumbnailUrl,
+      faviconUrl,
+      imageData: place?.imageData ?? null,
+      favorite,
+    });
+  };
+
   return (
-    <DialogShell title="Lugar guardado" onClose={onClose}>
-      <ImageField value={place.imageData} alt={place.name} onChange={(imageData) => onChange({ imageData })} />
-      <input value={place.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Nombre del lugar" className="field-input font-serif text-lg" />
-      <textarea
-        value={place.description ?? ""}
-        onChange={(e) => onChange({ description: e.target.value || undefined })}
-        placeholder="Por qué quieres ir, qué ver allí…"
-        className="field-input min-h-[6rem] resize-y"
-      />
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-        <input type="checkbox" checked={!!place.favorite} onChange={(e) => onChange({ favorite: e.target.checked })} />
-        Favorito
-      </label>
-      <DeleteButton label="Eliminar lugar" onConfirm={onRemove} />
+    <DialogShell title={place ? "Editar lugar" : "Nuevo lugar"} onClose={onClose}>
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del lugar" className="field-input font-serif text-lg" />
+        <label className="flex flex-col gap-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+          Dirección (URL)
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…"
+            inputMode="url"
+            className="field-input normal-case tracking-normal text-foreground"
+          />
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Descripción: por qué quieres ir, qué ver allí…"
+          className="field-input min-h-[6rem] resize-y"
+        />
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)} />
+          Favorito
+        </label>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <div className="flex items-center gap-3">
+          <button type="submit" disabled={saving} className="btn-dark disabled:opacity-50">
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+          <button type="button" onClick={onClose} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            Cancelar
+          </button>
+          {onRemove && (
+            <span className="ml-auto">
+              <DeleteButton label="Eliminar lugar" onConfirm={onRemove} />
+            </span>
+          )}
+        </div>
+      </form>
     </DialogShell>
   );
 }
