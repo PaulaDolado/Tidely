@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, ReactNode, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
 import { BudgetSummary, BudgetSummaryCategory, CalendarColor } from "../types";
@@ -37,7 +37,7 @@ interface Slice {
 function Donut({ slices, total }: { slices: Slice[]; total: number }) {
   let offset = 0;
   return (
-    <div className="relative mx-auto size-44">
+    <div className="relative size-28 shrink-0">
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="size-full -rotate-90" role="img" aria-label="Gastos del mes por categoría">
         <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke="var(--muted)" strokeWidth={STROKE} />
         {total > 0 &&
@@ -65,8 +65,8 @@ function Donut({ slices, total }: { slices: Slice[]; total: number }) {
             })}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="font-serif text-2xl leading-tight">{eur(total)}</span>
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">gastado</span>
+        <span className="font-serif text-lg leading-tight">{eur(total)}</span>
+        <span className="text-[9px] uppercase tracking-widest text-muted-foreground">gastado</span>
       </div>
     </div>
   );
@@ -196,43 +196,77 @@ function CategoryForm({
   );
 }
 
-function CategoryRow({ category, onEdit }: { category: BudgetSummaryCategory; onEdit: () => void }) {
-  const ratio = category.budget > 0 ? category.spent / category.budget : category.spent > 0 ? 2 : 0;
-  const over = ratio > 1;
+type LabelAlign = "left" | "right" | "center";
+
+const ALIGN_CLASSES: Record<LabelAlign, { text: string; row: string }> = {
+  left: { text: "text-left", row: "justify-start" },
+  right: { text: "text-right", row: "justify-end" },
+  center: { text: "text-center", row: "justify-center" },
+};
+
+// Una categoría colocada alrededor del donut: su nombre, "gastado / presupuesto" con el lápiz de
+// editar al lado y, debajo, su % de los ingresos. Sin barra de progreso: si se pasa de lo que le
+// toca, el gasto sale en rojo.
+function CategoryLabel({
+  name,
+  color,
+  spent,
+  budget,
+  percent,
+  align,
+  active,
+  onEdit,
+}: {
+  name: string;
+  color: CalendarColor;
+  spent: number;
+  budget?: number; // sin presupuesto (p. ej. "Sin categoría") solo se enseña lo gastado
+  percent?: number;
+  align: LabelAlign;
+  active?: boolean;
+  onEdit?: () => void;
+}) {
+  const over = budget !== undefined && spent > budget;
+  const a = ALIGN_CLASSES[align];
   return (
-    <li className="group">
-      <div className="flex items-center gap-2 text-sm">
-        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colorVar(category.color) }} aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate font-medium">{category.name}</span>
-        <span className={`shrink-0 text-xs ${over ? "font-medium text-destructive" : "text-muted-foreground"}`}>
-          {eur(category.spent)} / {eur(category.budget)}
+    <div className={`flex min-w-0 flex-col gap-0.5 rounded-xl px-1.5 py-1 ${a.text} ${active ? "bg-muted" : ""}`}>
+      <div className={`flex min-w-0 items-center gap-1.5 ${a.row}`}>
+        <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: colorVar(color) }} aria-hidden="true" />
+        <span className="min-w-0 text-[11px] font-medium leading-tight [overflow-wrap:anywhere]" title={name}>
+          {name}
         </span>
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Editar ${category.name}`}
-          className="shrink-0 cursor-pointer rounded p-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100"
-        >
-          ✎
-        </button>
       </div>
-      <div className="ml-4.5 mt-1 flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round(Math.min(ratio, 1) * 100)} aria-valuemin={0} aria-valuemax={100}>
-          <div
-            className="h-full rounded-full"
-            style={{ width: `${Math.min(ratio, 1) * 100}%`, backgroundColor: over ? "var(--destructive)" : colorVar(category.color) }}
-          />
-        </div>
-        <span className="w-10 shrink-0 text-right text-[10px] text-muted-foreground">{pct(category.percent)}</span>
+      <div className={`flex items-center gap-0.5 text-[11px] ${a.row} ${over ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+        <span className="whitespace-nowrap">{budget === undefined ? eur(spent) : `${eur(spent)} / ${eur(budget)}`}</span>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Editar ${name}`}
+            className="shrink-0 cursor-pointer rounded px-0.5 text-[11px] text-muted-foreground opacity-60 transition-opacity hover:opacity-100 focus:opacity-100"
+          >
+            ✎
+          </button>
+        )}
       </div>
-    </li>
+      {percent !== undefined && <span className="text-[10px] text-muted-foreground">{pct(percent)}</span>}
+    </div>
   );
 }
 
+// Filas de categorías por encima/debajo del donut: dos columnas; si queda una suelta al final, se
+// centra en vez de quedarse pegada a la izquierda.
+function LabelGrid({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 gap-x-2 gap-y-1 [&>*:last-child:nth-child(odd)]:col-span-2">{children}</div>;
+}
+
 /**
- * "Resumen del presupuesto" (Finanzas): donut con los gastos del mes repartidos por categoría y,
- * debajo, cuánto se lleva gastado de lo que le toca a cada una — su % de los ingresos del mes.
- * Las categorías (nombre, color y %) se crean con "+" y se editan con el lápiz de cada fila; se
+ * "Resumen del presupuesto" (Finanzas): un donut con los gastos del mes repartidos por categoría y,
+ * alrededor de él, cada categoría con lo gastado frente a lo que le toca (su % de los ingresos del
+ * mes). Se reparten en tres zonas — unas encima, dos a los lados y el resto debajo — para que
+ * quepan en una tarjeta estrecha sin recortar los nombres.
+ *
+ * Las categorías (nombre, color y %) se crean con "+" y se editan con el lápiz de cada una; se
  * enlazan con los movimientos por NOMBRE (ver budgetService en el backend), así que apuntar un
  * gasto con la categoría "Casa" suma a la porción de Casa. Lo que no coincide con ninguna cae en
  * "Otro".
@@ -264,6 +298,33 @@ export function BudgetSummaryCard({
     setEditingId(null);
     onChanged();
   };
+
+  // Reparto alrededor del donut: dos categorías a los lados (una a cada lado), y el resto mitad
+  // encima y mitad debajo, en el orden de la lista.
+  const categories = summary.categories;
+  const sideCount = Math.min(2, categories.length);
+  const topCount = Math.ceil((categories.length - sideCount) / 2);
+  const top = categories.slice(0, topCount);
+  const sides = categories.slice(topCount, topCount + sideCount);
+  const bottom = categories.slice(topCount + sideCount);
+  const editing = categories.find((c) => c.id === editingId) ?? null;
+
+  const labelFor = (c: BudgetSummaryCategory, align: LabelAlign) => (
+    <CategoryLabel
+      key={c.id}
+      name={c.name}
+      color={c.color}
+      spent={c.spent}
+      budget={c.budget}
+      percent={c.percent}
+      align={align}
+      active={editingId === c.id}
+      onEdit={() => {
+        setAdding(false);
+        setEditingId(c.id);
+      }}
+    />
+  );
 
   return (
     <div className="card-soft">
@@ -298,56 +359,44 @@ export function BudgetSummaryCard({
         </div>
       )}
 
-      <Donut slices={slices} total={total} />
-      {total === 0 && <p className="mt-2 text-center text-xs text-muted-foreground">Sin gastos registrados este mes.</p>}
+      <div className="space-y-2">
+        {top.length > 0 && <LabelGrid>{top.map((c) => labelFor(c, "center"))}</LabelGrid>}
 
-      {summary.categories.length === 0 ? (
-        <p className="mt-4 text-center text-sm text-muted-foreground">No tienes categorías. Añade una con el "+".</p>
-      ) : (
-        <ul className="mt-5 space-y-3">
-          {summary.categories.map((c) =>
-            editingId === c.id ? (
-              <li key={c.id}>
-                <CategoryForm
-                  initial={{ name: c.name, color: c.color, percent: c.percent }}
-                  maxPercent={summary.unassignedPercent + c.percent}
-                  submitLabel="Guardar"
-                  onCancel={() => setEditingId(null)}
-                  onSubmit={async (values) => {
-                    await api.put(`/finance/budget-categories/${c.id}`, values);
-                    afterChange();
-                  }}
-                  onDelete={async () => {
-                    await api.delete(`/finance/budget-categories/${c.id}`);
-                    afterChange();
-                  }}
-                />
-              </li>
-            ) : (
-              <CategoryRow
-                key={c.id}
-                category={c}
-                onEdit={() => {
-                  setAdding(false);
-                  setEditingId(c.id);
-                }}
-              />
-            )
-          )}
-          {summary.uncategorizedSpent > 0 && (
-            <li className="flex items-center gap-2 text-sm">
-              <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colorVar("muted") }} aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate font-medium">Sin categoría</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{eur(summary.uncategorizedSpent)}</span>
-            </li>
-          )}
-        </ul>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+          <div>{sides[0] && labelFor(sides[0], "right")}</div>
+          <Donut slices={slices} total={total} />
+          <div>{sides[1] && labelFor(sides[1], "left")}</div>
+        </div>
+
+        {(bottom.length > 0 || summary.uncategorizedSpent > 0) && (
+          <LabelGrid>
+            {bottom.map((c) => labelFor(c, "center"))}
+            {summary.uncategorizedSpent > 0 && <CategoryLabel key="uncategorized" name="Sin categoría" color="muted" spent={summary.uncategorizedSpent} align="center" />}
+          </LabelGrid>
+        )}
+      </div>
+
+      {categories.length === 0 && <p className="mt-3 text-center text-sm text-muted-foreground">No tienes categorías. Añade una con el "+".</p>}
+
+      {editing && (
+        <div className="mt-4">
+          <CategoryForm
+            key={editing.id}
+            initial={{ name: editing.name, color: editing.color, percent: editing.percent }}
+            maxPercent={summary.unassignedPercent + editing.percent}
+            submitLabel="Guardar"
+            onCancel={() => setEditingId(null)}
+            onSubmit={async (values) => {
+              await api.put(`/finance/budget-categories/${editing.id}`, values);
+              afterChange();
+            }}
+            onDelete={async () => {
+              await api.delete(`/finance/budget-categories/${editing.id}`);
+              afterChange();
+            }}
+          />
+        </div>
       )}
-
-      <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
-        Presupuestado {pct(summary.assignedPercent)} de los ingresos · sin asignar {pct(summary.unassignedPercent)}
-        {summary.income <= 0 && " · este mes aún no hay ingresos, así que los presupuestos salen a 0 €"}
-      </p>
     </div>
   );
 }

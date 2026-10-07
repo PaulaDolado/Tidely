@@ -76,7 +76,10 @@ export function HoyPage({ onNavigate }: { onNavigate: (tab: Tab, focus?: SearchF
       {loading && !data ? (
         <Loading label="Cargando tu día..." />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        // minmax(0, …) y no `fr` a secas: una columna `1fr` no puede encogerse por debajo del ancho
+        // mínimo de su contenido, así que una nota con un texto largo sin espacios (una URL)
+        // ensanchaba la columna derecha y la página entera desbordaba en horizontal.
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-6">
             <section className="rounded-3xl border border-border bg-card p-6">
               <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">📅 Eventos de hoy</h2>

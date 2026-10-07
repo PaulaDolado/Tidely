@@ -37,7 +37,9 @@ export function QuickNotesCard({ notes, onChanged }: { notes: Note[]; onChanged:
                 aria-label={`Marcar "${note.content}" como hecha`}
               />
               <span
-                className={`flex-1 break-words ${
+                // overflow-wrap:anywhere (no `break-words`): solo "anywhere" reduce el ancho mínimo del texto, y sin
+                // eso una URL larga mantenía ensanchada la columna que contiene la tarjeta.
+                className={`min-w-0 flex-1 [overflow-wrap:anywhere] ${
                   note.checked ? "text-muted-foreground line-through decoration-warning" : "text-foreground"
                 }`}
               >

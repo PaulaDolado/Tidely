@@ -1948,7 +1948,7 @@ function GalleryItemDialog({
           </div>
         </div>
 
-        <div className={fullscreen ? "grid flex-1 gap-6 lg:grid-cols-[1fr_1.2fr]" : "space-y-4"}>
+        <div className={fullscreen ? "grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]" : "space-y-4"}>
           <div className={fullscreen ? "flex flex-col gap-2" : ""}>
             {item.imageData ? (
               <div className="relative overflow-hidden rounded-2xl">

@@ -462,7 +462,8 @@ export function AgendaPage({
           Notas rápidas a la derecha (lg:max-w-sm) — cada columna apilada, así Notas queda justo
           debajo de Objetivos en vez de suelta más abajo a todo lo ancho. */}
       <section className="mb-8 flex flex-col gap-6 lg:flex-row">
-        <div className="flex flex-col gap-6 lg:flex-1">
+        {/* min-w-0: un hijo flex no encoge por debajo de su contenido sin él, y desbordaba la página. */}
+        <div className="flex min-w-0 flex-col gap-6 lg:flex-1">
           <HabitsTrackerCard habits={habitsData?.habits ?? []} onChanged={reloadHabits} />
           <RecentEntriesCard
             entries={recentEntriesData?.entries}
