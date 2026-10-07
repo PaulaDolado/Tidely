@@ -18,6 +18,7 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { hashPassword } from "../src/utils/password";
+import { seedDefaultBudgetCategories } from "../src/services/budgetService";
 import { DemoUserFixture } from "./demoUserFixture";
 
 const prisma = new PrismaClient();
@@ -70,6 +71,13 @@ async function main() {
   await prisma.customPage.deleteMany({ where: { userId: user.id } });
   await prisma.schedule.deleteMany({ where: { userId: user.id } });
   await prisma.calendarLegendCategory.deleteMany({ where: { userId: user.id } });
+
+  // Categorías de presupuesto (Finanzas): si esta cuenta demo aún no tiene ninguna (BD nueva), arranca
+  // con las de por defecto. Si ya las tiene no se tocan — no forman parte del fixture y el usuario
+  // pudo editarlas.
+  if ((await prisma.budgetCategory.count({ where: { userId: user.id } })) === 0) {
+    await seedDefaultBudgetCategories(user.id);
+  }
 
   // --- Agenda: eventos + sus excepciones ---
   const eventIdMap = new Map<number, number>();

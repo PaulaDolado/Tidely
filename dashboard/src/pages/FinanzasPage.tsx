@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { PageHeader } from "../components/AppShell";
 import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
 import { Loading, ErrorMessage } from "../components/Feedback";
 import { MiniLineChart } from "../components/MiniLineChart";
+import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
 import { downloadCsv, transactionsToCsv } from "../utils/financeExport";
-import { FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, Transaction } from "../types";
+import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, Transaction } from "../types";
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -13,7 +14,7 @@ function eur(n: number): string {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
 }
 
-export function FinanzasPage() {
+export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsGoal["type"]) => void }) {
   const now = new Date();
   const [editingId, setEditingId] = useState<number | null>(null);
   const {
@@ -36,17 +37,28 @@ export function FinanzasPage() {
     []
   );
 
+  // Resumen del presupuesto: gasto del mes por categoría y lo que le toca a cada una (ver
+  // BudgetSummaryCard). Se recarga con cada movimiento nuevo/editado/borrado, porque cambia lo gastado.
+  const { data: budget, reload: reloadBudget } = useFetch(
+    () => api.get<BudgetSummary>(`/finance/budget/${now.getMonth() + 1}/${now.getFullYear()}`),
+    []
+  );
+
   const reloadAll = () => {
     reloadBalance();
     reloadTx();
     reloadAnalytics();
     reloadSavings();
+    reloadBudget();
   };
 
   const savingsGoals = savingsData?.savingsGoals ?? [];
   const totalAhorro = savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0);
   const totalInversion = savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0);
   const editingTx = txData?.transactions.find((t) => t.id === editingId) ?? null;
+  // Nombres de las categorías de presupuesto: el campo "Categoría" de los movimientos las sugiere,
+  // para que apuntar un gasto como "Casa" lo vincule a su porción del presupuesto.
+  const categoryOptions = budget?.categories.map((c) => c.name) ?? [];
 
   return (
     <>
@@ -66,12 +78,13 @@ export function FinanzasPage() {
               <SummaryCard label="Ingresos" value={eur(balance?.income ?? 0)} tone="positive" />
               <SummaryCard label="Gastos" value={eur(balance?.expense ?? 0)} tone="negative" />
               <SummaryCard label="Balance" value={eur(balance?.balance ?? 0)} tone={(balance?.balance ?? 0) >= 0 ? "positive" : "negative"} />
-              <SummaryCard label="Ahorro" value={eur(totalAhorro)} tone="positive" />
-              <SummaryCard label="Inversión" value={eur(totalInversion)} tone="positive" />
+              <SummaryCard label="Ahorro" value={eur(totalAhorro)} tone="positive" onClick={() => onOpenSavings("ahorro")} />
+              <SummaryCard label="Inversión" value={eur(totalInversion)} tone="positive" onClick={() => onOpenSavings("inversion")} />
             </div>
           )}
 
           <MovementForm
+            categoryOptions={categoryOptions}
             submitLabel="Registrar"
             onSubmit={async (input) => {
               await api.post("/finance/transactions", input);
@@ -131,6 +144,8 @@ export function FinanzasPage() {
         </div>
 
         <div className="space-y-6 lg:col-span-4">
+          <BudgetSummaryCard summary={budget} onChanged={reloadBudget} />
+
           <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
             <h2 className="mb-6 text-xs uppercase tracking-widest opacity-60">Resumen del mes</h2>
             <div className="space-y-4">
@@ -201,6 +216,7 @@ export function FinanzasPage() {
             </div>
             <MovementForm
               dialog
+              categoryOptions={categoryOptions}
               initial={{
                 type: editingTx.type,
                 amount: editingTx.amount,
@@ -325,12 +341,30 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone: "positive" | "negative" }) {
-  return (
-    <div className="card-soft">
+// Con `onClick` la tarjeta es un botón (Ahorro/Inversión llevan a "Metas de ahorro", ver
+// DashboardPage.openSavings); sin él, una tarjeta informativa normal.
+function SummaryCard({ label, value, tone, onClick }: { label: string; value: string; tone: "positive" | "negative"; onClick?: () => void }) {
+  const content = (
+    <>
       <p className="text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
       <p className={`mt-2 font-serif text-3xl ${tone === "negative" ? "text-destructive" : "text-primary"}`}>{value}</p>
-    </div>
+    </>
+  );
+  if (!onClick) return <div className="card-soft">{content}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Ver ${label.toLowerCase()} en Metas de ahorro`}
+      className="card-soft group relative w-full cursor-pointer text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+    >
+      {content}
+      {/* Pista de que es clicable: aparece al pasar el ratón, en la esquina — dentro del texto de la
+          etiqueta partía "INVERSIÓN" en dos líneas en las tarjetas estrechas. */}
+      <span aria-hidden="true" className="absolute right-4 top-4 text-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+        ›
+      </span>
+    </button>
   );
 }
 
@@ -407,6 +441,7 @@ function CompactDateField({ value, onChange }: { value: string; onChange: (value
 // "olvidé poner un movimiento del mes pasado" se corrija sin salir de esta página.
 function MovementForm({
   initial,
+  categoryOptions,
   submitLabel,
   onSubmit,
   onCancel,
@@ -414,6 +449,9 @@ function MovementForm({
   dialog,
 }: {
   initial?: Partial<MovementFormValues>;
+  // Categorías de presupuesto, ofrecidas como sugerencias en el campo "Categoría" (sigue siendo
+  // texto libre: lo que no coincida con ninguna cuenta en "Otro" del presupuesto).
+  categoryOptions: string[];
   submitLabel: string;
   onSubmit: (input: MovementFormValues) => Promise<void>;
   onCancel?: () => void;
@@ -429,6 +467,8 @@ function MovementForm({
   const [date, setDate] = useState(initial?.date ?? todayStr());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Un id por instancia: hay dos MovementForm a la vez (crear y el diálogo de editar).
+  const categoryListId = useId();
   // Mismo patrón que "Eliminar página" en CustomPagePage.tsx:183-198 — el propio botón pide
   // confirmar cambiando su texto/color en vez de un diálogo aparte; onBlur lo cancela solo.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -495,8 +535,14 @@ function MovementForm({
         value={category}
         onChange={(e) => setCategory(e.target.value)}
         placeholder="Categoría"
+        list={categoryListId}
         className="field-input min-w-0"
       />
+      <datalist id={categoryListId}>
+        {categoryOptions.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
       {/* En el diálogo (2 columnas, de sobra de sitio) el campo de fecha se queda como un
           `<input type="date">` normal — el problema solo aparece en la fila compacta de crear
           (6 columnas en pantallas @xl, ver el grid de más arriba): un date input nativo no puede

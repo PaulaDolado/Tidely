@@ -188,6 +188,11 @@ Una meta que pasa su `periodEnd` sin completarse queda `expired=true` automátic
 | DELETE | `/finance/savings-goals/:id` | JWT | Elimina meta de ahorro |
 | POST | `/finance/savings-goals/:id/contribute` | JWT | Asigna (`amount` > 0) o retira (`amount` < 0) dinero — crea una transacción real (`income`/`expense`) en la categoría de la meta. Es lo que dispara cada clic de casilla en el dashboard |
 | GET | `/finance/analytics` | JWT | Top 5 categorías del mes, tendencia de 6 meses, proyección anual |
+| GET | `/finance/budget/:month/:year` | JWT | Resumen del presupuesto del mes: ingresos, gasto total, % asignado y, por categoría, `budget` (su % de los ingresos) y `spent`. Los gastos de categoría desconocida cuentan en "Otro" (o en `uncategorizedSpent` si ya no existe) y lo aportado a metas de ahorro no cuenta como gasto |
+| GET | `/finance/budget-categories` | JWT | Categorías de presupuesto del usuario (nombre, color de la paleta, `percent`) |
+| POST | `/finance/budget-categories` | JWT | Crea una categoría (`name`, `color`, `percent` 0-100). 409 si el nombre ya existe; 400 si todas juntas pasarían del 100% de los ingresos |
+| PUT | `/finance/budget-categories/:id` | JWT | Edita nombre, color o %. Renombrar reetiqueta también los movimientos de esa categoría |
+| DELETE | `/finance/budget-categories/:id` | JWT | Elimina la categoría (sus movimientos se conservan y pasan a contar en "Otro") |
 
 ## Proyectos (Projects)
 

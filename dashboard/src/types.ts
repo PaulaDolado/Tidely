@@ -341,6 +341,33 @@ export interface AvailableSurplus {
   availableSurplus: number;
 }
 
+// Presupuesto (Finanzas > Resumen del presupuesto, ver budgetService en el backend): categorías con
+// un % de los ingresos del mes. `color` es uno de los 8 tokens de la app (CalendarColor).
+export interface BudgetCategory {
+  id: number;
+  name: string;
+  color: CalendarColor;
+  percent: number;
+  order: number;
+}
+
+export interface BudgetSummaryCategory extends BudgetCategory {
+  budget: number; // lo que le toca este mes: percent % de los ingresos
+  spent: number; // lo gastado este mes en movimientos de esta categoría
+}
+
+export interface BudgetSummary {
+  month: number;
+  year: number;
+  income: number;
+  totalSpent: number;
+  assignedPercent: number;
+  unassignedPercent: number;
+  categories: BudgetSummaryCategory[];
+  // Gasto sin categoría reconocida cuando ya no existe una categoría "Otro" que lo absorba.
+  uncategorizedSpent: number;
+}
+
 export interface SavingsGoal {
   id: number;
   name: string;

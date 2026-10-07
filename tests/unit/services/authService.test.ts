@@ -5,6 +5,8 @@ jest.mock("../../../src/config/database", () => ({
     // eventCategoryService.seedDefaultCategories) — createMany no se usa en ninguna aserción de
     // este archivo, solo hace falta que exista para no romper esa llamada.
     eventCategory: { createMany: jest.fn() },
+    // Igual con las categorías de presupuesto por defecto (ver budgetService.seedDefaultBudgetCategories).
+    budgetCategory: { createMany: jest.fn() },
     // register/login/refresh guardan un registro por cada refresh token emitido (ver
     // refreshTokenService.ts) y changePassword/refresh los revoca — ninguna aserción de este
     // archivo mira estas llamadas, solo hace falta que existan para no romper el mock.

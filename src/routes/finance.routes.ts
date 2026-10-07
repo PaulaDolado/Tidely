@@ -15,6 +15,8 @@ import {
   listSavingsGoalsQuerySchema,
   contributeSchema,
   analyticsQuerySchema,
+  createBudgetCategorySchema,
+  updateBudgetCategorySchema,
 } from "../validators/financeValidators";
 
 const router = Router();
@@ -261,5 +263,73 @@ router.post(
  *       200: { description: Analytics financieros }
  */
 router.get("/analytics", validate(analyticsQuerySchema, "query"), financeController.getAnalytics);
+
+/**
+ * @openapi
+ * /finance/budget/{month}/{year}:
+ *   get:
+ *     tags: [Finance]
+ *     summary: Resumen del presupuesto del mes — gasto de cada categoría y lo que le tocaba (su % de los ingresos)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "Ingresos y gasto del mes, % asignado y, por categoría, budget y spent" }
+ */
+router.get("/budget/:month/:year", validate(monthYearParamSchema, "params"), financeController.getBudgetSummary);
+
+/**
+ * @openapi
+ * /finance/budget-categories:
+ *   get:
+ *     tags: [Finance]
+ *     summary: Categorías de presupuesto del usuario (nombre, color y % de los ingresos)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Lista de categorías }
+ *   post:
+ *     tags: [Finance]
+ *     summary: Crea una categoría de presupuesto. Todas juntas no pueden sumar más del 100%
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, color, percent]
+ *             properties:
+ *               name: { type: string }
+ *               color: { type: string, enum: [primary, secondary, habit, hobby, positive, negative, warning, muted] }
+ *               percent: { type: number, minimum: 0, maximum: 100 }
+ *     responses:
+ *       201: { description: Categoría creada }
+ *       400: { description: Los porcentajes suman más del 100% }
+ *       409: { description: Ya existe una categoría con ese nombre }
+ */
+router.get("/budget-categories", financeController.listBudgetCategories);
+router.post("/budget-categories", validate(createBudgetCategorySchema), financeController.createBudgetCategory);
+
+/**
+ * @openapi
+ * /finance/budget-categories/{id}:
+ *   put:
+ *     tags: [Finance]
+ *     summary: Edita nombre, color o % de una categoría (renombrar reetiqueta también sus movimientos)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Categoría actualizada }
+ *   delete:
+ *     tags: [Finance]
+ *     summary: Elimina una categoría (sus movimientos se conservan y pasan a contar en "Otro")
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Categoría eliminada }
+ */
+router.put(
+  "/budget-categories/:id",
+  validate(idParamSchema, "params"),
+  validate(updateBudgetCategorySchema),
+  financeController.updateBudgetCategory
+);
+router.delete("/budget-categories/:id", validate(idParamSchema, "params"), financeController.deleteBudgetCategory);
 
 export default router;

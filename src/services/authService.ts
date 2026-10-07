@@ -7,6 +7,7 @@ import { generateVerificationToken, hashToken } from "../utils/verificationToken
 import { sendVerificationEmail } from "../utils/mailer";
 import { ConflictError, TooManyRequestsError, UnauthorizedError, ValidationError } from "../utils/errorHandler";
 import { seedDefaultCategories } from "./eventCategoryService";
+import { seedDefaultBudgetCategories } from "./budgetService";
 import {
   checkRefreshTokenStatus,
   revokeAllRefreshTokensForUser,
@@ -137,6 +138,10 @@ export async function register(input: RegisterInput) {
   // "Trabajo", "Estudio"... el usuario puede renombrarlas, cambiarles el color o borrarlas desde
   // Agenda > + Nuevo evento igual que cualquier categoría creada a mano.
   await seedDefaultCategories(user.id);
+
+  // Categorías de presupuesto (Finanzas > Resumen del presupuesto): Casa, Comida, Transporte...
+  // cada una con su % de los ingresos del mes, editables igual que las de evento.
+  await seedDefaultBudgetCategories(user.id);
 
   // El registro NO espera a que el email "salga" para completarse (ver mailer.ts: hoy es solo
   // un log, pero incluso con un proveedor real no tiene sentido que un email lento bloquee la

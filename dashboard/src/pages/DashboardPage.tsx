@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
 import { Loading } from "../components/Feedback";
 import { HoyPage } from "./HoyPage";
-import { CustomPageSummary, CustomPageTemplate } from "../types";
+import { CustomPageSummary, CustomPageTemplate, SavingsGoal } from "../types";
 
 // "Hoy" (la pestaña por defecto) se importa arriba de forma normal — es lo primero que ve
 // cualquiera al entrar, así que cargarla de forma perezosa solo añadiría una petición de red de
@@ -92,9 +92,23 @@ export function DashboardPage() {
   // pegado si el usuario cambia de pestaña a mano después.
   const [focus, setFocus] = useState<SearchFocus | null>(null);
 
+  // Filtro con el que se abre "Metas de ahorro": "Ahorro"/"Inversión" cuando se llega desde las
+  // tarjetas de Finanzas (ver openSavings), "todas" en cualquier otra navegación (menú lateral,
+  // búsqueda...) — por eso navigate() lo reinicia siempre.
+  const [savingsFilter, setSavingsFilter] = useState<SavingsGoal["type"] | "all">("all");
+
   const navigate = (tab: Tab, nextFocus: SearchFocus | null = null) => {
     setFocus(nextFocus);
+    setSavingsFilter("all");
     setActiveTab(tab);
+  };
+
+  // Las tarjetas "Ahorro" e "Inversión" de Finanzas llevan a Metas de ahorro ya filtradas por ese
+  // tipo.
+  const openSavings = (type: SavingsGoal["type"]) => {
+    setFocus(null);
+    setSavingsFilter(type);
+    setActiveTab("finanzas-ahorro");
   };
 
   const clearFocus = () => setFocus(null);
@@ -147,8 +161,8 @@ export function DashboardPage() {
         )}
         {activeTab === "horario" && <SchedulePage />}
         {activeTab === "metas" && <MetasPage />}
-        {activeTab === "finanzas" && <FinanzasPage />}
-        {activeTab === "finanzas-ahorro" && <MetasAhorroPage />}
+        {activeTab === "finanzas" && <FinanzasPage onOpenSavings={openSavings} />}
+        {activeTab === "finanzas-ahorro" && <MetasAhorroPage initialType={savingsFilter} />}
         {activeTab === "proyectos" && (
           <ProyectosPage focusProjectId={focus?.type === "project" ? focus.id : undefined} onFocusHandled={clearFocus} />
         )}

@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import * as financeService from "../services/financeService";
+import * as budgetService from "../services/budgetService";
 
 export async function getMonthlyBalance(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -158,6 +159,52 @@ export async function getAnalytics(req: AuthRequest, res: Response, next: NextFu
     const { month, year } = req.query as unknown as { month?: number; year?: number };
     const result = await financeService.getAnalytics(userId, month, year);
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// --- Presupuesto ---
+
+export async function getBudgetSummary(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.userId as number;
+    const month = parseInt(req.params.month, 10);
+    const year = parseInt(req.params.year, 10);
+    res.json(await budgetService.getBudgetSummary(userId, month, year));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listBudgetCategories(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.json(await budgetService.listBudgetCategories(req.userId as number));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createBudgetCategory(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.status(201).json(await budgetService.createBudgetCategory(req.userId as number, req.body));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateBudgetCategory(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.json(await budgetService.updateBudgetCategory(req.userId as number, parseInt(req.params.id, 10), req.body));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteBudgetCategory(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await budgetService.deleteBudgetCategory(req.userId as number, parseInt(req.params.id, 10));
+    res.json({ message: "Categoría eliminada" });
   } catch (error) {
     next(error);
   }

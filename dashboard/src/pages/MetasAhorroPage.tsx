@@ -40,9 +40,11 @@ function paceStatus(goal: SavingsGoal): "green" | "yellow" {
   return goal.progressPercent >= expectedPercent * 0.8 ? "green" : "yellow";
 }
 
-export function MetasAhorroPage() {
+// `initialType`: pestaña con la que se abre — "Ahorro"/"Inversión" al llegar desde las tarjetas de
+// Finanzas (ver DashboardPage.openSavings).
+export function MetasAhorroPage({ initialType = "all" }: { initialType?: FilterTab }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<FilterTab>("all");
+  const [tab, setTab] = useState<FilterTab>(initialType);
   const { data, loading, error, reload } = useFetch(
     () => api.get<{ savingsGoals: SavingsGoal[] }>(`/finance/savings-goals${tab === "all" ? "" : `?type=${tab}`}`),
     [tab]

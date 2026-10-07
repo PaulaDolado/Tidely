@@ -87,3 +87,25 @@ export const analyticsQuerySchema = Joi.object({
   month: Joi.number().integer().min(1).max(12),
   year: Joi.number().integer().min(2000).max(2100),
 });
+
+// --- Presupuesto (categorías con % de los ingresos del mes, ver budgetService) ---
+
+// Misma paleta cerrada que EVENT_CATEGORY_COLORS (tokens de color del diseño de la app).
+export const BUDGET_CATEGORY_COLORS = ["primary", "secondary", "habit", "hobby", "positive", "negative", "warning", "muted"] as const;
+
+// `category` de una transacción admite hasta 50 caracteres (createTransactionSchema), y el nombre de
+// la categoría ES esa cadena (así se enlazan movimiento y categoría): mismo límite aquí.
+export const createBudgetCategorySchema = Joi.object({
+  name: Joi.string().trim().min(1).max(50).required(),
+  color: Joi.string()
+    .valid(...BUDGET_CATEGORY_COLORS)
+    .required(),
+  percent: Joi.number().min(0).max(100).precision(2).required(),
+}).options({ stripUnknown: true });
+
+export const updateBudgetCategorySchema = Joi.object({
+  name: Joi.string().trim().min(1).max(50),
+  color: Joi.string().valid(...BUDGET_CATEGORY_COLORS),
+  percent: Joi.number().min(0).max(100).precision(2),
+  order: Joi.number().integer().min(0),
+}).min(1);

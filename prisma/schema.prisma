@@ -84,6 +84,7 @@ model User {
   calendarLegendCategories CalendarLegendCategory[]
   calendarDayMarks         CalendarDayMark[]
   eventCategories          EventCategory[]
+  budgetCategories         BudgetCategory[]
   googleCalendarConnection GoogleCalendarConnection?
   eventInvitationsSent     EventInvitation[] @relation("EventInvitationsSent")
   eventInvitationsReceived EventInvitation[] @relation("EventInvitationsReceived")
@@ -250,6 +251,24 @@ model EventCategory {
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   events Event[]
+
+  @@index([userId, order])
+}
+
+model BudgetCategory {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  name      String
+  // Mismos 8 tokens de color de la app que EventCategory.color (ver EVENT_CATEGORY_COLORS).
+  color     String
+  // % de los INGRESOS del mes que se presupuesta para esta categoría (0-100). La suma de todas las
+  // categorías de un usuario no puede pasar de 100 (ver budgetService.assertTotalPercentWithinLimit).
+  percent   Decimal  @db.Decimal(5, 2)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, order])
 }
