@@ -509,14 +509,18 @@ function MovementForm({
             // vez de encogerse. `minmax(0,...)` deja que la columna se achique todo lo que haga
             // falta (el propio contenido interno sigue siendo responsable de no desbordar, ver
             // CompactDateField más abajo).
-            "grid gap-4 card-soft @sm:grid-cols-2 @xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+            // La fila única de 6 columnas solo se usa a partir de @3xl (48rem = 768px de columna
+            // principal): antes bastaba con @xl (576px) y, en un portátil, los campos quedaban tan
+            // estrechos que se cortaban (placeholders "Imp", "Cat"...). Por debajo se usa la
+            // versión de dos columnas.
+            "grid gap-4 card-soft @sm:grid-cols-2 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
       }
     >
       <input
         value={concept}
         onChange={(e) => setConcept(e.target.value)}
         placeholder="Concepto"
-        className={dialog ? "field-input @sm:col-span-2" : "field-input min-w-0 @sm:col-span-2 @xl:col-span-1"}
+        className={dialog ? "field-input @sm:col-span-2" : "field-input min-w-0 @sm:col-span-2 @3xl:col-span-1"}
       />
       <input
         value={amount}
@@ -563,7 +567,7 @@ function MovementForm({
         <button
           type="submit"
           disabled={saving}
-          className={dialog ? "btn-dark disabled:opacity-50" : "btn-dark disabled:opacity-50 @sm:col-span-2 @xl:col-span-1"}
+          className={dialog ? "btn-dark disabled:opacity-50" : "btn-dark disabled:opacity-50 @sm:col-span-2 @3xl:col-span-1"}
         >
           {saving ? "…" : submitLabel}
         </button>
