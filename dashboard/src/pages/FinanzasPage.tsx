@@ -5,6 +5,7 @@ import { useFetch } from "../hooks/useFetch";
 import { Loading, ErrorMessage } from "../components/Feedback";
 import { MiniLineChart } from "../components/MiniLineChart";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
+import { DayPicker } from "../components/DayPicker";
 import { downloadCsv, transactionsToCsv } from "../utils/financeExport";
 import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, TotalBalance, Transaction } from "../types";
 
@@ -427,8 +428,15 @@ function CompactDateField({ value, onChange }: { value: string; onChange: (value
     const onPointerDown = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   return (
@@ -441,17 +449,18 @@ function CompactDateField({ value, onChange }: { value: string; onChange: (value
       >
         📅
       </button>
+      {/* Calendario propio y no el `<input type="date">` nativo: Chrome cambia el valor al pasar
+          de mes y el panel se cerraba en cada cambio. Ahora solo se cierra al elegir un día (ver
+          DayPicker), con Escape o al clicar fuera. Alineado a la derecha: el campo está casi al
+          final de la fila y el calendario es más ancho que él. */}
       {open && (
-        <div className="absolute left-0 top-full z-10 mt-1 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
-          <input
-            autoFocus
-            type="date"
+        <div className="absolute right-0 top-full z-10 mt-1 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-soft)]">
+          <DayPicker
             value={value}
-            onChange={(e) => {
-              onChange(e.target.value);
+            onPick={(picked) => {
+              onChange(picked);
               setOpen(false);
             }}
-            className="field-input text-sm"
           />
         </div>
       )}
