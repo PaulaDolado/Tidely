@@ -35,8 +35,11 @@ describe("Budget (presupuesto) Endpoints", () => {
     return response.body.categories as { id: number; name: string; color: string; percent: number }[];
   }
 
-  async function addTransaction(type: "income" | "expense", amount: number, category: string) {
-    await request(app).post("/finance/transactions").set(authed()).send({ type, amount, category, description: "x" });
+  async function addTransaction(type: "income" | "expense", amount: number, category: string, date?: Date) {
+    await request(app)
+      .post("/finance/transactions")
+      .set(authed())
+      .send({ type, amount, category, description: "x", ...(date ? { date: date.toISOString() } : {}) });
   }
 
   describe("categorías por defecto", () => {
@@ -183,6 +186,40 @@ describe("Budget (presupuesto) Endpoints", () => {
 
       expect(response.body.totalSpent).toBe(20);
       expect(response.body.categories.reduce((sum: number, c: { spent: number }) => sum + c.spent, 0)).toBe(20);
+    });
+
+    it("el máximo de cada categoría es su % de la última nómina, no de todos los ingresos", async () => {
+      const haceDosMeses = new Date(year, month - 3, 28);
+      await addTransaction("income", 1500, "Nómina", haceDosMeses); // nómina antigua: no cuenta
+      await addTransaction("income", 2000, "nomina");
+      await addTransaction("income", 500, "Bizum"); // otro ingreso: no cambia el máximo
+      await addTransaction("expense", 700, "Casa");
+
+      const response = await request(app).get(`/finance/budget/${month}/${year}`).set(authed());
+
+      expect(response.body.budgetBase).toMatchObject({ source: "nomina", amount: 2000 });
+      expect(response.body.income).toBe(2500);
+      expect(response.body.totalBudget).toBe(1300); // 65% de 2000
+      const casa = response.body.categories.find((c: { name: string }) => c.name === "Casa");
+      expect(casa).toMatchObject({ budget: 600, spent: 700 });
+    });
+
+    it("una nómina de meses anteriores sigue valiendo como base", async () => {
+      await addTransaction("income", 1800, "Salario", new Date(year, month - 2, 28));
+
+      const response = await request(app).get(`/finance/budget/${month}/${year}`).set(authed());
+
+      expect(response.body.budgetBase).toMatchObject({ source: "nomina", amount: 1800 });
+      expect(response.body.categories.find((c: { name: string }) => c.name === "Casa").budget).toBe(540);
+    });
+
+    it("sin nómina, el máximo sale de los ingresos del mes", async () => {
+      await addTransaction("income", 1000, "Bizum");
+
+      const response = await request(app).get(`/finance/budget/${month}/${year}`).set(authed());
+
+      expect(response.body.budgetBase).toEqual({ source: "ingresos", amount: 1000, date: null });
+      expect(response.body.categories.find((c: { name: string }) => c.name === "Casa").budget).toBe(300);
     });
 
     it("rechaza un mes inválido", async () => {

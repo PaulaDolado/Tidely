@@ -355,7 +355,7 @@ export interface BudgetCategory {
 }
 
 export interface BudgetSummaryCategory extends BudgetCategory {
-  budget: number; // lo que le toca este mes: percent % de los ingresos
+  budget: number; // lo máximo que se puede gastar: percent % de la última nómina (ver budgetBase)
   spent: number; // lo gastado este mes en movimientos de esta categoría
 }
 
@@ -364,6 +364,9 @@ export interface BudgetSummary {
   year: number;
   income: number;
   totalSpent: number;
+  // Sobre qué se calculan los máximos: la última nómina o, si aún no hay, los ingresos del mes
+  budgetBase: { source: "nomina" | "ingresos"; amount: number; date: string | null };
+  totalBudget: number; // suma de los máximos de todas las categorías
   assignedPercent: number;
   unassignedPercent: number;
   categories: BudgetSummaryCategory[];
