@@ -31,6 +31,31 @@ function normalize(name: string): string {
   return name.trim().toLowerCase();
 }
 
+// Categorías de ingreso que cuentan como nómina. Se comparan además sin acentos, para que
+// "Nómina" y "nomina" sean lo mismo.
+const PAYROLL_CATEGORIES = new Set(["nomina", "salario", "sueldo", "salary"]);
+
+export function isPayrollCategory(name: string): boolean {
+  return PAYROLL_CATEGORIES.has(normalize(name).normalize("NFD").replace(/\p{Diacritic}/gu, ""));
+}
+
+// Último ingreso de nómina hasta `until` (incluido), o null si no hay ninguno. Las categorías son
+// texto libre, así que primero se buscan los nombres de ingreso que el usuario ha usado y se
+// quedan los que son de nómina; con eso, el más reciente por fecha.
+async function getLatestPayroll(userId: number, until: Date) {
+  const incomeCategories = await prisma.transaction.groupBy({
+    by: ["category"],
+    where: { userId, type: "income", date: { lte: until } },
+  });
+  const payrollNames = incomeCategories.map((row) => row.category).filter(isPayrollCategory);
+  if (payrollNames.length === 0) return null;
+  return prisma.transaction.findFirst({
+    where: { userId, type: "income", category: { in: payrollNames }, date: { lte: until } },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    select: { amount: true, date: true },
+  });
+}
+
 function serialize(category: { id: number; name: string; color: string; percent: Prisma.Decimal; order: number }) {
   return { id: category.id, name: category.name, color: category.color, percent: toNumber(category.percent), order: category.order };
 }
@@ -61,7 +86,8 @@ async function assertNameAvailable(userId: number, name: string, exceptId?: numb
   if (clash) throw new ConflictError(`Ya tienes una categoría llamada "${clash.name}"`);
 }
 
-// El % de cada categoría es sobre el 100% de los ingresos del mes — todas juntas no pueden pasarse.
+// El % de cada categoría es sobre el 100% de la última nómina (o de los ingresos del mes, si aún no
+// hay nómina, ver getBudgetSummary) — todas juntas no pueden pasarse.
 async function assertTotalPercentWithinLimit(userId: number, newPercent: number, exceptId?: number) {
   const others = await prisma.budgetCategory.findMany({
     where: { userId, ...(exceptId !== undefined ? { id: { not: exceptId } } : {}) },
@@ -72,7 +98,7 @@ async function assertTotalPercentWithinLimit(userId: number, newPercent: number,
   if (total > 100.005) {
     const available = Math.max(0, 100 - others.reduce((sum, c) => sum + toNumber(c.percent), 0));
     throw new ValidationError(
-      `Los porcentajes no pueden sumar más del 100% de los ingresos. Te quedan ${Number(available.toFixed(2))}% por asignar.`
+      `Los porcentajes no pueden sumar más del 100% de la nómina. Te quedan ${Number(available.toFixed(2))}% por asignar.`
     );
   }
 }
@@ -126,10 +152,13 @@ export async function deleteBudgetCategory(userId: number, categoryId: number) {
 }
 
 /**
- * Resumen del presupuesto de un mes: para cada categoría, cuánto se ha gastado y cuánto le tocaba
- * (su % de los INGRESOS del mes). Los ingresos y los gastos totales salen de getMonthlyBalance, el
- * mismo cálculo que "Resumen del mes" — así ambas tarjetas siempre cuadran (lo aportado a metas de
- * ahorro no cuenta como gasto ni como ingreso, ver sumByType en financeService).
+ * Resumen del presupuesto de un mes: para cada categoría, cuánto se ha gastado y cuánto se puede
+ * gastar como máximo: su % de la ÚLTIMA NÓMINA registrada hasta el final de ese mes (ver
+ * getLatestPayroll). Si todavía no hay ninguna nómina, su % de los ingresos del mes;
+ * `budgetBase.source` dice cuál de las dos se ha usado. Los ingresos y los gastos totales salen de
+ * getMonthlyBalance, el mismo cálculo que "Resumen del mes" — así ambas tarjetas siempre cuadran
+ * (lo aportado a metas de ahorro no cuenta como gasto ni como ingreso, ver sumByType en
+ * financeService).
  *
  * Los gastos cuya categoría no coincide con ninguna se suman a "Otro" (si el usuario conserva esa
  * categoría) o, si no, se devuelven aparte en `uncategorizedSpent`.
@@ -139,9 +168,10 @@ export async function getBudgetSummary(userId: number, month: number, year: numb
   const start = startOfMonth(reference);
   const end = endOfMonth(reference);
 
-  const [categories, balance, goals, grouped] = await Promise.all([
+  const [categories, balance, payroll, goals, grouped] = await Promise.all([
     prisma.budgetCategory.findMany({ where: { userId }, orderBy: { order: "asc" } }),
     getMonthlyBalance(userId, month, year),
+    getLatestPayroll(userId, end),
     prisma.savingsGoal.findMany({ where: { userId }, select: { category: true } }),
     prisma.transaction.groupBy({
       by: ["category"],
@@ -168,11 +198,16 @@ export async function getBudgetSummary(userId: number, month: number, year: numb
   }
 
   const round = (n: number) => Math.round(n * 100) / 100;
+  // Sobre qué se calcula el máximo: la última nómina o, si aún no hay, los ingresos del mes
+  const budgetBase = payroll
+    ? { source: "nomina" as const, amount: round(toNumber(payroll.amount)), date: payroll.date.toISOString() }
+    : { source: "ingresos" as const, amount: round(balance.income), date: null };
+
   const items = categories.map((c) => {
     const percent = toNumber(c.percent);
     const own = spentByName.get(normalize(c.name)) ?? 0;
     const spent = c.id === catchAll?.id ? own + unmatchedSpent : own;
-    return { ...serialize(c), budget: round((balance.income * percent) / 100), spent: round(spent) };
+    return { ...serialize(c), budget: round((budgetBase.amount * percent) / 100), spent: round(spent) };
   });
 
   const assignedPercent = categories.reduce((sum, c) => sum + toNumber(c.percent), 0);
@@ -181,6 +216,9 @@ export async function getBudgetSummary(userId: number, month: number, year: numb
     year,
     income: round(balance.income),
     totalSpent: round(balance.expense),
+    budgetBase,
+    // Máximo entre todas las categorías (la suma de sus máximos)
+    totalBudget: round((budgetBase.amount * assignedPercent) / 100),
     assignedPercent: round(assignedPercent),
     unassignedPercent: round(Math.max(0, 100 - assignedPercent)),
     categories: items,

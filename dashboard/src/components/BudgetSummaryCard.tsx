@@ -34,7 +34,9 @@ interface Slice {
   spent: number;
 }
 
-function Donut({ slices, total }: { slices: Slice[]; total: number }) {
+// En el centro, "gastado / máximo": el máximo es la suma de los máximos de las categorías. Si lo
+// gastado lo supera, sale en rojo, igual que en cada categoría.
+function Donut({ slices, total, max }: { slices: Slice[]; total: number; max: number }) {
   let offset = 0;
   return (
     <div className="relative size-40 shrink-0 @min-[18rem]:size-[6.75rem] @min-[22rem]:size-36 @min-[30rem]:size-40">
@@ -65,8 +67,13 @@ function Donut({ slices, total }: { slices: Slice[]; total: number }) {
             })}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="font-serif text-2xl leading-tight @min-[18rem]:text-lg @min-[22rem]:text-xl @min-[30rem]:text-2xl">{eur(total)}</span>
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">gastado</span>
+        <span
+          className={`font-serif text-2xl leading-tight @min-[18rem]:text-lg @min-[22rem]:text-xl @min-[30rem]:text-2xl ${total > max ? "text-destructive" : ""}`}
+        >
+          {eur(total)}
+        </span>
+        <span className="text-[11px] leading-tight text-muted-foreground">/ {eur(max)}</span>
+        <span className="mt-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">gastado</span>
       </div>
     </div>
   );
@@ -95,7 +102,7 @@ function ColorPicker({ value, onChange }: { value: CalendarColor; onChange: (col
 }
 
 // Formulario compartido por "añadir" (botón +) y "editar" (lápiz de cada categoría): nombre, color y
-// % de los ingresos del mes. Los errores del servidor (nombre repetido, pasarse del 100%...) se
+// % de la última nómina. Los errores del servidor (nombre repetido, pasarse del 100%...) se
 // enseñan tal cual, que ya vienen redactados para el usuario.
 function CategoryForm({
   initial,
@@ -160,7 +167,7 @@ function CategoryForm({
             step="0.5"
             value={percent}
             onChange={(e) => setPercent(e.target.value)}
-            aria-label="Porcentaje de los ingresos"
+            aria-label="Porcentaje de la nómina"
             className="field-input w-full px-3 py-2 pr-7 text-sm"
           />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
@@ -168,7 +175,7 @@ function CategoryForm({
       </div>
       <ColorPicker value={color} onChange={setColor} />
       <p className="text-xs text-muted-foreground">
-        % de tus ingresos del mes. {maxPercent > 0 ? `Puedes asignar hasta ${pct(maxPercent)}.` : "Ya has asignado el 100%."}
+        % de tu última nómina. {maxPercent > 0 ? `Puedes asignar hasta ${pct(maxPercent)}.` : "Ya has asignado el 100%."}
       </p>
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex items-center gap-3">
@@ -199,7 +206,7 @@ function CategoryForm({
 type Side = "left" | "right";
 
 // Una categoría a un lado del donut: su nombre, "gastado / presupuesto" con el lápiz de editar al
-// lado y, debajo, su % de los ingresos. El texto se alinea hacia el lado donde está (la columna
+// lado y, debajo, su % de la nómina. El texto se alinea hacia el lado donde está (la columna
 // izquierda a la izquierda, la derecha a la derecha — con el punto de color en el extremo exterior).
 // Sin barra de progreso: si se pasa de lo que le toca, el gasto sale en rojo. Los nombres largos se
 // parten en dos líneas (con guion cuando hace falta) en vez de cortarse.
@@ -252,8 +259,9 @@ function CategoryLabel({
 
 /**
  * "Resumen del presupuesto" (Finanzas): un donut con los gastos del mes repartidos por categoría y,
- * a sus lados, cada categoría con lo gastado frente a lo que le toca (su % de los ingresos del
- * mes): la mitad a la izquierda y la mitad a la derecha, con el texto alineado hacia su lado.
+ * a sus lados, cada categoría con "gastado / máximo" (el máximo es su % de la última nómina o, si
+ * aún no hay ninguna, de los ingresos del mes): la mitad a la izquierda y la mitad a la derecha,
+ * con el texto alineado hacia su lado. En el centro del donut, el total gastado / el total máximo.
  *
  * La columna de la derecha de Finanzas es estrecha en pantallas pequeñas, y con los lados al
  * lado del donut ahí no quedaría sitio para los nombres: por eso la tarjeta es un contenedor
@@ -319,8 +327,16 @@ export function BudgetSummaryCard({
 
   return (
     <div className="card-soft @container p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Resumen del presupuesto</h2>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Resumen del presupuesto</h2>
+          {/* De dónde sale el máximo de cada categoría (ver budgetService.getBudgetSummary) */}
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {summary.budgetBase.source === "nomina" && summary.budgetBase.date
+              ? `Sobre tu nómina del ${new Date(summary.budgetBase.date).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}: ${eur(summary.budgetBase.amount)}`
+              : `Sin nómina registrada: sobre los ingresos del mes (${eur(summary.budgetBase.amount)})`}
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => {
@@ -353,7 +369,7 @@ export function BudgetSummaryCard({
       <div className="grid grid-cols-2 gap-x-3 gap-y-3 @min-[18rem]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] @min-[18rem]:items-center @min-[18rem]:gap-x-2">
         <div className="flex flex-col gap-2">{left.map((c) => labelFor(c, "left"))}</div>
         <div className="order-first col-span-2 justify-self-center @min-[18rem]:order-none @min-[18rem]:col-span-1">
-          <Donut slices={slices} total={total} />
+          <Donut slices={slices} total={total} max={summary.totalBudget} />
         </div>
         <div className="flex flex-col gap-2">
           {right.map((c) => labelFor(c, "right"))}
