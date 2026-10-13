@@ -49,8 +49,11 @@ export type RootTabParamList = {
   Hoy: undefined;
   // `focusDate` opcional (YYYY-MM-DD): lo usa la búsqueda global para abrir Agenda ya en el día
   // del evento encontrado, en vez del día actual — ver GlobalSearch.tsx/AgendaScreen.tsx.
-  Agenda: { focusDate?: string } | undefined;
-  Planificador: undefined;
+  // `focusEventId`: id del SERVIDOR del evento (la pantalla lo casa con el id local de SQLite).
+  Agenda: { focusDate?: string; focusEventId?: string } | undefined;
+  // Búsqueda global → tarea concreta: ids del SERVIDOR de la tarea y de su planner (la pantalla
+  // casa primero por id local y luego por id de servidor, ver PlanificadorScreen.tsx).
+  Planificador: { focusTaskId?: string; focusPlannerId?: string } | undefined;
   Horario: undefined;
   Objetivos: undefined;
   Finanzas: undefined;

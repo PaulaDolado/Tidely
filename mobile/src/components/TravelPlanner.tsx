@@ -42,6 +42,11 @@ function todayKey(): string {
 function diffDays(laterKey: string, earlierKey: string): number {
   return Math.round((Date.parse(`${laterKey}T00:00:00Z`) - Date.parse(`${earlierKey}T00:00:00Z`)) / 86_400_000);
 }
+// Las claves YYYY-MM-DD se comparan bien como texto.
+function clampDateKey(key: string, min: string, max: string): string {
+  return key < min ? min : key > max ? max : key;
+}
+
 function fmtDate(key: string, withYear = false): string {
   return keyToDate(key).toLocaleDateString("es-ES", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
 }
@@ -52,24 +57,48 @@ function fmtMoney(n: number): string {
   return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+// La web reduce cada foto a 1200 px de lado máximo y JPEG 0.82 antes de embeberla (readResizedImage en
+// TravelPlannerTemplate.tsx) para no pasarse de los 8 MB de `content` por página (ver
+// CONTENT_BYTE_LIMIT en src/validators/customPagesValidators.ts). Aquí no hay forma de reducir las
+// dimensiones sin una dependencia nueva (expo-image-manipulator no está instalado y expo-image-
+// picker no tiene opción de tamaño máximo), así que se compensa con más compresión JPEG que el
+// resto de imágenes de páginas y manteniendo el tope de 3 MB por foto.
+const TRIP_IMAGE_QUALITY = 0.4;
+
 async function pickImageData(): Promise<string | null> {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
     Alert.alert("Permiso necesario", "Activa el acceso a tus fotos para añadir una imagen.");
     return null;
   }
-  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: 0.5 });
+  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: TRIP_IMAGE_QUALITY });
   if (result.canceled || !result.assets[0]?.base64) return null;
   const base64 = result.assets[0].base64;
   if (base64.length * 0.75 > MAX_IMAGE_BYTES) {
-    Alert.alert("Imagen demasiado grande", "El límite es de 3 MB por imagen.");
+    Alert.alert("Imagen demasiado grande", "El límite es de 3 MB por imagen. Prueba con una foto más pequeña.");
     return null;
   }
   return `data:image/jpeg;base64,${base64}`;
 }
 
 /** Botón con la fecha actual que abre el selector nativo al tocarlo. */
-function DateField({ label, value, onChange, compact }: { label?: string; value: string; onChange: (key: string) => void; compact?: boolean }) {
+function DateField({
+  label,
+  value,
+  onChange,
+  compact,
+  min,
+  max,
+}: {
+  label?: string;
+  value: string;
+  onChange: (key: string) => void;
+  compact?: boolean;
+  // Límites opcionales (claves YYYY-MM-DD) del selector nativo — ver la fecha de las actividades del
+  // itinerario, que solo puede caer dentro del viaje.
+  min?: string;
+  max?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <View style={compact ? undefined : { flex: 1 }}>
@@ -81,6 +110,8 @@ function DateField({ label, value, onChange, compact }: { label?: string; value:
         <DateTimePicker
           value={keyToDate(value)}
           mode="date"
+          minimumDate={min ? keyToDate(min) : undefined}
+          maximumDate={max ? keyToDate(max) : undefined}
           display={Platform.OS === "ios" ? "inline" : "default"}
           onValueChange={(_event: DateTimePickerChangeEvent, selected: Date) => {
             setOpen(false);
@@ -119,6 +150,9 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const sortedTrips = useMemo(() => [...trips].sort((a, b) => a.startDate.localeCompare(b.startDate)), [trips]);
   const upcoming = sortedTrips.filter((t) => t.endDate >= today);
   const selected = trips.find((t) => t.id === selectedId) ?? pickDefaultTrip(trips, today);
+  // Fecha de la nueva actividad, siempre dentro del viaje (como min/max en la web): si se cambió de
+  // viaje o se acortaron sus fechas después de elegirla, se recorta en vez de dejar una fuera de rango.
+  const itineraryDate = selected ? clampDateKey(activityDate ?? selected.startDate, selected.startDate, selected.endDate) : today;
   const itinerary = useMemo(() => [...(selected?.itinerary ?? [])].sort((a, b) => a.date.localeCompare(b.date)), [selected]);
   const places = selected?.places ?? [];
   const favorites = places.filter((p) => p.favorite).length;
@@ -144,7 +178,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const addActivity = async () => {
     const title = activityTitle.trim();
     if (!selected || !title) return;
-    const item: TravelItineraryItem = { id: Crypto.randomUUID(), date: activityDate ?? selected.startDate, title };
+    const item: TravelItineraryItem = { id: Crypto.randomUUID(), date: itineraryDate, title };
     setActivityTitle("");
     await patchTrip(selected.id, { itinerary: [...selected.itinerary, item] });
   };
@@ -309,7 +343,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
                 ))}
               </View>
             )}
-            <DateField compact value={activityDate ?? selected.startDate} onChange={setActivityDate} />
+            <DateField compact value={itineraryDate} min={selected.startDate} max={selected.endDate} onChange={setActivityDate} />
             <View style={styles.addRow}>
               <TextInput style={[styles.input, styles.addInput]} placeholder="Nueva actividad…" value={activityTitle} onChangeText={setActivityTitle} onSubmitEditing={addActivity} />
               <Pressable style={styles.addButton} onPress={addActivity}>

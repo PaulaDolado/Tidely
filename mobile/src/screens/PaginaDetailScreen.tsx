@@ -841,19 +841,32 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
     });
   };
 
-  // Sin confirmación de por medio, aunque tenga tarjetas — mismo criterio ya establecido en el
-  // resto de borrados del móvil (Horario, calendario anual): un solo toque, sin el "¿Confirmar?"
-  // de doble clic de la web, que depende de un hover que no existe en táctil.
+  // Columna vacía: se borra al momento. Con tarjetas dentro, pide confirmar (como la web, que usa un
+  // segundo clic — en táctil eso no existe, así que va un Alert) porque se llevaría todas las
+  // tarjetas con ella.
   const deleteColumn = async (columnId: string) => {
-    await onChange({ ...content, columns: content.columns.filter((c) => c.id !== columnId) });
+    const column = content.columns.find((c) => c.id === columnId);
+    const doDelete = () => onChange({ ...content, columns: content.columns.filter((c) => c.id !== columnId) });
+    if (!column || column.cards.length === 0) {
+      await doDelete();
+      return;
+    }
+    Alert.alert(
+      "Eliminar columna",
+      `"${column.title}" tiene ${column.cards.length} ${column.cards.length === 1 ? "tarjeta" : "tarjetas"}. Se eliminarán junto con la columna.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Eliminar", style: "destructive", onPress: () => void doDelete() },
+      ]
+    );
   };
 
   const renameColumn = async (columnId: string, columnTitle: string) => {
     await onChange({ ...content, columns: content.columns.map((c) => (c.id === columnId ? { ...c, title: columnTitle } : c)) });
   };
 
-  const addCard = async (columnId: string, text: string) => {
-    const card: KanbanCard = { id: Crypto.randomUUID(), text };
+  const addCard = async (columnId: string, text: string, description?: string) => {
+    const card: KanbanCard = { id: Crypto.randomUUID(), text, ...(description ? { description } : {}) };
     await onChange({
       ...content,
       columns: content.columns.map((c) => (c.id === columnId ? { ...c, cards: [...c.cards, card] } : c)),
@@ -917,6 +930,7 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
       {boardView === "table" ? (
         <KanbanTableView
           columns={content.columns}
+          onAddCard={addCard}
           onOpenCard={(columnId, card) => setEditingCard({ columnId, card })}
           onMoveCard={(columnId, cardId) => setMovingCard({ columnId, cardId })}
         />
@@ -931,7 +945,8 @@ function KanbanBoard({ content, onChange }: { content: KanbanContent; onChange: 
               tone={KANBAN_COLUMN_STYLES[index % KANBAN_COLUMN_STYLES.length]}
               onRename={(t) => renameColumn(column.id, t)}
               onDelete={() => deleteColumn(column.id)}
-              onAddCard={(text) => addCard(column.id, text)}
+              fieldDefs={fieldDefs}
+              onAddCard={(text, description) => addCard(column.id, text, description)}
               onOpenCard={(card) => setEditingCard({ columnId: column.id, card })}
               onLayout={(e) => handleColumnLayout(column.id, e)}
               isDragOver={dragOverColumnId === column.id}
@@ -1319,24 +1334,37 @@ function CustomFieldValueEditor({
  */
 function KanbanTableView({
   columns,
+  onAddCard,
   onOpenCard,
   onMoveCard,
 }: {
   columns: KanbanColumn[];
+  onAddCard: (columnId: string, text: string, description?: string) => Promise<void>;
   onOpenCard: (columnId: string, card: KanbanCard) => void;
   onMoveCard: (columnId: string, cardId: string) => void;
 }) {
   const rows = columns.flatMap((column) => column.cards.map((card) => ({ column, card })));
+  // "+ Tarjeta" con selector de columna, igual que el formulario del pie de KanbanTableView en la
+  // web (en vez de un formulario por columna como en la vista kanban). Si la columna elegida se
+  // borra mientras tanto, cae a la primera en vez de quedarse apuntando a una que ya no existe.
+  const [newCardText, setNewCardText] = useState("");
+  const [newCardColumnId, setNewCardColumnId] = useState<string | null>(null);
+  const targetColumnId = columns.find((c) => c.id === newCardColumnId)?.id ?? columns[0]?.id ?? null;
+
+  const submitNewCard = async () => {
+    const text = newCardText.trim();
+    if (!text || !targetColumnId) return;
+    setNewCardText("");
+    await onAddCard(targetColumnId, text);
+  };
 
   if (columns.length === 0) {
     return <Text style={styles.emptyText}>Añade una columna para empezar.</Text>;
   }
-  if (rows.length === 0) {
-    return <Text style={styles.emptyText}>Sin tarjetas todavía.</Text>;
-  }
 
   return (
     <View style={styles.kanbanTable}>
+      {rows.length === 0 && <Text style={styles.emptyText}>Sin tarjetas todavía.</Text>}
       {rows.map(({ column, card }) => (
         <Pressable key={card.id} style={styles.kanbanTableRow} onPress={() => onOpenCard(column.id, card)}>
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -1360,6 +1388,30 @@ function KanbanTableView({
           </Pressable>
         </Pressable>
       ))}
+
+      <View style={styles.kanbanTableAddRow}>
+        <TextInput
+          style={styles.input}
+          placeholder="+ Tarjeta"
+          value={newCardText}
+          onChangeText={setNewCardText}
+          onSubmitEditing={submitNewCard}
+        />
+        <View style={styles.chipRow}>
+          {columns.map((column) => (
+            <Pressable
+              key={column.id}
+              style={[styles.chip, targetColumnId === column.id && styles.chipSelected]}
+              onPress={() => setNewCardColumnId(column.id)}
+            >
+              <Text style={[styles.chipText, targetColumnId === column.id && styles.chipTextSelected]}>{column.title}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable style={styles.saveButtonSmall} onPress={submitNewCard}>
+          <Text style={styles.saveButtonSmallText}>Añadir</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -1367,6 +1419,7 @@ function KanbanTableView({
 function KanbanColumnView({
   column,
   tone,
+  fieldDefs,
   onRename,
   onDelete,
   onAddCard,
@@ -1382,9 +1435,10 @@ function KanbanColumnView({
 }: {
   column: KanbanColumn;
   tone: { box: { borderColor: string; backgroundColor: string }; header: string };
+  fieldDefs: CustomFieldDef[];
   onRename: (title: string) => Promise<void>;
   onDelete: () => Promise<void>;
-  onAddCard: (text: string) => Promise<void>;
+  onAddCard: (text: string, description?: string) => Promise<void>;
   onOpenCard: (card: KanbanCard) => void;
   onLayout: (e: LayoutChangeEvent) => void;
   isDragOver: boolean;
@@ -1399,6 +1453,7 @@ function KanbanColumnView({
   const [titleDraft, setTitleDraft] = useState(column.title);
   const [addingCard, setAddingCard] = useState(false);
   const [cardDraft, setCardDraft] = useState("");
+  const [cardDescriptionDraft, setCardDescriptionDraft] = useState("");
 
   const commitTitle = () => {
     setEditingTitle(false);
@@ -1410,8 +1465,9 @@ function KanbanColumnView({
   const submitCard = () => {
     const text = cardDraft.trim();
     if (!text) return;
-    onAddCard(text);
+    onAddCard(text, cardDescriptionDraft.trim() || undefined);
     setCardDraft("");
+    setCardDescriptionDraft("");
     setAddingCard(false);
   };
 
@@ -1444,6 +1500,7 @@ function KanbanColumnView({
         <DraggableKanbanCard
           key={card.id}
           card={card}
+          fieldDefs={fieldDefs}
           isDragging={draggingCardId === card.id}
           onPress={() => onOpenCard(card)}
           onLayout={(e) => onCardLayout(card.id, e)}
@@ -1459,10 +1516,16 @@ function KanbanColumnView({
           <TextInput
             autoFocus
             style={styles.input}
-            placeholder="Texto de la tarjeta"
+            placeholder="Título de la tarjeta"
             value={cardDraft}
             onChangeText={setCardDraft}
-            onSubmitEditing={submitCard}
+          />
+          <TextInput
+            style={[styles.input, styles.inputMultiline]}
+            placeholder="Descripción (opcional)"
+            value={cardDescriptionDraft}
+            onChangeText={setCardDescriptionDraft}
+            multiline
           />
           <View style={styles.addColumnActions}>
             <Pressable style={styles.saveButtonSmall} onPress={submitCard}>
@@ -1472,6 +1535,7 @@ function KanbanColumnView({
               onPress={() => {
                 setAddingCard(false);
                 setCardDraft("");
+                setCardDescriptionDraft("");
               }}
             >
               <Text style={styles.cancelButtonText}>Cancelar</Text>
@@ -1487,12 +1551,22 @@ function KanbanColumnView({
   );
 }
 
+// Mismo formato que formatCustomFieldValue en dashboard/src/components/CustomFieldInput.tsx.
+function formatFieldValue(type: CustomFieldType, value: CustomFieldValue): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (type === "date" && typeof value === "string") {
+    return new Date(value).toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+  }
+  return String(value);
+}
+
 // Tarjeta con mango de arrastre — mismo patrón que DraggableNavRow en AppSidebar.tsx: el mango
 // (⠿) escucha el gesto de arrastre con su propio PanResponder, el resto de la tarjeta sigue
 // abriendo el diálogo de edición con un toque normal, así los dos gestos no compiten por la
 // misma área táctil.
 function DraggableKanbanCard({
   card,
+  fieldDefs,
   isDragging,
   onPress,
   onLayout,
@@ -1502,6 +1576,7 @@ function DraggableKanbanCard({
   onDragCancel,
 }: {
   card: KanbanCard;
+  fieldDefs: CustomFieldDef[];
   isDragging: boolean;
   onPress: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
@@ -1511,6 +1586,10 @@ function DraggableKanbanCard({
   onDragCancel: () => void;
 }) {
   const dragY = useRef(new Animated.Value(0)).current;
+  const filledFields = fieldDefs.flatMap((field) => {
+    const value = card.fields?.[field.id] ?? null;
+    return value === null || value === "" ? [] : [{ field, value }];
+  });
 
   // Igual motivo que callbacksRef en AppSidebar.tsx: onDragStart/onDragMove/onDragEnd son
   // funciones nuevas en cada render del padre (dependen de content/liveColumns), y el
@@ -1552,8 +1631,11 @@ function DraggableKanbanCard({
       style={isDragging ? { transform: [{ translateY: dragY }], zIndex: 50, elevation: 8, opacity: 0.94 } : undefined}
     >
       <Pressable style={styles.kanbanCard} onPress={onPress}>
-        {card.image ? <Image source={{ uri: card.image }} style={styles.kanbanCardImage} /> : null}
+        {/* Imagen a ancho completo encima, salvo en modo compacto (mismo criterio que
+            KanbanCardItem en la web): miniatura a la izquierda del texto. */}
+        {card.image && !card.compact ? <Image source={{ uri: card.image }} style={styles.kanbanCardImage} /> : null}
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+          {card.image && card.compact ? <Image source={{ uri: card.image }} style={styles.kanbanCardThumb} /> : null}
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.kanbanCardText} numberOfLines={2}>
               {card.text}
@@ -1568,6 +1650,20 @@ function DraggableKanbanCard({
             <Text style={styles.kanbanCardDragHandleIcon}>⠿</Text>
           </View>
         </View>
+        {/* Marcador de notas y una pastilla "Nombre: valor" por cada propiedad personalizada ya
+            rellenada — así se ve de un vistazo sin abrir la tarjeta (igual que la web). */}
+        {(card.notes || filledFields.length > 0) && (
+          <View style={styles.kanbanCardMetaRow}>
+            {card.notes ? <Text style={styles.kanbanCardNotesMark}>📝</Text> : null}
+            {filledFields.map(({ field, value }) => (
+              <View key={field.id} style={styles.kanbanCardPill}>
+                <Text numberOfLines={1} style={styles.kanbanCardPillText}>
+                  {field.name}: {formatFieldValue(field.type, value)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -1600,6 +1696,7 @@ function KanbanCardForm({
   const [description, setDescription] = useState(card.description ?? "");
   const [notes, setNotes] = useState(card.notes ?? "");
   const [imageData, setImageData] = useState<string | null | undefined>(card.image);
+  const [compact, setCompact] = useState(card.compact ?? false);
   const [saving, setSaving] = useState(false);
 
   // Mismo patrón que pickImage en GalleryEntryForm más abajo (expo-image-picker + límite de 3MB,
@@ -1624,7 +1721,7 @@ function KanbanCardForm({
   const submit = async () => {
     if (!text.trim()) return;
     setSaving(true);
-    await onSave({ text: text.trim(), description: description.trim() || undefined, notes: notes.trim() || null, image: imageData ?? null });
+    await onSave({ text: text.trim(), description: description.trim() || undefined, notes: notes.trim() || null, image: imageData ?? null, compact });
     setSaving(false);
   };
 
@@ -1640,6 +1737,13 @@ function KanbanCardForm({
         {imageData ? (
           <Pressable onPress={() => setImageData(null)} hitSlop={6}>
             <Text style={[styles.kanbanImageActionText, styles.kanbanImageActionRemove]}>Quitar imagen</Text>
+          </Pressable>
+        ) : null}
+        {/* Solo tiene sentido con imagen puesta: compacta = miniatura a la izquierda del texto en
+            vez de a ancho completo encima (ver DraggableKanbanCard). Se guarda con "Guardar". */}
+        {imageData ? (
+          <Pressable onPress={() => setCompact((v) => !v)} hitSlop={6}>
+            <Text style={styles.kanbanImageActionText}>{compact ? "Expandir" : "Compactar"}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -2215,6 +2319,11 @@ const styles = StyleSheet.create({
   kanbanCardText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.foreground },
   kanbanCardDescription: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
   kanbanCardImage: { width: "100%", height: 100, borderRadius: radius.input, marginBottom: 6 },
+  kanbanCardThumb: { width: 48, height: 48, borderRadius: radius.input },
+  kanbanCardMetaRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 6 },
+  kanbanCardNotesMark: { fontSize: 11 },
+  kanbanCardPill: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2, maxWidth: "100%" },
+  kanbanCardPillText: { fontFamily: fonts.sans, fontSize: 10, color: colors.mutedForeground },
   kanbanCardDragHandle: { paddingHorizontal: 4, paddingVertical: 2 },
   kanbanCardDragHandleIcon: { fontSize: 16, color: colors.mutedForeground },
   kanbanAddCardText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primary, paddingVertical: 4 },
@@ -2385,6 +2494,7 @@ const styles = StyleSheet.create({
   boardViewChipText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
   boardViewChipTextSelected: { color: colors.background },
   kanbanTable: { gap: 8 },
+  kanbanTableAddRow: { gap: 8, marginTop: 4 },
   kanbanTableRow: {
     flexDirection: "row",
     alignItems: "center",

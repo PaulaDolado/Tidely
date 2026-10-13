@@ -95,6 +95,10 @@ export interface KanbanCard {
   description?: string;
   notes?: string | null;
   fields?: CustomFieldValues;
+  // Con imagen, la pinta como miniatura a la izquierda en vez de a ancho completo encima (ver
+  // KanbanCardItem en dashboard/src/pages/CustomPagePage.tsx). Vive dentro del JSON de `content`
+  // como el resto de campos de la tarjeta, así que no necesita nada del lado del sync.
+  compact?: boolean;
 }
 
 export interface KanbanColumn {

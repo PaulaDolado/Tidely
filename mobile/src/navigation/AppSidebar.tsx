@@ -30,6 +30,7 @@ import { SectionsPicker } from "../components/GeneralSettings";
 import { PrivacyPolicySection, TermsOfUseSection } from "../components/PolicyText";
 import { AboutTidelySection } from "../components/AboutTidely";
 import { GlobalSearch, SearchPick } from "../components/GlobalSearch";
+import { NotificationsBell, useUnreadNotifications } from "../components/NotificationsPanel";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
 import { EnabledSection, ENABLED_SECTIONS } from "../types";
 
@@ -77,6 +78,10 @@ const SLIDE_DURATION_MS = 240;
 
 interface NavItem {
   route: string; // debe coincidir con un name de <Tab.Screen> en App.tsx
+  // Clave con la que este apartado se guarda en user.menuOrder — LA MISMA que usa la web (ver
+  // NAV en dashboard/src/components/AppShell.tsx), no la `route` de React Navigation: el orden se
+  // comparte entre web y móvil, así que las dos plataformas tienen que hablar el mismo idioma.
+  key: string;
   label: string;
   children?: NavItem[];
   // Qué apartado de user.enabledSections activa este item — sin esto (Hoy, Agenda) el item nunca
@@ -96,24 +101,75 @@ interface NavItem {
 // (PaginasListScreen.tsx) sigue existiendo y sigue siendo alcanzable volviendo atrás desde el
 // detalle de una página — solo se quitó como entrada directa del menú.
 const NAV: NavItem[] = [
-  { route: "Hoy", label: "Hoy" },
+  { route: "Hoy", key: "hoy", label: "Hoy" },
   {
     route: "Agenda",
+    key: "agenda",
     label: "Agenda",
     children: [
-      { route: "Planificador", label: "Planificador", section: "planificador" },
-      { route: "Horario", label: "Horario", section: "horario" },
+      { route: "Planificador", key: "planificador", label: "Planificador", section: "planificador" },
+      { route: "Horario", key: "horario", label: "Horario", section: "horario" },
     ],
   },
-  { route: "Objetivos", label: "Objetivos", section: "objetivos" },
+  // Ojo: en la web la clave de Objetivos es "metas" (no "objetivos"), por eso hace falta `key`.
+  { route: "Objetivos", key: "metas", label: "Objetivos", section: "objetivos" },
   {
     route: "Finanzas",
+    key: "finanzas",
     label: "Finanzas",
     section: "finanzas",
-    children: [{ route: "Ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
+    children: [{ route: "Ahorro", key: "finanzas-ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
   },
-  { route: "Proyectos", label: "Proyectos", section: "proyectos" },
+  { route: "Proyectos", key: "proyectos", label: "Proyectos", section: "proyectos" },
 ];
+
+// Versiones anteriores del móvil guardaban en menuOrder el nombre de la ruta ("Hoy", "Objetivos"...)
+// en vez de la clave de la web — se traducen al leer para no perder el orden que el usuario ya
+// había puesto. Cualquier otra clave ("galeria", "custom-12", o algo que este build no conozca)
+// pasa tal cual.
+const LEGACY_ROUTE_KEYS: Record<string, string> = Object.fromEntries(
+  NAV.flatMap((item) => [item, ...(item.children ?? [])]).map((item) => [item.route, item.key])
+);
+
+const GALLERY_KEY = "galeria";
+const customPageKey = (id: number) => `custom-${id}`;
+
+// Lo guardado en user.menuOrder, ya con las claves heredadas traducidas y sin repetidos — se
+// conservan las claves desconocidas (p. ej. "custom-N" de una página que aún no ha cargado, o la
+// galería con el apartado desactivado) para no borrarlas del orden compartido con la web al guardar.
+function normalizeOrder(order: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of order ?? []) {
+    const key = LEGACY_ROUTE_KEYS[raw] ?? raw;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(key);
+    }
+  }
+  return result;
+}
+
+// Un apartado del menú principal (fijo, galería o página propia) — misma forma de unirlos que
+// MenuEntry en AppShell.tsx.
+type MenuEntry =
+  | { key: string; kind: "nav"; item: NavItem }
+  | { key: string; kind: "gallery" }
+  | { key: string; kind: "page"; page: CustomPageSummary };
+
+// Mismo criterio que sortByMenuOrder en AppShell.tsx: los que el usuario ya ordenó van primero (por
+// su posición en `order`) y el resto detrás en su orden habitual — así un apartado nuevo cae al
+// final en vez de saltar a una posición arbitraria.
+function sortByMenuOrder(entries: MenuEntry[], order: string[]): MenuEntry[] {
+  const indexOf = (key: string) => {
+    const i = order.indexOf(key);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return entries
+    .map((entry, i) => ({ entry, i }))
+    .sort((a, b) => indexOf(a.entry.key) - indexOf(b.entry.key) || a.i - b.i)
+    .map(({ entry }) => entry);
+}
 
 // Pestañas del diálogo de Ajustes (ver settingsSection más abajo) — etiquetas cortas a propósito
 // ("Uso"/"Privacidad", no "Política de uso"/"Política de privacidad" como en la web) para que
@@ -143,26 +199,6 @@ function filterNav(nav: NavItem[], enabledSections: Set<string>): NavItem[] {
     });
 }
 
-// Reordena los apartados principales según el orden guardado (arrastrar y soltar, ver
-// moveNavItem/PanResponder más abajo) — mismo criterio que reorderByKeys en AppShell.tsx: una
-// clave guardada que ya no existe (apartado desactivado) se ignora sola, y un apartado que el
-// usuario todavía no ha reordenado nunca cae al final, en el orden de siempre.
-function reorderNav(items: NavItem[], order: string[]): NavItem[] {
-  const remaining = new Map(items.map((item) => [item.route, item]));
-  const ordered: NavItem[] = [];
-  for (const key of order) {
-    const item = remaining.get(key);
-    if (item) {
-      ordered.push(item);
-      remaining.delete(key);
-    }
-  }
-  for (const item of items) {
-    if (remaining.has(item.route)) ordered.push(item);
-  }
-  return ordered;
-}
-
 // Clave de medición para el botón "+ Nueva página" (ver measureContainer) — no es una `route` de
 // verdad, así que no puede compartir claves con NAV/App.tsx.
 const NEW_PAGE_LABEL = "+ Nueva página";
@@ -181,7 +217,9 @@ const CHILD_INDENT = 28;
 // escucha el gesto de arrastre, así los dos gestos (tocar para ir, mantener+mover para reordenar)
 // no compiten por el mismo área táctil.
 function DraggableNavRow({
-  item,
+  entryKey,
+  label,
+  childItems,
   isActive,
   activeRoute,
   sectionCollapsed,
@@ -194,7 +232,9 @@ function DraggableNavRow({
   onDragEnd,
   styles,
 }: {
-  item: NavItem;
+  entryKey: string; // clave de menuOrder (ver NavItem.key)
+  label: string;
+  childItems?: NavItem[];
   isActive: boolean;
   activeRoute: string;
   sectionCollapsed: boolean;
@@ -202,8 +242,8 @@ function DraggableNavRow({
   onPress: () => void;
   onChildPress: (route: string) => void;
   isDragging: boolean;
-  onDragStart: (route: string) => void;
-  onDragMove: (route: string, dy: number) => void;
+  onDragStart: (key: string) => void;
+  onDragMove: (key: string, dy: number) => void;
   onDragEnd: () => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -225,11 +265,11 @@ function DraggableNavRow({
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         dragY.setValue(0);
-        callbacksRef.current.onDragStart(item.route);
+        callbacksRef.current.onDragStart(entryKey);
       },
       onPanResponderMove: (_evt: GestureResponderEvent, gesture: PanResponderGestureState) => {
         dragY.setValue(gesture.dy);
-        callbacksRef.current.onDragMove(item.route, gesture.dy);
+        callbacksRef.current.onDragMove(entryKey, gesture.dy);
       },
       onPanResponderRelease: () => {
         dragY.setValue(0);
@@ -247,16 +287,16 @@ function DraggableNavRow({
       <View style={styles.navRow}>
         <Pressable onPress={onPress} style={[styles.navButton, isActive && styles.navButtonActive]}>
           <Text numberOfLines={1} style={[styles.navLabel, isActive && styles.navLabelActive]}>
-            {item.label}
+            {label}
           </Text>
         </Pressable>
         {/* Aparte a propósito del botón de arriba, igual que en AppShell.tsx: uno navega a la
             página del apartado, el otro solo pliega/despliega sus hijos. */}
-        {item.children && (
+        {childItems && (
           <Pressable
             onPress={onToggleSection}
             hitSlop={8}
-            accessibilityLabel={sectionCollapsed ? `Mostrar subapartados de ${item.label}` : `Ocultar subapartados de ${item.label}`}
+            accessibilityLabel={sectionCollapsed ? `Mostrar subapartados de ${label}` : `Ocultar subapartados de ${label}`}
             style={styles.chevronButton}
           >
             <Text style={[styles.chevron, sectionCollapsed && styles.chevronCollapsed]}>▾</Text>
@@ -267,9 +307,9 @@ function DraggableNavRow({
         </View>
       </View>
 
-      {item.children && !sectionCollapsed && (
+      {childItems && !sectionCollapsed && (
         <View style={styles.childList}>
-          {item.children.map((child) => {
+          {childItems.map((child) => {
             const childActive = activeRoute === child.route;
             return (
               <Pressable
@@ -306,6 +346,10 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const [settingsSection, setSettingsSection] = useState<"cuenta" | "general" | "apariencia" | "uso" | "privacidad" | "sobre">("cuenta");
   const [customPages, setCustomPages] = useState<CustomPageSummary[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  // AppSidebar vive siempre montado (es el tabBar), así que el sondeo del contador de notificaciones
+  // corre mientras haya sesión sin importar la pantalla abierta — ver useUnreadNotifications.
+  const notifications = useUnreadNotifications();
+  const refreshNotifications = notifications.refresh;
 
   const activeRoute = state.routes[state.index].name;
   const maxWidth = Math.round(screenWidth * 0.74);
@@ -320,46 +364,82 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const compact = user?.menuLayout === "compact";
 
   // Apartados visibles según lo elegido en el asistente de bienvenida/Ajustes, y en el orden
-  // guardado (arrastrar el ≡ de cada uno, ver DraggableNavRow) — `liveOrder` es null salvo
-  // mientras se está arrastrando, momento en el que manda sobre el orden guardado para dar
-  // feedback visual instantáneo sin esperar a la respuesta del PUT.
+  // guardado — el MISMO esquema de claves que la web (ver NavItem.key y normalizeOrder más arriba),
+  // aplicado también a Galería y a "Tus páginas", no solo a los apartados fijos. `liveOrder` es null
+  // salvo mientras se está arrastrando (arrastrar el ≡ de cada fila, ver DraggableNavRow), momento en
+  // el que manda sobre lo guardado para dar feedback visual instantáneo sin esperar al PUT.
   const enabledSections = useMemo(() => new Set(user?.enabledSections ?? ENABLED_SECTIONS), [user?.enabledSections]);
   const visibleNav = useMemo(() => filterNav(NAV, enabledSections), [enabledSections]);
+  const showGallery = enabledSections.has("galeria");
   const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
-  const orderedNav = useMemo(
-    () => reorderNav(visibleNav, liveOrder ?? user?.menuOrder ?? []),
-    [visibleNav, liveOrder, user?.menuOrder]
-  );
+  const savedOrder = useMemo(() => normalizeOrder(user?.menuOrder), [user?.menuOrder]);
+  const effectiveOrder = liveOrder ?? savedOrder;
 
-  const [draggingRoute, setDraggingRoute] = useState<string | null>(null);
-  // Índice de partida y orden "base" del gesto (capturados una vez al empezar a arrastrar, ver
-  // handleDragStart) — todo el cálculo de handleDragMove parte siempre de estos dos valores fijos
-  // y del `dy` TOTAL que da PanResponder (no incremental), para no acumular error entre eventos.
+  const navEntries: MenuEntry[] = visibleNav.map((item) => ({ key: item.key, kind: "nav", item }));
+  const galleryEntries: MenuEntry[] = showGallery ? [{ key: GALLERY_KEY, kind: "gallery" }] : [];
+  const pageEntries: MenuEntry[] = otherPages.map((page) => ({ key: customPageKey(page.id), kind: "page", page }));
+  const allEntries = [...navEntries, ...galleryEntries, ...pageEntries];
+
+  // Mismos grupos que la web: en "default", apartados fijos + galería por un lado y "Tus páginas"
+  // por otro (se reordena DENTRO de cada grupo); en "compact", una única lista con todo.
+  const groups: MenuEntry[][] = compact
+    ? [sortByMenuOrder(allEntries, effectiveOrder)]
+    : [sortByMenuOrder([...navEntries, ...galleryEntries], effectiveOrder), sortByMenuOrder(pageEntries, effectiveOrder)];
+
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  // Grupo, índice de partida y orden "base" del gesto (capturados una vez al empezar a arrastrar,
+  // ver handleDragStart) — todo el cálculo de handleDragMove parte siempre de estos valores fijos y
+  // del `dy` TOTAL que da PanResponder (no incremental), para no acumular error entre eventos.
+  const dragScopeRef = useRef<string[]>([]);
   const dragStartIndexRef = useRef(0);
-  const dragBaseOrderRef = useRef<string[]>([]);
+  // Orden completo (con claves desconocidas incluidas) sobre el que se recoloca el grupo arrastrado.
+  const dragRememberedRef = useRef<string[]>([]);
+  // Último orden calculado, para guardarlo al soltar sin depender del state (closure obsoleto).
+  const dragResultRef = useRef<string[] | null>(null);
   // Alto de fila usado para traducir "cuánto se ha movido el dedo" a "cuántas posiciones" — no
   // hace falta que sea exacto (measureLabel ya da anchos, no altos): con el padding vertical fijo
   // de navButton (10+10) más el alto de línea de fontSize 15, ~44-48px es buena aproximación.
   const dragRowHeightRef = useRef(46);
 
-  const handleDragStart = (route: string) => {
-    dragStartIndexRef.current = orderedNav.findIndex((item) => item.route === route);
-    dragBaseOrderRef.current = orderedNav.map((item) => item.route);
-    setDraggingRoute(route);
+  const handleDragStart = (key: string) => {
+    const scope = groups.find((group) => group.some((entry) => entry.key === key));
+    if (!scope) return;
+    dragScopeRef.current = scope.map((entry) => entry.key);
+    dragStartIndexRef.current = dragScopeRef.current.indexOf(key);
+    // Mismo criterio que dropReorder en AppShell.tsx, con una diferencia a propósito: las claves
+    // que este build no conoce NO se descartan (la web sí las filtra), así un "custom-N" cuya página
+    // aún no ha cargado, o la galería con el apartado desactivado, no se borra del orden compartido.
+    const remembered = [...savedOrder];
+    for (const entry of allEntries) if (!remembered.includes(entry.key)) remembered.push(entry.key);
+    dragRememberedRef.current = remembered;
+    dragResultRef.current = null;
+    setDraggingKey(key);
   };
 
-  const handleDragMove = (route: string, dy: number) => {
+  const handleDragMove = (key: string, dy: number) => {
+    const scope = dragScopeRef.current;
+    if (scope.length === 0) return;
     const shift = Math.round(dy / dragRowHeightRef.current);
-    const targetIndex = Math.min(Math.max(dragStartIndexRef.current + shift, 0), dragBaseOrderRef.current.length - 1);
-    const without = dragBaseOrderRef.current.filter((r) => r !== route);
-    without.splice(targetIndex, 0, route);
-    setLiveOrder(without);
+    const targetIndex = Math.min(Math.max(dragStartIndexRef.current + shift, 0), scope.length - 1);
+    const withoutDragged = scope.filter((k) => k !== key);
+    withoutDragged.splice(targetIndex, 0, key);
+    // Las posiciones del grupo en el orden completo se rellenan con la nueva secuencia; el resto de
+    // claves (otro grupo, desconocidas) se quedan exactamente donde estaban.
+    const scopeSet = new Set(scope);
+    let next = 0;
+    const merged = dragRememberedRef.current.map((k) => (scopeSet.has(k) ? withoutDragged[next++] : k));
+    dragResultRef.current = merged;
+    setLiveOrder(merged);
   };
 
   const handleDragEnd = async () => {
-    setDraggingRoute(null);
-    const finalOrder = liveOrder;
-    if (!finalOrder) return;
+    setDraggingKey(null);
+    const finalOrder = dragResultRef.current;
+    dragResultRef.current = null;
+    if (!finalOrder) {
+      setLiveOrder(null);
+      return;
+    }
     try {
       const profile = await api.put<{ menuOrder: string[] }>("/auth/me/menu", { menuOrder: finalOrder });
       updateUser({ menuOrder: profile.menuOrder });
@@ -413,8 +493,12 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   // renombradas/borradas desde la web o desde PaginasListScreen (alcanzable volviendo atrás desde
   // el detalle) sin esperar a la próxima vez que se monte AppSidebar entero (nunca, en la práctica).
   useEffect(() => {
-    if (!collapsed) reloadCustomPages();
-  }, [collapsed, reloadCustomPages]);
+    if (!collapsed) {
+      reloadCustomPages();
+      // Igual con las notificaciones: se refresca al abrir el menú en vez de esperar al tick de 60 s.
+      refreshNotifications();
+    }
+  }, [collapsed, reloadCustomPages, refreshNotifications]);
 
   // Navegar SIEMPRE cierra el menú (a diferencia de la web, donde el <aside> se queda fijo) —
   // en una pantalla de móvil, dejarlo desplegado tapando el contenido tras elegir a dónde ir
@@ -478,11 +562,56 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   // Qué hacer al elegir un resultado de GlobalSearch — ver el tipo SearchPick y su comentario en
   // GlobalSearch.tsx para el porqué de que solo "project" salte al detalle exacto por id.
   const handleSearchPick = (pick: SearchPick) => {
-    if (pick.type === "event") navigation.navigate("Agenda", { focusDate: pick.startTime.slice(0, 10) });
-    else if (pick.type === "task") navigation.navigate("Planificador");
+    // Los ids de búsqueda son los del SERVIDOR; Agenda y Planificador pasan por SQLite (ids locales
+    // distintos), así que la pantalla destino casa primero por id local y luego por id de servidor.
+    if (pick.type === "event")
+      navigation.navigate("Agenda", { focusDate: pick.startTime.slice(0, 10), focusEventId: String(pick.id) });
+    else if (pick.type === "task")
+      navigation.navigate("Planificador", { focusTaskId: String(pick.id), focusPlannerId: String(pick.plannerId) });
     else if (pick.type === "note") navigation.navigate("Hoy");
     else navigation.navigate("Proyectos", { screen: "Detalle", params: { id: String(pick.id), title: pick.title } });
     setCollapsed(true);
+  };
+
+  const renderEntry = (entry: MenuEntry) => {
+    const common = {
+      entryKey: entry.key,
+      isDragging: draggingKey === entry.key,
+      onDragStart: handleDragStart,
+      onDragMove: handleDragMove,
+      onDragEnd: handleDragEnd,
+      styles,
+    };
+    if (entry.kind === "nav") {
+      return (
+        <DraggableNavRow
+          key={entry.key}
+          {...common}
+          label={entry.item.label}
+          childItems={entry.item.children}
+          isActive={activeRoute === entry.item.route}
+          activeRoute={activeRoute}
+          sectionCollapsed={collapsedSections.has(entry.item.route)}
+          onToggleSection={() => toggleSection(entry.item.route)}
+          onPress={() => goTo(entry.item.route)}
+          onChildPress={goTo}
+        />
+      );
+    }
+    // Galería y páginas propias no tienen hijos ni "activo" propio (como antes de poder arrastrarlas).
+    return (
+      <DraggableNavRow
+        key={entry.key}
+        {...common}
+        label={entry.kind === "gallery" ? "Galería" : entry.page.title}
+        isActive={false}
+        activeRoute={activeRoute}
+        sectionCollapsed={false}
+        onToggleSection={() => {}}
+        onPress={entry.kind === "gallery" ? openGallery : () => openPage(entry.page)}
+        onChildPress={goTo}
+      />
+    );
   };
 
   const topOffset = insets.top + 16;
@@ -529,6 +658,9 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
             resizeMode="contain"
             style={{ width: CLIP_OPEN_W, height: CLIP_OPEN_H, transform: [{ rotate: "90deg" }] }}
           />
+          {/* Punto de "hay notificaciones sin leer" con el menú colapsado — la campana vive dentro
+              del menú, así que de otro modo no habría pista visible fuera de él. */}
+          {notifications.count > 0 && <View style={styles.clipDot} />}
         </Pressable>
       )}
 
@@ -569,52 +701,18 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           <GlobalSearch onPick={handleSearchPick} />
 
           <View style={styles.nav}>
-            {orderedNav.map((item) => (
-              <DraggableNavRow
-                key={item.route}
-                item={item}
-                isActive={activeRoute === item.route}
-                activeRoute={activeRoute}
-                sectionCollapsed={collapsedSections.has(item.route)}
-                onToggleSection={() => toggleSection(item.route)}
-                onPress={() => goTo(item.route)}
-                onChildPress={goTo}
-                isDragging={draggingRoute === item.route}
-                onDragStart={handleDragStart}
-                onDragMove={handleDragMove}
-                onDragEnd={handleDragEnd}
-                styles={styles}
-              />
-            ))}
-
-            {/* Apartado del menú principal, no una página personalizada más de "Tus páginas" —
-                mismo criterio que el botón "Galería" de dashboard/src/components/AppShell.tsx:
-                por debajo sigue siendo una página de plantilla "galeria", pero openGallery busca
-                la existente o crea la primera, así que el usuario no ve ese paso intermedio. */}
-            {enabledSections.has("galeria") && (
-              <Pressable onPress={openGallery} style={styles.navButton}>
-                <Text numberOfLines={1} style={styles.navLabel}>
-                  Galería
-                </Text>
-              </Pressable>
-            )}
-
-            {/* "Tus páginas" — mismo criterio que dashboard/src/components/AppShell.tsx: cada
-                página creada aparece aquí, tocarla navega directo a su detalle. Sin renombrar/
-                borrar inline (eso ya se puede hacer entrando en el detalle de la página, ver
-                PaginaDetailScreen.tsx) — el pedido era solo que se vieran en el menú. Excluye
-                "galeria": esa ya tiene su propio hueco arriba, listarla aquí también duplicaría.
-                El título se oculta en modo "compact" (ver menuLayout), igual que en AppShell.tsx. */}
-            {otherPages.length > 0 && (
+            {/* Apartados fijos, Galería y "Tus páginas" comparten el mismo tipo de fila arrastrable
+                (ver renderEntry) y el mismo esquema de claves de menuOrder que la web. "Galería" es
+                un apartado del menú principal, no una página personalizada más — mismo criterio que
+                el botón de dashboard/src/components/AppShell.tsx: por debajo sigue siendo una página
+                de plantilla "galeria", pero openGallery busca la existente o crea la primera, así
+                que el usuario no ve ese paso intermedio. El título "Tus páginas" se oculta en modo
+                "compact" (ver menuLayout), donde solo hay un grupo. */}
+            {groups[0].map(renderEntry)}
+            {groups[1] && groups[1].length > 0 && (
               <>
                 {!compact && <Text style={styles.navSectionLabel}>Tus páginas</Text>}
-                {otherPages.map((page) => (
-                  <Pressable key={page.id} onPress={() => openPage(page)} style={styles.navButton}>
-                    <Text numberOfLines={1} style={styles.navLabel}>
-                      {page.title}
-                    </Text>
-                  </Pressable>
-                ))}
+                {groups[1].map(renderEntry)}
               </>
             )}
 
@@ -644,6 +742,12 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
               {user?.email}
             </Text>
           </Pressable>
+          <NotificationsBell
+            unread={notifications.count}
+            offline={notifications.offline}
+            refreshCount={notifications.refresh}
+            onUnreadChange={notifications.setCount}
+          />
           <Pressable onPress={logout} hitSlop={8}>
             <Text style={styles.logout}>Salir</Text>
           </Pressable>
@@ -931,6 +1035,17 @@ function createStyles(colors: ColorPalette) {
     fontFamily: fonts.sansMedium,
     fontSize: 12,
     color: colors.mutedForeground,
+  },
+  clipDot: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.destructive,
+    borderWidth: 1.5,
+    borderColor: colors.background,
   },
   clipButton: {
     position: "absolute",

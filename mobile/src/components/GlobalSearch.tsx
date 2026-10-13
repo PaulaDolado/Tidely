@@ -9,12 +9,13 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 // Qué hacer al elegir un resultado — cada tipo lleva lo mínimo que su pantalla destino necesita
 // (ver handleSearchPick en AppSidebar.tsx). Puerto de SearchFocus en dashboard/src/components/
-// AppShell.tsx, pero más reducido: en el móvil solo Proyectos habla directo con el servidor (no
-// pasa por SQLite), así que es el único caso donde se puede saltar al detalle exacto por id —
-// eventos/tareas/notas navegan a la pantalla general (ver el comentario en AgendaScreen.tsx).
+// AppShell.tsx. Proyectos habla directo con el servidor, así que salta al detalle por su id. Eventos
+// y tareas pasan por SQLite (ids locales distintos de los del servidor): llevan el id del SERVIDOR
+// y la pantalla destino lo casa (ver AgendaScreen.tsx/PlanificadorScreen.tsx). Las notas solo
+// navegan a Hoy.
 export type SearchPick =
-  | { type: "event"; startTime: string }
-  | { type: "task" }
+  | { type: "event"; id: number; startTime: string }
+  | { type: "task"; id: number; plannerId: number }
   | { type: "note" }
   | { type: "project"; id: number; title: string };
 
@@ -118,7 +119,7 @@ export function GlobalSearch({ onPick }: { onPick: (pick: SearchPick) => void })
                           title={e.title}
                           subtitle={`${new Date(e.startTime).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}${e.isRecurring ? " · recurrente" : ""}`}
                           colors={colors}
-                          onPress={() => pick({ type: "event", startTime: e.startTime })}
+                          onPress={() => pick({ type: "event", id: e.id, startTime: e.startTime })}
                         />
                       ))}
                     </SearchGroup>
@@ -126,7 +127,7 @@ export function GlobalSearch({ onPick }: { onPick: (pick: SearchPick) => void })
                   {results!.tasks.length > 0 && (
                     <SearchGroup label="Tareas" colors={colors}>
                       {results!.tasks.map((t) => (
-                        <SearchRow key={`task-${t.id}`} title={t.title} colors={colors} onPress={() => pick({ type: "task" })} />
+                        <SearchRow key={`task-${t.id}`} title={t.title} colors={colors} onPress={() => pick({ type: "task", id: t.id, plannerId: t.plannerId })} />
                       ))}
                     </SearchGroup>
                   )}
