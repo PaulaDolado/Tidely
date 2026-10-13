@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView, Alert, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
@@ -9,7 +9,16 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { runSync } from "../sync";
-import { listExpandedEvents, createEventLocal, updateEventLocal, deleteEventLocal, deleteEvent as deleteEventCache, ParsedEvent } from "../db/eventsRepo";
+import {
+  listExpandedEvents,
+  createEventLocal,
+  updateEventLocal,
+  deleteEventLocal,
+  deleteEvent as deleteEventCache,
+  getEventById,
+  ParsedEvent,
+} from "../db/eventsRepo";
+import { upsertEventExceptions, deleteEventExceptionByOccurrence } from "../db/eventExceptionsRepo";
 import { EventOccurrence } from "../utils/recurrence";
 import {
   listEventCategories,
@@ -29,12 +38,13 @@ import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories
 import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
 import { buildIcsFromOccurrences, buildAgendaPdfHtml } from "../utils/agendaExport";
 import { saveAndShareText, exportHtmlToPdf } from "../utils/fileExport";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import {
   CalendarColor,
   EventCategory,
   EventInvitation,
   FreeTimeResponse,
+  ServerEventException,
   RECURRING_PATTERNS,
   RECURRING_PATTERN_LABELS,
   RecurringPattern,
@@ -110,8 +120,23 @@ function monthGridDays(monthStart: Date): Date[] {
   return days;
 }
 
+// Datos de la ocurrencia concreta que se abrió (solo en instancias de un evento recurrente): el
+// formulario edita la SERIE entera, pero "Mover/Cancelar/Restaurar solo esta vez" actúan sobre
+// esta ocurrencia — de ahí que lleve su propia fecha/hora destino (`moveStart`/`moveEnd`),
+// independiente de `startTime`/`endTime` (que son los de la serie).
+interface FormOccurrence {
+  // Inicio "natural" de la ocurrencia (antes de moverla) — la clave con la que el backend
+  // identifica su excepción.
+  originalStartTime: string;
+  isException: boolean;
+  moveStart: Date;
+  moveEnd: Date;
+}
+
 interface EventForm {
   id: string | null;
+  source: "tidely" | "google";
+  occurrence: FormOccurrence | null;
   title: string;
   description: string;
   categoryId: number | null;
@@ -131,6 +156,8 @@ function defaultForm(dateKey: string): EventForm {
   const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
   return {
     id: null,
+    source: "tidely",
+    occurrence: null,
     title: "",
     description: "",
     // null hasta que llegue la primera categoría de la cuenta (ver el useEffect en
@@ -143,14 +170,21 @@ function defaultForm(dateKey: string): EventForm {
     recurringPattern: "weekly",
     recurringWeekdayStart: 1,
     recurringWeekdayEnd: 5,
-    reminders: new Set(),
+    // Igual que la web (dashboard/src/pages/AgendaPage.tsx): un evento nuevo avisa 30 min antes
+    // salvo que se desmarque.
+    reminders: new Set([30]),
     guestsText: "",
   };
 }
 
-function formToOccurrenceEditor(event: ParsedEvent): EventForm {
+function formToOccurrenceEditor(event: ParsedEvent, occ?: EventOccurrence<ParsedEvent>): EventForm {
   return {
     id: event.id,
+    source: event.source,
+    occurrence:
+      occ?.isRecurringInstance && occ.originalStartTime
+        ? { originalStartTime: occ.originalStartTime.toISOString(), isException: occ.isException === true, moveStart: new Date(occ.startTime), moveEnd: new Date(occ.endTime) }
+        : null,
     title: event.title,
     description: event.description ?? "",
     categoryId: event.categoryId,
@@ -168,8 +202,16 @@ function formToOccurrenceEditor(event: ParsedEvent): EventForm {
 
 // `route` opcional y tipado a mano (no RouteProp<RootTabParamList, "Agenda">) para no tener que
 // importar el param list desde App.tsx (que a su vez importa esta pantalla) — solo hace falta
-// leer `focusDate`, no el resto del tipado de navegación.
-export function AgendaScreen({ route }: { route?: { params?: { focusDate?: string } } } = {}) {
+// leer `focusDate`/`focusEventId` (y limpiarlos con `setParams`), no el resto del tipado de
+// navegación.
+type AgendaFocusParams = { focusDate?: string; focusEventId?: string };
+export function AgendaScreen({
+  route,
+  navigation,
+}: {
+  route?: { params?: AgendaFocusParams };
+  navigation?: { setParams(params: AgendaFocusParams): void };
+} = {}) {
   const { collapsed } = useSidebar();
   const insets = useSafeAreaInsets();
   const [weekStart, setWeekStart] = useState(() => mondayOfWeek(new Date()));
@@ -180,26 +222,20 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showFreeTime, setShowFreeTime] = useState(false);
 
-  // Búsqueda global (ver GlobalSearch.tsx/AppSidebar.tsx): al llegar con un `focusDate` en los
-  // parámetros de navegación, salta a la semana y al día de ese evento en vez de dejar la vista
-  // en "hoy". No abre el propio diálogo de edición: los eventos son locales/SQLite en el móvil,
-  // con un id distinto al que devuelve la búsqueda (que es el id del servidor) — resolverlo a la
-  // instancia local añadiría bastante más complejidad para un beneficio menor, y esto ya deja al
-  // usuario viendo el día correcto con el evento a la vista.
   const focusDate = route?.params?.focusDate;
-  useEffect(() => {
-    if (!focusDate) return;
-    const date = new Date(focusDate);
-    if (Number.isNaN(date.getTime())) return;
-    setWeekStart(mondayOfWeek(date));
-    setSelectedDateKey(dateKeyOf(date));
-  }, [focusDate]);
+  const focusEventId = route?.params?.focusEventId;
+  // Clave de los parámetros ya atendidos — evita procesarlos dos veces (p.ej. si el efecto se
+  // vuelve a ejecutar mientras `setParams` los limpia). Vuelve a null en cuanto se limpian, para
+  // que abrir DOS VECES el mismo evento desde Hoy/búsqueda funcione la segunda vez.
+  const handledFocusRef = useRef<string | null>(null);
   const [occurrences, setOccurrences] = useState<EventOccurrence<ParsedEvent>[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [form, setForm] = useState<EventForm | null>(null);
   const [saving, setSaving] = useState(false);
-  const [picker, setPicker] = useState<"start-date" | "start-time" | "end-date" | "end-time" | null>(null);
+  const [picker, setPicker] = useState<"start-date" | "start-time" | "end-date" | "end-time" | "move-date" | "move-start" | "move-end" | null>(null);
+  // Mientras se guarda/restaura una excepción de una sola ocurrencia (llamada directa a la API).
+  const [occurrenceBusy, setOccurrenceBusy] = useState(false);
   // Categorías de evento (Agenda > + Nuevo evento): igual que la leyenda del calendario anual,
   // se leen directas de la API (no pasan por SQLite/sync) — ver api/eventCategories.ts.
   const [categories, setCategories] = useState<EventCategory[]>([]);
@@ -330,8 +366,77 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
   // dashboard/src/pages/AgendaPage.tsx: EventDialog).
   const openEdit = (occ: EventOccurrence<ParsedEvent>) => {
     if (occ.event.sharing?.role === "invitee") setSharedEventView(occ);
-    else setForm(formToOccurrenceEditor(occ.event));
+    else setForm(formToOccurrenceEditor(occ.event, occ));
   };
+
+  // Búsqueda global (GlobalSearch/AppSidebar) y Hoy navegan aquí con `focusDate` y/o
+  // `focusEventId`: salta a la semana/día de ese evento y, si hay `focusEventId`, abre el evento
+  // (su formulario de edición, o el visor de solo lectura si es compartido — ver openEdit).
+  // El id puede ser el local (uuid, evento aún sin sincronizar) o el de servidor en texto (los
+  // eventos sincronizados usan el id de servidor como id local, ver eventsRepo.getEventById).
+  // Los parámetros se consumen una sola vez: se limpian al terminar para que volver a la pestaña
+  // no reabra el diálogo.
+  useEffect(() => {
+    if (!focusDate && !focusEventId) {
+      handledFocusRef.current = null;
+      return;
+    }
+    const key = `${focusDate ?? ""}|${focusEventId ?? ""}`;
+    if (handledFocusRef.current === key) return;
+    handledFocusRef.current = key;
+
+    const goToDate = (date: Date) => {
+      setWeekStart(mondayOfWeek(date));
+      setMonthAnchor(startOfMonthUTC(date));
+      setYearAnchor(date.getUTCFullYear());
+      setSelectedDateKey(dateKeyOf(date));
+    };
+
+    (async () => {
+      try {
+        let date: Date | null = null;
+        if (focusDate) {
+          const parsed = new Date(focusDate);
+          if (!Number.isNaN(parsed.getTime())) date = parsed;
+        }
+
+        if (focusEventId) {
+          let event = await getEventById(focusEventId);
+          if (!event) {
+            // Puede ser un evento recién creado en otro dispositivo (p.ej. la web) que aún no se
+            // ha bajado — un pull y un segundo intento antes de rendirse.
+            await runSync();
+            event = await getEventById(focusEventId);
+          }
+          if (event) {
+            const found: ParsedEvent = event; // `event` es un `let`: sin esto se pierde el estrechamiento dentro de los callbacks
+            // Sin `focusDate` se usa el inicio del propio evento (para un recurrente, el de la
+            // serie — Hoy sí manda la fecha de la ocurrencia concreta).
+            if (!date) date = new Date(found.startTime);
+            const dayStart = new Date(`${dateKeyOf(date)}T00:00:00.000Z`);
+            const dayOccurrences = await listExpandedEvents(dayStart, addDaysUTC(dayStart, 1));
+            const fallback: EventOccurrence<ParsedEvent> = {
+              event: found,
+              startTime: new Date(found.startTime),
+              endTime: new Date(found.endTime),
+              isRecurringInstance: false,
+              seriesId: found.id,
+            };
+            // Respaldo si ese día no trae la ocurrencia (p.ej. cancelada): el evento "tal cual".
+            const occ = dayOccurrences.find((o) => o.event.id === found.id) ?? fallback;
+            goToDate(date);
+            openEdit(occ);
+            return;
+          }
+        }
+
+        if (date) goToDate(date);
+      } finally {
+        navigation?.setParams({ focusDate: undefined, focusEventId: undefined });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDate, focusEventId]);
   const closeForm = () => {
     setForm(null);
     setPicker(null);
@@ -398,12 +503,111 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
     sync();
   };
 
-  const handleDelete = async () => {
+  // Igual que la web ("¿Confirmar eliminar?"): borrar un evento no se hace a la primera
+  // pulsación. Si es recurrente, avisa de que se va la serie entera.
+  const handleDelete = () => {
     if (!form?.id) return;
-    await deleteEventLocal(form.id);
-    closeForm();
-    await reload();
-    sync();
+    const eventId = form.id;
+    Alert.alert(
+      "¿Eliminar este evento?",
+      form.isRecurring ? "Se eliminará toda la serie recurrente." : "Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            await deleteEventLocal(eventId);
+            closeForm();
+            await reload();
+            sync();
+          },
+        },
+      ]
+    );
+  };
+
+  // --- "Solo esta vez" (excepciones de una ocurrencia de un evento recurrente) ---
+  // Online-only: el push offline del móvil aún no sube excepciones, así que se llama directo a
+  // POST/DELETE /agenda/events/:id/exceptions con el id de SERVIDOR del evento y, si responde,
+  // se guarda el resultado en la tabla local de excepciones para que la Agenda se repinte al
+  // instante (sin esperar al siguiente pull).
+  const occurrenceErrorMessage = (err: unknown) =>
+    err instanceof ApiError && err.status === 0
+      ? "Necesitas conexión para cambiar solo esta ocurrencia. Inténtalo de nuevo cuando vuelvas a estar en línea."
+      : err instanceof Error
+        ? err.message
+        : "No se pudo completar la acción.";
+
+  // Con un id que no es numérico el evento solo existe en este dispositivo (uuid, aún sin
+  // sincronizar): el servidor todavía no lo conoce, así que no puede guardar una excepción.
+  const serverIdForOccurrence = (): string | null => {
+    if (form?.id && /^\d+$/.test(form.id)) return form.id;
+    Alert.alert("Evento sin sincronizar", "Este evento todavía no está en el servidor. Espera a que se sincronice e inténtalo de nuevo.");
+    return null;
+  };
+
+  const setOccurrenceException = async (action: "moved" | "cancelled") => {
+    if (!form?.occurrence) return;
+    const serverId = serverIdForOccurrence();
+    if (!serverId) return;
+    const { originalStartTime, moveStart, moveEnd } = form.occurrence;
+    if (action === "moved" && moveEnd.getTime() <= moveStart.getTime()) {
+      Alert.alert("Hora no válida", "La hora de fin debe ser posterior a la de inicio.");
+      return;
+    }
+    setOccurrenceBusy(true);
+    try {
+      const saved = await api.post<ServerEventException>(
+        `/agenda/events/${serverId}/exceptions`,
+        action === "moved"
+          ? { originalStartTime, action, newStartTime: moveStart.toISOString(), newEndTime: moveEnd.toISOString() }
+          : { originalStartTime, action }
+      );
+      await upsertEventExceptions([saved]);
+      closeForm();
+      await reload();
+    } catch (err) {
+      Alert.alert("No se pudo guardar", occurrenceErrorMessage(err));
+    } finally {
+      setOccurrenceBusy(false);
+    }
+  };
+
+  const restoreOccurrence = async () => {
+    if (!form?.occurrence) return;
+    const serverId = serverIdForOccurrence();
+    if (!serverId) return;
+    const { originalStartTime } = form.occurrence;
+    setOccurrenceBusy(true);
+    try {
+      await api.delete(`/agenda/events/${serverId}/exceptions/${encodeURIComponent(originalStartTime)}`);
+      await deleteEventExceptionByOccurrence(serverId, originalStartTime);
+      closeForm();
+      await reload();
+    } catch (err) {
+      Alert.alert("No se pudo restaurar", occurrenceErrorMessage(err));
+    } finally {
+      setOccurrenceBusy(false);
+    }
+  };
+
+  // Fecha/hora destino de "Mover solo esta vez": la fecha se aplica a inicio y fin a la vez (igual
+  // que la web, que tiene un único campo de fecha), las horas por separado.
+  const onMovePickerChange = (field: "move-date" | "move-start" | "move-end") => (_event: DateTimePickerChangeEvent, selected: Date) => {
+    setPicker(null);
+    if (!form?.occurrence) return;
+    const moveStart = new Date(form.occurrence.moveStart);
+    const moveEnd = new Date(form.occurrence.moveEnd);
+    if (field === "move-date") {
+      moveStart.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+      moveEnd.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+    } else if (field === "move-start") {
+      moveStart.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+    } else {
+      moveEnd.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+    }
+    setForm({ ...form, occurrence: { ...form.occurrence, moveStart, moveEnd } });
   };
 
   const onPickerChange = (field: "startTime" | "endTime", mode: "date" | "time") => (_event: DateTimePickerChangeEvent, selected: Date) => {
@@ -544,23 +748,7 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
           <>
             {dayEvents.length === 0 && <Text style={styles.emptyText}>Sin eventos este día</Text>}
             {dayEvents.map((occ) => (
-              <Pressable key={`${occ.event.id}-${occ.startTime.toISOString()}`} style={styles.eventCard} onPress={() => openEdit(occ)}>
-                <Text style={styles.eventTime}>
-                  {occ.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
-                  {occ.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
-                </Text>
-                <View style={styles.eventInfo}>
-                  <Text style={styles.eventTitle}>{occ.event.title}</Text>
-                  <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
-                    <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
-                      {eventCategoryLabel(categories, occ.event)}
-                    </Text>
-                  </View>
-                  {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
-                </View>
-                {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
-                {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
-              </Pressable>
+              <OccurrenceCard key={`${occ.event.id}-${occ.startTime.toISOString()}`} occ={occ} categories={categories} onPress={() => openEdit(occ)} />
             ))}
           </>
         )}
@@ -598,6 +786,11 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.modalTitle}>{form?.id ? "Editar evento" : "Nuevo evento"}</Text>
+              {form?.source === "google" && (
+                <Text style={styles.sharedByText}>
+                  📅 Importado de Google Calendar — la próxima sincronización con Google sobrescribirá tus cambios.
+                </Text>
+              )}
 
               <TextInput
                 style={styles.input}
@@ -756,6 +949,47 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
                   vive en editar, no en crear). */}
               {form?.id && /^\d+$/.test(form.id) && <EventInvitationsEditor eventId={Number(form.id)} />}
 
+              {form?.occurrence && (
+                <View style={styles.occurrenceBox}>
+                  <Text style={styles.occurrenceNotice}>
+                    Este evento pertenece a una serie recurrente. "Guardar" afecta a toda la serie — usa los botones de abajo para
+                    {form.occurrence.isException ? " restaurar" : " mover o cancelar"} solo esta ocurrencia.
+                  </Text>
+                  {form.occurrence.isException ? (
+                    <Pressable style={styles.occurrenceButton} onPress={restoreOccurrence} disabled={occurrenceBusy}>
+                      <Text style={styles.occurrenceButtonText}>{occurrenceBusy ? "Restaurando…" : "Restaurar horario original"}</Text>
+                    </Pressable>
+                  ) : (
+                    <>
+                      <Text style={styles.fieldLabel}>Mover esta ocurrencia a</Text>
+                      <View style={styles.dateRow}>
+                        <Pressable style={styles.dateButton} onPress={() => setPicker("move-date")}>
+                          <Text style={styles.dateButtonText}>{form.occurrence.moveStart.toLocaleDateString("es-ES")}</Text>
+                        </Pressable>
+                        <Pressable style={styles.dateButton} onPress={() => setPicker("move-start")}>
+                          <Text style={styles.dateButtonText}>
+                            {form.occurrence.moveStart.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                          </Text>
+                        </Pressable>
+                        <Pressable style={styles.dateButton} onPress={() => setPicker("move-end")}>
+                          <Text style={styles.dateButtonText}>
+                            {form.occurrence.moveEnd.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <View style={styles.occurrenceActions}>
+                        <Pressable style={styles.occurrenceButton} onPress={() => setOccurrenceException("moved")} disabled={occurrenceBusy}>
+                          <Text style={styles.occurrenceButtonText}>Mover solo esta vez</Text>
+                        </Pressable>
+                        <Pressable style={styles.occurrenceButton} onPress={() => setOccurrenceException("cancelled")} disabled={occurrenceBusy}>
+                          <Text style={[styles.occurrenceButtonText, { color: colors.destructive }]}>Cancelar solo esta vez</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
+
               <Pressable style={styles.saveButton} onPress={handleSave} disabled={saving}>
                 <Text style={styles.saveButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
               </Pressable>
@@ -859,6 +1093,33 @@ export function AgendaScreen({ route }: { route?: { params?: { focusDate?: strin
           mode="time"
           display="default"
           onValueChange={onPickerChange("endTime", "time")}
+          onDismiss={() => setPicker(null)}
+        />
+      )}
+      {form?.occurrence && picker === "move-date" && (
+        <DateTimePicker
+          value={form.occurrence.moveStart}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          onValueChange={onMovePickerChange("move-date")}
+          onDismiss={() => setPicker(null)}
+        />
+      )}
+      {form?.occurrence && picker === "move-start" && (
+        <DateTimePicker
+          value={form.occurrence.moveStart}
+          mode="time"
+          display="default"
+          onValueChange={onMovePickerChange("move-start")}
+          onDismiss={() => setPicker(null)}
+        />
+      )}
+      {form?.occurrence && picker === "move-end" && (
+        <DateTimePicker
+          value={form.occurrence.moveEnd}
+          mode="time"
+          display="default"
+          onValueChange={onMovePickerChange("move-end")}
           onDismiss={() => setPicker(null)}
         />
       )}
@@ -979,6 +1240,45 @@ function YearGrid({
   );
 }
 
+/** Tarjeta de una ocurrencia, compartida por la lista del día y la vista "Agenda". Distintivos
+ * como la web (dashboard/src/pages/AgendaPage.tsx): 📅 + "Importado de Google Calendar" para los
+ * eventos de Google, ✎ si esta ocurrencia de una serie recurrente fue movida a mano. */
+function OccurrenceCard({
+  occ,
+  categories,
+  onPress,
+}: {
+  occ: EventOccurrence<ParsedEvent>;
+  categories: EventCategory[];
+  onPress: () => void;
+}) {
+  const isGoogle = occ.event.source === "google";
+  return (
+    <Pressable style={styles.eventCard} onPress={onPress}>
+      <Text style={styles.eventTime}>
+        {occ.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
+        {occ.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+      </Text>
+      <View style={styles.eventInfo}>
+        <Text style={styles.eventTitle}>
+          {isGoogle ? "📅 " : ""}
+          {occ.event.title}
+        </Text>
+        <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
+          <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
+            {eventCategoryLabel(categories, occ.event)}
+          </Text>
+        </View>
+        {isGoogle ? <Text style={styles.eventLocation}>Importado de Google Calendar</Text> : null}
+        {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
+      </View>
+      {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
+      {occ.isException && <Text style={styles.recurringBadge}>✎</Text>}
+      {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
+    </Pressable>
+  );
+}
+
 /** Lista cronológica de eventos agrupados por día — puerto de AgendaListView en
  * dashboard/src/pages/AgendaPage.tsx: mismo rango que "Mes" (ver activeRange en AgendaScreen),
  * pero pintada como una lista con cabecera de día en vez de una rejilla. Tocar la cabecera de un
@@ -1023,23 +1323,7 @@ function AgendaListView({
             </Text>
           </Pressable>
           {groups.get(key)!.map((occ) => (
-            <Pressable key={`${occ.event.id}-${occ.startTime.toISOString()}`} style={styles.eventCard} onPress={() => onSelect(occ)}>
-              <Text style={styles.eventTime}>
-                {occ.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} –{" "}
-                {occ.endTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
-              </Text>
-              <View style={styles.eventInfo}>
-                <Text style={styles.eventTitle}>{occ.event.title}</Text>
-                <View style={[styles.eventTypeBadge, { backgroundColor: eventCategoryStyle(categories, occ.event.categoryId).bg }]}>
-                  <Text style={[styles.eventTypeText, { color: eventCategoryStyle(categories, occ.event.categoryId).text }]}>
-                    {eventCategoryLabel(categories, occ.event)}
-                  </Text>
-                </View>
-                {occ.event.location ? <Text style={styles.eventLocation}>{occ.event.location}</Text> : null}
-              </View>
-              {occ.event.sharing && <Text style={styles.recurringBadge}>🤝</Text>}
-              {occ.event.isRecurring && <Text style={styles.recurringBadge}>↻</Text>}
-            </Pressable>
+            <OccurrenceCard key={`${occ.event.id}-${occ.startTime.toISOString()}`} occ={occ} categories={categories} onPress={() => onSelect(occ)} />
           ))}
         </View>
       ))}
@@ -1936,6 +2220,24 @@ const styles = StyleSheet.create({
   deleteButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
+  occurrenceBox: {
+    marginTop: 4,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: radius.card,
+    backgroundColor: withAlpha(colors.secondary, 0.4),
+  },
+  occurrenceNotice: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, lineHeight: 17, marginBottom: 12 },
+  occurrenceActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  occurrenceButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignSelf: "flex-start",
+  },
+  occurrenceButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
   sharedByText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginBottom: 16 },
   sharedDetailText: { fontFamily: fonts.sans, fontSize: 14, color: colors.foreground, marginBottom: 8, lineHeight: 20 },
   sharedNoticeText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 8, marginBottom: 20 },

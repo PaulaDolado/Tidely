@@ -26,6 +26,9 @@ export interface ParsedEvent {
   // en types.ts) — `null` en el caso normal (evento sin compartir). AgendaScreen lo usa para
   // pintar el distintivo "🤝" y, si `role === "invitee"`, para bloquear editar/borrar.
   sharing: EventSharing | null;
+  // "google" = importado de Google Calendar (solo lectura en origen: la próxima sincronización
+  // con Google sobrescribe cualquier cambio local) — AgendaScreen pinta el distintivo "📅".
+  source: "tidely" | "google";
 }
 
 function sharingOf(row: LocalEvent): EventSharing | null {
@@ -62,6 +65,7 @@ export function parseEvent(row: LocalEvent): ParsedEvent {
     reminderMinutesBefore: parseJsonArray<number>(row.reminderMinutesBefore),
     guests: parseJsonArray<string>(row.guests),
     sharing: sharingOf(row),
+    source: row.source,
   };
 }
 
@@ -202,7 +206,21 @@ export async function listExpandedEvents(rangeStart: Date, rangeEnd: Date): Prom
   return occurrences;
 }
 
-export async function listTodayEvents(): Promise<EventOccurrence<ParsedEvent>[]> {
+/** Un evento (la fila "plantilla", sin expandir) por su id — usado para abrirlo desde la búsqueda
+ * global o desde Hoy. Un evento ya sincronizado usa su id de SERVIDOR (como texto) como id local
+ * (ver `markEventSynced`/`upsertEvents`), así que una sola búsqueda por `id` cubre tanto el id
+ * local (uuid, aún sin sincronizar) como el de servidor. `null` si no existe o está marcado para
+ * borrar. */
+export async function getEventById(id: string): Promise<ParsedEvent | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<LocalEvent>(
+    "SELECT * FROM events WHERE id = ? AND (pendingOp IS NULL OR pendingOp != 'delete')",
+    [id]
+  );
+  return row ? parseEvent(row) : null;
+}
+
+export async function listTodayEvents():Promise<EventOccurrence<ParsedEvent>[]> {
   const today = todayKey();
   const start = new Date(`${today}T00:00:00.000Z`);
   const end = new Date(`${today}T23:59:59.999Z`);
