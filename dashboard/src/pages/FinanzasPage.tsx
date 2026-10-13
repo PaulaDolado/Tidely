@@ -6,6 +6,7 @@ import { Loading, ErrorMessage } from "../components/Feedback";
 import { MiniLineChart } from "../components/MiniLineChart";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
 import { DayPicker } from "../components/DayPicker";
+import { currentPeriod, isCurrentPeriod, MonthSwitcher, Period, periodLabel } from "../components/MonthSwitcher";
 import { downloadCsv, transactionsToCsv } from "../utils/financeExport";
 import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, TotalBalance, Transaction } from "../types";
 
@@ -16,14 +17,16 @@ function eur(n: number): string {
 }
 
 export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsGoal["type"]) => void }) {
-  const now = new Date();
   const [editingId, setEditingId] = useState<number | null>(null);
+  // Mes que enseñan "Resumen del presupuesto", "Resumen del mes" y el top de categorías (selector ‹ mes ›);
+  // las tarjetas de arriba (acumulado), la tendencia y la proyección no dependen de él.
+  const [period, setPeriod] = useState<Period>(currentPeriod);
   const {
     data: balance,
     loading: loadingBalance,
     error: balanceError,
     reload: reloadBalance,
-  } = useFetch(() => api.get<MonthlyBalance>(`/finance/balance/${now.getMonth() + 1}/${now.getFullYear()}`), []);
+  } = useFetch(() => api.get<MonthlyBalance>(`/finance/balance/${period.month}/${period.year}`), [period.month, period.year]);
   const {
     data: txData,
     loading: loadingTx,
@@ -31,6 +34,11 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
     reload: reloadTx,
   } = useFetch(() => api.get<{ transactions: Transaction[]; pagination: Pagination }>("/finance/transactions?limit=15"), []);
   const { data: analytics, reload: reloadAnalytics } = useFetch(() => api.get<FinanceAnalytics>("/finance/analytics"), []);
+  // Top de categorías del mes elegido (el de arriba, `analytics`, siempre es el mes en curso: tendencia y proyección).
+  const { data: periodAnalytics, reload: reloadPeriodAnalytics } = useFetch(
+    () => api.get<FinanceAnalytics>(`/finance/analytics?month=${period.month}&year=${period.year}`),
+    [period.month, period.year]
+  );
   // Ingresos/gastos/balance acumulados de todo el histórico (tarjetas de arriba); lo del mes en curso
   // está en "Resumen del mes".
   const { data: total, loading: loadingTotal, error: totalError, reload: reloadTotal } = useFetch(
@@ -47,8 +55,8 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
   // Resumen del presupuesto: gasto del mes por categoría y lo que le toca a cada una (ver
   // BudgetSummaryCard). Se recarga con cada movimiento nuevo/editado/borrado, porque cambia lo gastado.
   const { data: budget, reload: reloadBudget } = useFetch(
-    () => api.get<BudgetSummary>(`/finance/budget/${now.getMonth() + 1}/${now.getFullYear()}`),
-    []
+    () => api.get<BudgetSummary>(`/finance/budget/${period.month}/${period.year}`),
+    [period.month, period.year]
   );
 
   const reloadAll = () => {
@@ -56,6 +64,7 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
     reloadTotal();
     reloadTx();
     reloadAnalytics();
+    reloadPeriodAnalytics();
     reloadSavings();
     reloadBudget();
   };
@@ -81,7 +90,7 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
             sitio para poner las categorías a los lados del donut sin partir los nombres. */}
         <div className="@container space-y-8 lg:col-span-8 xl:col-span-7 2xl:col-span-8">
           {(balanceError || totalError) && <ErrorMessage message={(balanceError || totalError) as string} />}
-          {loadingBalance || loadingTotal ? (
+          {loadingTotal ? (
             <Loading label="Cargando balance..." />
           ) : (
             // Por ANCHO DE LA COLUMNA (container query), no del viewport: con la columna principal
@@ -156,11 +165,13 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
         </div>
 
         <div className="space-y-6 lg:col-span-4 xl:col-span-5 2xl:col-span-4">
+          <MonthSwitcher value={period} onChange={setPeriod} />
+
           <BudgetSummaryCard summary={budget} onChanged={reloadBudget} />
 
           <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
             <h2 className="mb-6 text-xs uppercase tracking-widest opacity-60">Resumen del mes</h2>
-            <div className="space-y-4">
+            <div className={`space-y-4 transition-opacity ${loadingBalance ? "opacity-50" : ""}`}>
               <Row label="Ingresos" value={`+${eur(balance?.income ?? 0)}`} />
               <Row label="Gastos" value={`−${eur(balance?.expense ?? 0)}`} />
               <Row label="Ahorro" value={eur(totalAhorro)} />
@@ -172,14 +183,14 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
             </div>
           </div>
 
-          {analytics && (
+          {periodAnalytics && (
             <div className="rounded-3xl bg-secondary p-6 text-secondary-foreground">
-              <h2 className="mb-4 text-sm font-medium">Top 5 categorías de gasto (este mes)</h2>
-              {analytics.topCategories.length === 0 ? (
-                <p className="text-sm opacity-70">Sin gastos registrados este mes.</p>
+              <h2 className="mb-4 text-sm font-medium">Top 5 categorías de gasto ({isCurrentPeriod(period) ? "este mes" : periodLabel(period).toLowerCase()})</h2>
+              {periodAnalytics.topCategories.length === 0 ? (
+                <p className="text-sm opacity-70">Sin gastos registrados {isCurrentPeriod(period) ? "este mes" : "ese mes"}.</p>
               ) : (
                 <ul className="space-y-2">
-                  {analytics.topCategories.map((c) => (
+                  {periodAnalytics.topCategories.map((c) => (
                     <li key={c.category} className="flex items-center justify-between border-b border-secondary-foreground/15 pb-2 text-sm last:border-b-0">
                       <span>{c.category}</span>
                       <strong>{eur(c.total)}</strong>

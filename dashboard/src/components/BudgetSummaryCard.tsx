@@ -308,6 +308,18 @@ export function BudgetSummaryCard({
   const right = categories.slice(leftCount);
   const editing = categories.find((c) => c.id === editingId) ?? null;
 
+  // Categorías que ya han gastado más que su máximo, de más a menos pasadas. Sin base de presupuesto
+  // (ni nómina ni ingresos aún) todo máximo es 0 y cualquier gasto "se pasaría": no se avisa, solo
+  // sería ruido.
+  const overspent =
+    summary.budgetBase.amount > 0
+      ? categories.filter((c) => c.spent - c.budget > 0.5).sort((a, b) => b.spent - b.budget - (a.spent - a.budget))
+      : [];
+  const overspentText = [
+    ...overspent.slice(0, 3).map((c) => `${c.name} (+${eur(c.spent - c.budget)})`),
+    ...(overspent.length > 3 ? [`${overspent.length - 3} más`] : []),
+  ].reduce((text, part, i, all) => (i === 0 ? part : `${text}${i === all.length - 1 ? " y " : ", "}${part}`), "");
+
   const labelFor = (c: BudgetSummaryCategory, side: Side) => (
     <CategoryLabel
       key={c.id}
@@ -378,6 +390,21 @@ export function BudgetSummaryCard({
       </div>
 
       {categories.length === 0 && <p className="mt-3 text-center text-sm text-muted-foreground">No tienes categorías. Añade una con el "+".</p>}
+
+      {overspent.length > 0 && (
+        <p role="alert" className="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <span aria-hidden="true">⚠ </span>
+          Te has pasado en {overspentText}.
+        </p>
+      )}
+
+      {categories.length > 0 && (
+        <p className="mt-3 text-center text-[11px] text-muted-foreground">
+          {summary.unassignedPercent > 0.005
+            ? `Asignado ${pct(summary.assignedPercent)} · sin asignar ${pct(summary.unassignedPercent)}`
+            : `Asignado ${pct(summary.assignedPercent)}`}
+        </p>
+      )}
 
       {editing && (
         <div className="mt-4">

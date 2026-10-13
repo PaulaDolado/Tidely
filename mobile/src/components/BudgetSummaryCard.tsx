@@ -278,6 +278,17 @@ export function BudgetSummaryCard({
   const left = categories.slice(0, leftCount);
   const right = categories.slice(leftCount);
 
+  // Categorías que ya han gastado más que su máximo, de más a menos pasadas. Sin base de presupuesto
+  // (ni nómina ni ingresos aún) todo máximo es 0 y cualquier gasto "se pasaría": no se avisa.
+  const overspent =
+    summary.budgetBase.amount > 0
+      ? categories.filter((c) => c.spent - c.budget > 0.5).sort((a, b) => b.spent - b.budget - (a.spent - a.budget))
+      : [];
+  const overspentText = [
+    ...overspent.slice(0, 3).map((c) => `${c.name} (+${eur(c.spent - c.budget)})`),
+    ...(overspent.length > 3 ? [`${overspent.length - 3} más`] : []),
+  ].reduce((text, part, i, all) => (i === 0 ? part : `${text}${i === all.length - 1 ? " y " : ", "}${part}`), "");
+
   const finish = async () => {
     setForm(null);
     await onChanged();
@@ -316,6 +327,20 @@ export function BudgetSummaryCard({
       </View>
 
       {categories.length === 0 && <Text style={styles.emptyText}>No tienes categorías. Añade una con el "+".</Text>}
+
+      {overspent.length > 0 && (
+        <View style={styles.alertBox} accessibilityRole="alert">
+          <Text style={styles.alertText}>⚠ Te has pasado en {overspentText}.</Text>
+        </View>
+      )}
+
+      {categories.length > 0 && (
+        <Text style={styles.assignedText}>
+          {summary.unassignedPercent > 0.005
+            ? `Asignado ${pct(summary.assignedPercent)} · sin asignar ${pct(summary.unassignedPercent)}`
+            : `Asignado ${pct(summary.assignedPercent)}`}
+        </Text>
+      )}
 
       <Modal visible={form !== null} animationType="slide" transparent onRequestClose={() => setForm(null)}>
         <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
@@ -370,6 +395,9 @@ const styles = StyleSheet.create({
   cardTitle: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, color: colors.mutedForeground },
   plusButton: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.foreground, alignItems: "center", justifyContent: "center" },
   plusButtonText: { fontFamily: fonts.sansBold, fontSize: 16, lineHeight: 18, color: colors.background },
+  alertBox: { backgroundColor: colors.destructiveTint, borderRadius: radius.input, paddingHorizontal: 12, paddingVertical: 8 },
+  alertText: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive },
+  assignedText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, textAlign: "center" },
   emptyText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground, fontStyle: "italic", textAlign: "center" },
 
   body: { flexDirection: "row", alignItems: "center", gap: 6 },

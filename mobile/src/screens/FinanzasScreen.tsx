@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +23,7 @@ import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext
 import { api } from "../api/client";
 import { BudgetSummary, getBudgetSummary } from "../api/finance";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
+import { currentPeriod, isCurrentPeriod, MonthSwitcher, Period, periodLabel } from "../components/MonthSwitcher";
 import { useAuth } from "../auth/AuthContext";
 import { ENABLED_SECTIONS } from "../types";
 import { transactionsToCsv } from "../utils/financeExport";
@@ -71,6 +72,12 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
   const [total, setTotal] = useState<{ income: number; expense: number; balance: number } | null>(null);
   const [transactions, setTransactions] = useState<LocalTransaction[]>([]);
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
+  // Mes que enseñan "Resumen del presupuesto", "Resumen del mes" y el top de categorías (selector
+  // ‹ mes ›); las tarjetas de arriba (acumulado), la tendencia y la proyección no dependen de él. El
+  // ref deja a `reload` (estable, lo usan los efectos de foco) leer siempre el mes elegido.
+  const [period, setPeriod] = useState<Period>(currentPeriod);
+  const periodRef = useRef(period);
+  const [periodAnalytics, setPeriodAnalytics] = useState<FinanceAnalytics | null>(null);
   const [savingsTotal, setSavingsTotal] = useState(0);
   const [investmentTotal, setInvestmentTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -83,9 +90,9 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
   const [showExport, setShowExport] = useState(false);
 
   const reloadBudget = useCallback(async () => {
-    const now = new Date();
+    const { month, year } = periodRef.current;
     try {
-      setBudget(await getBudgetSummary(now.getMonth() + 1, now.getFullYear()));
+      setBudget(await getBudgetSummary(month, year));
       setBudgetFailed(false);
     } catch {
       setBudgetFailed(true);
@@ -94,16 +101,18 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const now = new Date();
+    const { month, year } = periodRef.current;
     reloadBudget();
-    const [bal, tot, txs, stats, savingsGoals] = await Promise.all([
-      getMonthlyBalanceLocal(now.getMonth() + 1, now.getFullYear()),
+    const [bal, tot, txs, stats, periodStats, savingsGoals] = await Promise.all([
+      getMonthlyBalanceLocal(month, year),
       getTotalBalanceLocal(),
       listTransactions(15),
       getAnalyticsLocal(),
+      getAnalyticsLocal(month, year),
       listSavingsGoals(),
     ]);
     setBalance(bal);
+    setPeriodAnalytics(periodStats);
     setTotal(tot);
     setTransactions(txs);
     setAnalytics(stats);
@@ -111,6 +120,14 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
     setInvestmentTotal(savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0));
     setLoading(false);
   }, [reloadBudget]);
+
+  const changePeriod = (next: Period) => {
+    periodRef.current = next;
+    setPeriod(next);
+    setBudget(null); // evita enseñar el presupuesto del mes anterior mientras llega el del elegido
+    setBudgetFailed(false);
+    reload();
+  };
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -223,6 +240,8 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
                 de una sola columna (ver el comentario de cabecera), pero el usuario lo quiere de
                 vuelta con el mismo estilo que en la web, justo antes de "Top categorías". */}
             {/* Como en la web, "Resumen del presupuesto" va justo encima de "Resumen del mes". */}
+            <MonthSwitcher value={period} onChange={changePeriod} />
+
             <BudgetSummaryCard summary={budget} failed={budgetFailed} onChanged={reloadBudget} />
 
             {balance && (
@@ -250,19 +269,21 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
               </View>
             )}
 
-            {analytics && (
+            {periodAnalytics && (
               // rounded-3xl bg-secondary p-6 text-secondary-foreground de la web — fondo sólido
               // arena, sin borde (a diferencia de card-soft, que sí lo lleva).
               <View style={styles.cardSecondary}>
-                <Text style={[styles.cardTitle, styles.cardTitleSecondary]}>Top 5 categorías de gasto (este mes)</Text>
-                {analytics.topCategories.length === 0 ? (
-                  <Text style={styles.categoryEmptyText}>Sin gastos registrados este mes.</Text>
+                <Text style={[styles.cardTitle, styles.cardTitleSecondary]}>
+                  Top 5 categorías de gasto ({isCurrentPeriod(period) ? "este mes" : periodLabel(period).toLowerCase()})
+                </Text>
+                {periodAnalytics.topCategories.length === 0 ? (
+                  <Text style={styles.categoryEmptyText}>Sin gastos registrados {isCurrentPeriod(period) ? "este mes" : "ese mes"}.</Text>
                 ) : (
                   <View>
-                    {analytics.topCategories.map((c, i) => (
+                    {periodAnalytics.topCategories.map((c, i) => (
                       <View
                         key={c.category}
-                        style={[styles.categoryRow, i < analytics.topCategories.length - 1 && styles.categoryRowDivider]}
+                        style={[styles.categoryRow, i < periodAnalytics.topCategories.length - 1 && styles.categoryRowDivider]}
                       >
                         <Text style={styles.categoryName}>{c.category}</Text>
                         <Text style={styles.categoryAmount}>{formatMoney(c.total)}</Text>
