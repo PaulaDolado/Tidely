@@ -45,6 +45,25 @@ export async function listForTask(taskId: string): Promise<LocalSubtask[]> {
   );
 }
 
+export interface SubtaskCount {
+  done: number;
+  total: number;
+}
+
+/** Progreso de subtareas de TODAS las tareas en una sola consulta (agrupada por `taskId`), para
+ * pintar "☑ hechas/total" en cada tarjeta del tablero sin lanzar una consulta por tarjeta. Las
+ * tareas sin subtareas simplemente no aparecen en el mapa. */
+export async function getSubtaskCounts(): Promise<Record<string, SubtaskCount>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ taskId: string; total: number; done: number | null }>(
+    `SELECT taskId, COUNT(*) AS total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS done
+     FROM subtasks WHERE (pendingOp IS NULL OR pendingOp != 'delete') GROUP BY taskId`
+  );
+  const result: Record<string, SubtaskCount> = {};
+  for (const r of rows) result[r.taskId] = { done: r.done ?? 0, total: r.total };
+  return result;
+}
+
 export async function createSubtaskLocal(taskId: string, title: string): Promise<string> {
   const db = await getDb();
   const id = Crypto.randomUUID();

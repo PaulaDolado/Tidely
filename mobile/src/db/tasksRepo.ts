@@ -76,6 +76,27 @@ export async function listTasksByPlanner(plannerId: number): Promise<LocalTask[]
   );
 }
 
+/** Busca una tarea por id para el deep link desde Hoy / búsqueda global. No hace falta un segundo
+ * intento "por id de servidor": en `upsertTasks` el id local de una tarea ya sincronizada ES
+ * `String(serverId)` (y `markTaskSynced` cambia el uuid por ese mismo valor), así que un único
+ * `WHERE id = ?` cubre tanto el id local (uuid, desde Hoy) como el de servidor (desde la búsqueda). */
+export async function getTaskById(id: string): Promise<LocalTask | null> {
+  const db = await getDb();
+  return db.getFirstAsync<LocalTask>(
+    "SELECT * FROM tasks WHERE id = ? AND (pendingOp IS NULL OR pendingOp != 'delete')",
+    [id]
+  );
+}
+
+/** Refleja en SQLite el proyecto que acaba de guardarse en el servidor por REST (ver
+ * api/plannerProject.ts) — /sync NO transporta `projectId` en el push, así que esto NO marca la
+ * fila como pendiente (no tendría nada que subir); solo evita esperar al siguiente pull para ver
+ * el cambio en las tarjetas. */
+export async function setTaskProjectLocal(id: string, projectId: number | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE tasks SET projectId = ? WHERE id = ?", [projectId, id]);
+}
+
 export function parseTaskTags(task: LocalTask): string[] {
   return parseJsonArray<string>(task.tags);
 }

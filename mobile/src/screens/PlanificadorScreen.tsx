@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   View,
@@ -26,9 +26,11 @@ import { ApiError } from "../api/client";
 import {createPlanner,createPlannerField,deletePlanner,deletePlannerField,listPlannerFields,listPlanners,listPlannerTasksLive,logTaskTime,movePlanner,movePlannerField,Planner,PlannerField,renamePlanner,renamePlannerField,updateTaskCustomFields,} from "../api/planner";
 import { CustomFieldType, CustomFieldValue } from "../api/customPages";
 import { runSync } from "../sync";
-import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, deleteTaskLocal, parseTaskTags, addActualMinutesLocal } from "../db/tasksRepo";
-import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal } from "../db/subtasksRepo";
-import { LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
+import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, toggleTaskDone, deleteTaskLocal, parseTaskTags, addActualMinutesLocal, getTaskById, setTaskProjectLocal } from "../db/tasksRepo";
+import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal, getSubtaskCounts, SubtaskCount } from "../db/subtasksRepo";
+import { listProjects } from "../db/projectsRepo";
+import { setTaskProject } from "../api/plannerProject";
+import { LocalProject, LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
 import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
@@ -98,6 +100,44 @@ function nextPriority(p: TaskPriority): TaskPriority {
   return TASK_PRIORITIES[(idx + 1) % TASK_PRIORITIES.length];
 }
 
+// Datos "de contexto" que pintan las tarjetas/filas de tarea además de la propia fila de SQLite:
+// progreso de subtareas (una sola consulta agrupada para TODAS, ver getSubtaskCounts) y nombre del
+// proyecto vinculado (`tasks.projectId` ya baja con el pull; los proyectos también son locales).
+interface TaskMeta {
+  subtaskCounts: Record<string, SubtaskCount>;
+  projectTitles: Record<string, string>;
+}
+
+// Parámetros de navegación para el deep link desde Hoy (id local) / búsqueda global (id de servidor
+// como string) — ver el efecto de `focusTaskId` en PlanificadorScreen.
+interface FocusParams {
+  focusTaskId?: string;
+  focusPlannerId?: string;
+}
+
+// Quita los parámetros ya consumidos para que volver a la pestaña no reabra la tarea. `navigation`
+// va tipado como `object` y se estrecha aquí a mano (mismo motivo que `route`: no importar el
+// param list de App.tsx, que a su vez importa esta pantalla).
+function clearFocusParams(navigation: object | undefined) {
+  const nav = navigation as { setParams?: (params: FocusParams) => void } | undefined;
+  nav?.setParams?.({ focusTaskId: undefined, focusPlannerId: undefined });
+}
+
+// Mismo cambio de prioridad que la Lista (ver handleCyclePriority), fuera del componente para
+// poder usarlo también desde PlannerBoardCard (Apilado), que tiene su propio estado de tareas.
+async function cycleTaskPriority(task: LocalTask): Promise<void> {
+  await updateTaskLocal(task.id, {
+    title: task.title,
+    description: task.description,
+    image: task.image,
+    notes: task.notes,
+    priority: nextPriority(task.priority),
+    dueDate: task.dueDate,
+    estimatedMinutes: task.estimatedMinutes,
+    tags: parseTaskTags(task),
+  });
+}
+
 function dueBadge(dueDate: string | null, done: boolean): { label: string; bg: string; text: string } | null {
   if (!dueDate) return null;
   const due = new Date(dueDate);
@@ -121,6 +161,7 @@ interface TaskForm {
   estimatedMinutesText: string;
   actualMinutes: number;
   tagsText: string;
+  projectId: number | null;
 }
 
 function toForm(task: LocalTask): TaskForm {
@@ -136,10 +177,14 @@ function toForm(task: LocalTask): TaskForm {
     estimatedMinutesText: task.estimatedMinutes != null ? String(task.estimatedMinutes) : "",
     actualMinutes: task.actualMinutes,
     tagsText: parseTaskTags(task).join(", "),
+    projectId: task.projectId,
   };
 }
 
-export function PlanificadorScreen() {
+// `route` y `navigation` opcionales y tipados a mano (mismo patrón que AgendaScreen) para no
+// importar el param list de App.tsx — solo hace falta leer `focusTaskId`/`focusPlannerId` y poder
+// limpiarlos.
+export function PlanificadorScreen({ route, navigation }: { route?: { params?: FocusParams }; navigation?: object } = {}) {
   const { collapsed } = useSidebar();
   const insets = useSafeAreaInsets();
 
@@ -167,6 +212,12 @@ export function PlanificadorScreen() {
   const [drafts, setDrafts] = useState<Record<TaskStatus, string>>({ todo: "", in_progress: "", done: "" });
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Alta rápida al pie de la vista Lista (siempre en "Por hacer", como el input de la columna).
+  const [listDraft, setListDraft] = useState("");
+  // Contexto de las tarjetas (subtareas + proyectos) — se recarga junto con las tareas, ver reload.
+  const [subtaskCounts, setSubtaskCounts] = useState<Record<string, SubtaskCount>>({});
+  const [projects, setProjects] = useState<LocalProject[]>([]);
+  const [savingProject, setSavingProject] = useState(false);
   const [form, setForm] = useState<TaskForm | null>(null);
   const [subtasks, setSubtasks] = useState<LocalSubtask[]>([]);
   const [subtaskDraft, setSubtaskDraft] = useState("");
@@ -253,6 +304,8 @@ export function PlanificadorScreen() {
 
   const reload = useCallback(async () => {
     if (active) setTasks(await listTasksByPlanner(active.id));
+    setSubtaskCounts(await getSubtaskCounts());
+    setProjects(await listProjects());
     // También al resto de tableros visibles en Apilado, aunque la tarea que cambió no fuera la de
     // `active` — cada PlannerBoardCard se recarga solo al ver cambiar este número.
     setRefreshToken((n) => n + 1);
@@ -267,10 +320,15 @@ export function PlanificadorScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id]);
 
+  // Cuenta de syncs terminados (ver el deep link de abajo: sabe si ya hubo un pull DESPUÉS de pedir
+  // abrir una tarea, para no rendirse antes de que una tarea recién creada en el servidor baje).
+  const syncCountRef = useRef(0);
+
   const sync = useCallback(async () => {
     setSyncing(true);
     setSyncError(null);
     const result = await runSync();
+    syncCountRef.current += 1;
     setSyncing(false);
     if (result.success) await reload();
     else setSyncError(result.error ?? "No se pudo sincronizar");
@@ -382,6 +440,12 @@ export function PlanificadorScreen() {
     }
   };
 
+  // Solo el progreso "☑ hechas/total" de las tarjetas — más barato que un reload() completo cuando
+  // lo único que cambió son subtareas del modal abierto.
+  const refreshSubtaskCounts = async () => {
+    setSubtaskCounts(await getSubtaskCounts());
+  };
+
   const reloadSubtasks = useCallback(async (taskId: string) => {
     setSubtasks(await listForTask(taskId));
   }, []);
@@ -450,6 +514,52 @@ export function PlanificadorScreen() {
     setMinutesToLogText("");
   };
 
+  // DEEP LINK desde Hoy (id local) o la búsqueda global (id de servidor como string). El id local de
+  // una tarea sincronizada ES el de servidor (ver getTaskById), así que una sola búsqueda cubre
+  // ambos. Se consume una vez: los params se limpian con navigation.setParams (si hay) y la
+  // petición pasa a `pendingFocus`, que espera a que carguen los tableros y — si la tarea aún no
+  // está en SQLite (recién creada en otro dispositivo) — a que termine un sync posterior.
+  const focusTaskId = route?.params?.focusTaskId;
+  const focusPlannerId = route?.params?.focusPlannerId;
+  const [pendingFocus, setPendingFocus] = useState<{ taskId: string; plannerId: number | null; baseSyncCount: number } | null>(null);
+  const resolvingFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusTaskId) return;
+    const plannerId = focusPlannerId ? Number(focusPlannerId) : NaN;
+    setPendingFocus({
+      taskId: focusTaskId,
+      plannerId: Number.isFinite(plannerId) ? plannerId : null,
+      baseSyncCount: syncCountRef.current,
+    });
+    clearFocusParams(navigation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTaskId, focusPlannerId]);
+
+  useEffect(() => {
+    if (!pendingFocus || planners.length === 0 || resolvingFocusRef.current) return;
+    resolvingFocusRef.current = true;
+    (async () => {
+      try {
+        const task = await getTaskById(pendingFocus.taskId);
+        if (!task) {
+          // Sin la tarea en local: se espera a un sync posterior a la petición; si ya hubo uno y
+          // sigue sin aparecer (borrada, o sin conexión), se abandona sin avisar.
+          if (!syncing && syncCountRef.current > pendingFocus.baseSyncCount) setPendingFocus(null);
+          return;
+        }
+        const plannerId = pendingFocus.plannerId ?? task.plannerId;
+        const index = plannerId != null ? planners.findIndex((p) => p.id === plannerId) : -1;
+        if (index !== -1) setPlannerIndex(index);
+        setPendingFocus(null);
+        await openTask(task);
+      } finally {
+        resolvingFocusRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocus, planners, syncing]);
+
   const handleQuickAdd = async (status: TaskStatus) => {
     if (!active) return;
     const title = drafts[status].trim();
@@ -461,18 +571,45 @@ export function PlanificadorScreen() {
   };
 
   const handleCyclePriority = async (task: LocalTask) => {
-    await updateTaskLocal(task.id, {
-      title: task.title,
-      description: task.description,
-      image: task.image,
-      notes: task.notes,
-      priority: nextPriority(task.priority),
-      dueDate: task.dueDate,
-      estimatedMinutes: task.estimatedMinutes,
-      tags: parseTaskTags(task),
-    });
+    await cycleTaskPriority(task);
     await reload();
     sync();
+  };
+
+  // Casilla de la Lista: hecha <-> por hacer sin abrir el modal (mismo toggle que usa Hoy).
+  const handleToggleDone = async (task: LocalTask) => {
+    await toggleTaskDone(task.id);
+    await reload();
+    sync();
+  };
+
+  const handleListQuickAdd = async () => {
+    if (!active) return;
+    const title = listDraft.trim();
+    if (!title) return;
+    setListDraft("");
+    await createTaskLocal({ plannerId: active.id, title, description: null, status: "todo", priority: "medium", dueDate: null, tags: [] });
+    await reload();
+    sync();
+  };
+
+  // El proyecto va por REST directo (necesita conexión y id de servidor numérico): /sync no lleva
+  // `projectId` al subir cambios, así que no se puede dejar pendiente offline como el resto de
+  // campos. Solo si el servidor confirma se refleja en SQLite y en el modal.
+  const handleSetProject = async (projectId: number | null) => {
+    if (!form || savingProject || !/^\d+$/.test(form.id)) return;
+    const taskId = form.id;
+    setSavingProject(true);
+    try {
+      await setTaskProject(Number(taskId), projectId);
+      await setTaskProjectLocal(taskId, projectId);
+      setForm((prev) => (prev && prev.id === taskId ? { ...prev, projectId } : prev));
+      await reload();
+    } catch (err) {
+      Alert.alert("No se pudo cambiar el proyecto", err instanceof ApiError ? err.message : "Necesitas conexión para cambiar el proyecto de una tarea.");
+    } finally {
+      setSavingProject(false);
+    }
   };
 
   const handleMoveStatus = async (status: TaskStatus) => {
@@ -688,18 +825,21 @@ export function PlanificadorScreen() {
     setSubtaskDraft("");
     await createSubtaskLocal(form.id, title);
     await reloadSubtasks(form.id);
+    refreshSubtaskCounts();
     sync();
   };
 
   const handleToggleSubtask = async (id: string) => {
     await toggleSubtask(id);
     if (form) await reloadSubtasks(form.id);
+    refreshSubtaskCounts();
     sync();
   };
 
   const handleDeleteSubtask = async (id: string) => {
     await deleteSubtaskLocal(id);
     if (form) await reloadSubtasks(form.id);
+    refreshSubtaskCounts();
     sync();
   };
 
@@ -709,6 +849,10 @@ export function PlanificadorScreen() {
     setForm({ ...form, dueDate: selected });
   };
 
+  const projectTitles = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.title])), [projects]);
+  const meta: TaskMeta = { subtaskCounts, projectTitles };
+  // Solo proyectos ya sincronizados (id numérico de servidor): son los únicos que acepta el backend.
+  const selectableProjects = projects.filter((p) => /^\d+$/.test(p.id));
   const visibleStatuses = columnViewMode === "flechas" ? [TASK_STATUSES[activeStatusIndex]] : TASK_STATUSES;
 
   return (
@@ -866,6 +1010,8 @@ export function PlanificadorScreen() {
                 onDraftChange={(status, t) => setDrafts({ ...drafts, [status]: t })}
                 onQuickAdd={handleQuickAdd}
                 onOpenTask={openTask}
+                meta={meta}
+                onCyclePriority={handleCyclePriority}
                 onMoveTask={async (taskId, status, beforeTaskId) => {
                   await moveTask(taskId, status, beforeTaskId);
                   await reload();
@@ -885,20 +1031,21 @@ export function PlanificadorScreen() {
                         <Text style={styles.emptyText}>Sin tareas</Text>
                       ) : (
                         columnTasks.map((task) => {
-                          const badge = dueBadge(task.dueDate, task.status === "done");
                           return (
                             <Pressable key={task.id} style={styles.listTaskRow} onPress={() => openTask(task)}>
+                              <Pressable hitSlop={8} onPress={() => handleToggleDone(task)}>
+                                <View style={[styles.checkbox, task.status === "done" && styles.checkboxChecked]}>
+                                  {task.status === "done" && <Text style={styles.checkboxMark}>✓</Text>}
+                                </View>
+                              </Pressable>
                               <Pressable
+                                hitSlop={8}
                                 style={[styles.listPriorityDot, { backgroundColor: priorityStyle(task.priority).text }]}
                                 onPress={() => handleCyclePriority(task)}
                               />
                               <View style={styles.listTaskInfo}>
                                 <Text style={[styles.listTaskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
-                                {badge && (
-                                  <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-                                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-                                  </View>
-                                )}
+                                <TaskBadges task={task} meta={meta} />
                               </View>
                               {(task.synced === 0 || task.pendingOp === "update") && (
                                 <Text style={styles.pendingTag}>pendiente</Text>
@@ -910,6 +1057,20 @@ export function PlanificadorScreen() {
                     </View>
                   );
                 })}
+
+                <View style={styles.quickAddRow}>
+                  <TextInput
+                    style={styles.quickAddInput}
+                    placeholder="+ Añadir tarea"
+                    value={listDraft}
+                    onChangeText={setListDraft}
+                    onSubmitEditing={handleListQuickAdd}
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                  <Pressable style={styles.addButton} onPress={handleListQuickAdd}>
+                    <Text style={styles.addButtonText}>+</Text>
+                  </Pressable>
+                </View>
               </View>
             )}
           </>
@@ -924,6 +1085,7 @@ export function PlanificadorScreen() {
                 canMoveUp={index > 0}
                 canMoveDown={index < planners.length - 1}
                 onOpenTask={openTask}
+                meta={meta}
                 onSync={sync}
                 onRename={(name) => renamePlannerById(planner.id, name)}
                 onDelete={() => deletePlannerById(planner.id, planner.name)}
@@ -1034,6 +1196,37 @@ export function PlanificadorScreen() {
                 onChangeText={(t) => form && setForm({ ...form, tagsText: t })}
                 placeholderTextColor={colors.mutedForeground}
               />
+
+              <Text style={styles.fieldLabel}>Proyecto</Text>
+              {form && /^\d+$/.test(form.id) ? (
+                <>
+                  <View style={styles.chipRow}>
+                    <Pressable
+                      style={[styles.chip, form.projectId === null && styles.chipSelected]}
+                      onPress={() => handleSetProject(null)}
+                      disabled={savingProject}
+                    >
+                      <Text style={[styles.chipText, form.projectId === null && styles.chipTextSelected]}>Sin proyecto</Text>
+                    </Pressable>
+                    {selectableProjects.map((p) => {
+                      const selected = String(form.projectId) === p.id;
+                      return (
+                        <Pressable
+                          key={p.id}
+                          style={[styles.chip, selected && styles.chipSelected]}
+                          onPress={() => handleSetProject(Number(p.id))}
+                          disabled={savingProject}
+                        >
+                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>📁 {p.title}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.customFieldsHint}>Cambiar el proyecto requiere conexión</Text>
+                </>
+              ) : (
+                <Text style={styles.customFieldsHint}>Disponible cuando la tarea se haya sincronizado</Text>
+              )}
 
               <Text style={styles.fieldLabel}>Subtareas</Text>
               {subtasks.map((s) => (
@@ -1354,6 +1547,8 @@ function TaskKanbanColumns({
   onDraftChange,
   onQuickAdd,
   onOpenTask,
+  meta,
+  onCyclePriority,
   onMoveTask,
 }: {
   statuses: readonly TaskStatus[];
@@ -1362,6 +1557,8 @@ function TaskKanbanColumns({
   onDraftChange: (status: TaskStatus, text: string) => void;
   onQuickAdd: (status: TaskStatus) => void;
   onOpenTask: (task: LocalTask) => void;
+  meta: TaskMeta;
+  onCyclePriority: (task: LocalTask) => void;
   onMoveTask: (taskId: string, status: TaskStatus, beforeTaskId: string | null) => Promise<void>;
 }) {
   const [liveTasks, setLiveTasks] = useState<LocalTask[] | null>(null);
@@ -1506,6 +1703,8 @@ function TaskKanbanColumns({
                   key={task.id}
                   task={task}
                   isDragging={draggingTaskId === task.id}
+                  meta={meta}
+                  onCyclePriority={() => onCyclePriority(task)}
                   onPress={() => onOpenTask(task)}
                   onLayout={(e) => handleCardLayout(task.id, e)}
                   onDragStart={() => handleDragStart(task)}
@@ -1536,11 +1735,71 @@ function TaskKanbanColumns({
   );
 }
 
+/** Insignias compactas de una tarea (puerto de las de TaskCard en dashboard/src/pages/PlanificadorPage.tsx):
+ * prioridad (solo si se pasa `onCyclePriority` — en la Lista ya hay un punto de color que cumple
+ * esa función), fecha, proyecto, progreso de subtareas, tiempo y tags. Las propiedades
+ * personalizadas NO se pintan aquí: sus valores solo existen en el servidor (ver types.ts) y
+ * pedirlos para cada tarjeta exigiría una llamada por tablero. */
+function TaskBadges({ task, meta, onCyclePriority }: { task: LocalTask; meta: TaskMeta; onCyclePriority?: () => void }) {
+  const due = dueBadge(task.dueDate, task.status === "done");
+  const counts = meta.subtaskCounts[task.id];
+  const projectTitle = task.projectId != null ? meta.projectTitles[String(task.projectId)] : undefined;
+  const tags = parseTaskTags(task);
+  const priority = priorityStyle(task.priority);
+
+  return (
+    <View style={styles.badgeRow}>
+      {onCyclePriority && (
+        <Pressable hitSlop={6} onPress={onCyclePriority} style={[styles.badge, { backgroundColor: priority.bg }]}>
+          <Text style={[styles.badgeText, { color: priority.text }]}>{TASK_PRIORITY_LABELS[task.priority]}</Text>
+        </Pressable>
+      )}
+      {due && (
+        <View style={[styles.badge, { backgroundColor: due.bg }]}>
+          <Text style={[styles.badgeText, { color: due.text }]}>📅 {due.label}</Text>
+        </View>
+      )}
+      {projectTitle ? (
+        <View style={[styles.badge, { backgroundColor: colors.primaryTint }]}>
+          <Text style={[styles.badgeText, { color: colors.primary }]}>📁 {projectTitle}</Text>
+        </View>
+      ) : null}
+      {counts && counts.total > 0 && (
+        <View style={[styles.badge, { backgroundColor: colors.muted }]}>
+          <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>
+            ☑ {counts.done}/{counts.total}
+          </Text>
+        </View>
+      )}
+      {(task.estimatedMinutes != null || task.actualMinutes > 0) && (
+        <View style={[styles.badge, { backgroundColor: colors.muted }]}>
+          <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>
+            ⏱ {task.actualMinutes}
+            {task.estimatedMinutes != null ? `/${task.estimatedMinutes}` : ""} min
+          </Text>
+        </View>
+      )}
+      {task.notes ? (
+        <View style={[styles.badge, { backgroundColor: colors.muted }]}>
+          <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>📝</Text>
+        </View>
+      ) : null}
+      {tags.map((tag) => (
+        <View key={tag} style={[styles.badge, styles.tagBadge]}>
+          <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>#{tag}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // Tarjeta con mango de arrastre — mismo patrón que DraggableNavRow en AppSidebar.tsx y
 // DraggableKanbanCard en PaginaDetailScreen.tsx.
 function DraggableTaskCard({
   task,
   isDragging,
+  meta,
+  onCyclePriority,
   onPress,
   onLayout,
   onDragStart,
@@ -1550,6 +1809,8 @@ function DraggableTaskCard({
 }: {
   task: LocalTask;
   isDragging: boolean;
+  meta: TaskMeta;
+  onCyclePriority: () => void;
   onPress: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
   onDragStart: () => void;
@@ -1590,8 +1851,6 @@ function DraggableTaskCard({
     })
   ).current;
 
-  const badge = dueBadge(task.dueDate, task.status === "done");
-
   return (
     <Animated.View
       onLayout={onLayout}
@@ -1599,17 +1858,14 @@ function DraggableTaskCard({
     >
       <Pressable style={styles.taskCard} onPress={onPress}>
         {task.image ? <Image source={{ uri: task.image }} style={styles.taskCardImage} /> : null}
-        <View style={[styles.priorityDot, { backgroundColor: priorityStyle(task.priority).text }]} />
         <View style={styles.taskCardContent}>
           <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {badge && (
-              <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-                <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-              </View>
-            )}
-            {task.notes ? <Text style={styles.taskNotesIndicator}>📝</Text> : null}
-          </View>
+          {task.description ? (
+            <Text style={styles.taskDescription} numberOfLines={2}>
+              {task.description}
+            </Text>
+          ) : null}
+          <TaskBadges task={task} meta={meta} onCyclePriority={onCyclePriority} />
         </View>
         {(task.synced === 0 || task.pendingOp === "update") && <Text style={styles.pendingTag}>pendiente</Text>}
         <View {...panResponder.panHandlers} hitSlop={8} style={styles.kanbanCardDragHandle}>
@@ -1634,6 +1890,7 @@ function PlannerBoardCard({
   canMoveUp,
   canMoveDown,
   onOpenTask,
+  meta,
   onSync,
   onRename,
   onDelete,
@@ -1645,6 +1902,7 @@ function PlannerBoardCard({
   canMoveUp: boolean;
   canMoveDown: boolean;
   onOpenTask: (task: LocalTask) => void;
+  meta: TaskMeta;
   onSync: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -1732,6 +1990,12 @@ function PlannerBoardCard({
         onDraftChange={(status, t) => setDrafts((prev) => ({ ...prev, [status]: t }))}
         onQuickAdd={handleQuickAdd}
         onOpenTask={onOpenTask}
+        meta={meta}
+        onCyclePriority={async (task) => {
+          await cycleTaskPriority(task);
+          await reload();
+          onSync();
+        }}
         onMoveTask={async (taskId, status, beforeTaskId) => {
           await moveTask(taskId, status, beforeTaskId);
           await reload();
@@ -1962,9 +2226,12 @@ const styles = StyleSheet.create({
     padding: 10,
     ...shadow,
   },
-  priorityDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
   taskCardImage: { width: 36, height: 36, borderRadius: radius.input, flexShrink: 0 },
-  taskNotesIndicator: { fontSize: 11 },
+  taskDescription: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  // Insignias de la tarjeta/fila: varias a la vez (prioridad, fecha, proyecto, subtareas, tiempo,
+  // tags) — envuelven en vez de desbordar el ancho de una columna estrecha.
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  tagBadge: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border },
   taskCardContent: { flex: 1, gap: 4 },
   taskTitle: { fontFamily: fonts.sans, fontSize: 13, color: colors.foreground },
   taskTitleDone: { textDecorationLine: "line-through", color: colors.mutedForeground },
