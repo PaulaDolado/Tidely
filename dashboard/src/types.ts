@@ -562,8 +562,17 @@ export interface AgendaNote {
 export interface TravelItineraryItem {
   id: string;
   date: string; // YYYY-MM-DD
+  // Nombre de la actividad o, si `kind` es "place", el nombre del lugar en el momento de añadirlo (por
+  // si luego se borra de "Lugares guardados").
   title: string;
-  notes?: string;
+  notes?: string; // LEGADO: antes la única nota libre de una actividad
+  // "activity" (por defecto, también para las antiguas) = actividad con sus datos; "place" = visita a un
+  // lugar guardado del viaje, que se lee de Trip.places por `placeId`.
+  kind?: "activity" | "place";
+  url?: string; // actividad: enlace (http/https, ya normalizado)
+  pricePerPerson?: number | null; // actividad: precio por persona, en EUR
+  description?: string; // actividad: breve descripción
+  placeId?: string; // lugar: id del SavedPlace
 }
 
 export interface Trip {

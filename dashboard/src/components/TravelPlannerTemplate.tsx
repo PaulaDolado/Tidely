@@ -53,6 +53,11 @@ function fmtMoney(n: number): string {
   return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+// Precio por persona: con céntimos fijos cuando los hay ("3,10 €", no "3,1 €"), sin ellos si es entero.
+function fmtPrice(n: number): string {
+  return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+}
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -96,17 +101,17 @@ export function TravelPlannerTemplate({
 }) {
   const today = todayKey();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // `placeId: null` = lugar nuevo (el "+" de la cabecera de "Lugares guardados").
-  const [dialog, setDialog] = useState<{ kind: "trip" } | { kind: "place"; placeId: string | null } | null>(null);
+  // `placeId: null` = lugar nuevo (el "+" de la cabecera de "Lugares guardados"); `itemId: null` = nueva
+  // entrada del itinerario (el "+" de la cabecera de "Mi itinerario").
+  const [dialog, setDialog] = useState<
+    { kind: "trip" } | { kind: "place"; placeId: string | null } | { kind: "itinerary"; itemId: string | null } | null
+  >(null);
   const [showFullItinerary, setShowFullItinerary] = useState(false);
   const [showAllPlaces, setShowAllPlaces] = useState(false);
 
   const [destination, setDestination] = useState("");
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
-
-  const [activityDate, setActivityDate] = useState("");
-  const [activityTitle, setActivityTitle] = useState("");
 
   // Contenido ya con los lugares dentro de cada viaje (los antiguos, plegados en el viaje por
   // defecto) — todo lo de abajo lee de aquí, no de las props en bruto.
@@ -154,18 +159,22 @@ export function TravelPlannerTemplate({
     setDialog(null);
   };
 
-  const addActivity = (e: FormEvent) => {
-    e.preventDefault();
-    const title = activityTitle.trim();
-    if (!selected || !title) return;
-    const item: TravelItineraryItem = { id: newId(), date: activityDate || selected.startDate, title };
-    patchTrip(selected.id, { itinerary: [...selected.itinerary, item] });
-    setActivityTitle("");
+  // Una entrada del itinerario es una actividad (con nombre, enlace, precio/pp y descripción) o la visita a
+  // un lugar guardado, ambas con su fecha; `itemId: null` = nueva.
+  const saveItineraryItem = (itemId: string | null, values: Omit<TravelItineraryItem, "id">) => {
+    if (!selected) return;
+    const next =
+      itemId === null
+        ? [...selected.itinerary, { id: newId(), ...values }]
+        : selected.itinerary.map((it) => (it.id === itemId ? { id: it.id, ...values } : it));
+    patchTrip(selected.id, { itinerary: next });
+    setDialog(null);
   };
 
-  const removeActivity = (itemId: string) => {
+  const removeItineraryItem = (itemId: string) => {
     if (!selected) return;
     patchTrip(selected.id, { itinerary: selected.itinerary.filter((it) => it.id !== itemId) });
+    setDialog(null);
   };
 
   // Los lugares son del viaje seleccionado: cualquier cambio reescribe `places` de ESE viaje.
@@ -222,6 +231,8 @@ export function TravelPlannerTemplate({
   ];
 
   const openTrip = dialog?.kind === "trip" ? selected : undefined;
+  const openItemId = dialog?.kind === "itinerary" ? dialog.itemId : undefined; // undefined = diálogo cerrado
+  const openItem = openItemId ? selected?.itinerary.find((it) => it.id === openItemId) : undefined;
   const openPlaceId = dialog?.kind === "place" ? dialog.placeId : undefined; // undefined = diálogo cerrado
   const openPlace = openPlaceId ? selectedPlaces.find((p) => p.id === openPlaceId) : undefined;
   const tripPanelTitle = !selected ? "Próximo viaje" : selected.endDate < today ? "Último viaje" : selected.id === upcoming[0]?.id ? "Próximo viaje" : "Viaje";
@@ -335,57 +346,37 @@ export function TravelPlannerTemplate({
 
         {/* Itinerario del viaje seleccionado */}
         <section className="card-soft flex flex-col">
-          <h3 className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">Mi itinerario</h3>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Mi itinerario</h3>
+            {selected && (
+              <button
+                type="button"
+                onClick={() => setDialog({ kind: "itinerary", itemId: null })}
+                aria-label="Añadir al itinerario"
+                title="Añadir una actividad o un lugar guardado"
+                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-sm leading-none text-background transition-opacity hover:opacity-80"
+              >
+                +
+              </button>
+            )}
+          </div>
           {selected ? (
             <>
               {itinerary.length === 0 ? (
-                <p className="mb-4 text-sm text-muted-foreground">Todavía no hay actividades. Añade la primera abajo.</p>
+                <p className="mb-4 text-sm text-muted-foreground">Todavía no hay nada planificado. Con el + añade una actividad o un lugar guardado a su fecha.</p>
               ) : (
                 <ul className="relative mb-4 space-y-4 border-l border-border pl-5">
                   {(showFullItinerary ? itinerary : itinerary.slice(0, ITINERARY_PREVIEW)).map((it) => (
-                    <li key={it.id} className="group relative">
-                      <span className="absolute -left-[26px] top-1.5 size-2.5 rounded-full border-2 border-card bg-primary" aria-hidden="true" />
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">{fmtDate(it.date)}</p>
-                          <p className="text-sm font-medium">{it.title}</p>
-                          {it.notes && <p className="text-xs text-muted-foreground">{it.notes}</p>}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeActivity(it.id)}
-                          title="Eliminar actividad"
-                          className="shrink-0 cursor-pointer text-xs opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </li>
+                    <ItineraryRow
+                      key={it.id}
+                      item={it}
+                      place={it.kind === "place" ? selectedPlaces.find((p) => p.id === it.placeId) : undefined}
+                      onEdit={() => setDialog({ kind: "itinerary", itemId: it.id })}
+                      onRemove={() => removeItineraryItem(it.id)}
+                    />
                   ))}
                 </ul>
               )}
-
-              <form onSubmit={addActivity} className="mb-4 space-y-2">
-                <input
-                  type="date"
-                  value={activityDate || selected.startDate}
-                  min={selected.startDate}
-                  max={selected.endDate}
-                  onChange={(e) => setActivityDate(e.target.value)}
-                  className="field-input w-full px-3 py-2 text-xs"
-                />
-                <div className="flex gap-2">
-                  <input
-                    value={activityTitle}
-                    onChange={(e) => setActivityTitle(e.target.value)}
-                    placeholder="Nueva actividad…"
-                    className="field-input min-w-0 flex-1 px-3 py-2 text-xs"
-                  />
-                  <button type="submit" className="btn-dark px-4 py-2 text-xs">
-                    +
-                  </button>
-                </div>
-              </form>
 
               {itinerary.length > ITINERARY_PREVIEW && (
                 <button
@@ -451,6 +442,17 @@ export function TravelPlannerTemplate({
       {openTrip && (
         <TripDialog trip={openTrip} onChange={(patch) => patchTrip(openTrip.id, patch)} onRemove={() => removeTrip(openTrip.id)} onClose={() => setDialog(null)} />
       )}
+      {openItemId !== undefined && selected && (openItemId === null || openItem) && (
+        <ItineraryDialog
+          key={openItemId ?? "new"}
+          trip={selected}
+          places={selectedPlaces}
+          item={openItem}
+          onSave={(values) => saveItineraryItem(openItemId, values)}
+          onRemove={openItem ? () => removeItineraryItem(openItem.id) : undefined}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {openPlaceId !== undefined && selected && (openPlaceId === null || openPlace) && (
         <PlaceDialog
           key={openPlaceId ?? "new"}
@@ -461,6 +463,58 @@ export function TravelPlannerTemplate({
         />
       )}
     </div>
+  );
+}
+
+// Una entrada del itinerario en la línea de tiempo: la fecha, el nombre (con 📍 si es un lugar guardado),
+// el precio por persona, el enlace y la descripción. Se edita con el lápiz y se quita con la ✕ (ambos al
+// pasar el ratón por encima).
+function ItineraryRow({
+  item,
+  place,
+  onEdit,
+  onRemove,
+}: {
+  item: TravelItineraryItem;
+  place?: SavedPlace; // el lugar guardado al que apunta, si la entrada es una visita y sigue existiendo
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const isPlace = item.kind === "place";
+  const name = place?.name ?? item.title;
+  const url = isPlace ? place?.url : item.url;
+  const description = isPlace ? place?.description : item.description;
+  const price = !isPlace && item.pricePerPerson != null ? item.pricePerPerson : null;
+
+  return (
+    <li className="group relative">
+      <span className="absolute -left-[26px] top-1.5 size-2.5 rounded-full border-2 border-card bg-primary" aria-hidden="true" />
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{fmtDate(item.date)}</p>
+          <p className="text-sm font-medium [overflow-wrap:anywhere]">
+            {isPlace && <span aria-hidden="true">📍 </span>}
+            {name}
+            {price !== null && <span className="ml-1.5 whitespace-nowrap text-xs font-normal text-muted-foreground">· {fmtPrice(price)}/pp</span>}
+          </p>
+          {url && (
+            <a href={url} target="_blank" rel="noopener noreferrer" title={url} className="block truncate text-xs text-primary hover:underline">
+              {hostnameOf(url)}
+            </a>
+          )}
+          {description && <p className="line-clamp-2 text-xs text-muted-foreground">{description}</p>}
+          {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
+        </div>
+        <div className="flex shrink-0 gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <button type="button" onClick={onEdit} aria-label={`Editar ${name}`} title="Editar" className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            ✎
+          </button>
+          <button type="button" onClick={onRemove} aria-label={`Quitar ${name}`} title="Quitar del itinerario" className="cursor-pointer text-xs text-muted-foreground hover:text-destructive">
+            ✕
+          </button>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -712,6 +766,181 @@ function TripDialog({
         className="field-input min-h-[7rem] resize-y"
       />
       <DeleteButton label="Eliminar viaje" onConfirm={onRemove} />
+    </DialogShell>
+  );
+}
+
+// Alta/edición de una entrada del itinerario: o una ACTIVIDAD nueva (nombre, enlace, precio por persona y
+// una breve descripción) o la VISITA a un lugar ya guardado del viaje; en los dos casos con su fecha, que
+// tiene que caer dentro del viaje.
+function ItineraryDialog({
+  trip,
+  places,
+  item,
+  onSave,
+  onRemove,
+  onClose,
+}: {
+  trip: Trip;
+  places: SavedPlace[];
+  item?: TravelItineraryItem; // undefined = entrada nueva
+  onSave: (values: Omit<TravelItineraryItem, "id">) => void;
+  onRemove?: () => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"activity" | "place">(item?.kind === "place" ? "place" : "activity");
+  const clampDate = (d: string) => (d < trip.startDate ? trip.startDate : d > trip.endDate ? trip.endDate : d);
+  const [date, setDate] = useState(clampDate(item?.date ?? trip.startDate));
+  const [name, setName] = useState(item?.kind === "place" ? "" : (item?.title ?? ""));
+  const [url, setUrl] = useState(item?.url ?? "");
+  const [price, setPrice] = useState(item?.pricePerPerson != null ? String(item.pricePerPerson) : "");
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [placeId, setPlaceId] = useState(item?.placeId && places.some((p) => p.id === item.placeId) ? item.placeId : (places[0]?.id ?? ""));
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!date) {
+      setError("Elige la fecha.");
+      return;
+    }
+
+    if (mode === "place") {
+      const place = places.find((p) => p.id === placeId);
+      if (!place) {
+        setError("Elige un lugar guardado.");
+        return;
+      }
+      onSave({ kind: "place", date, title: place.name, placeId: place.id, notes: item?.notes });
+      return;
+    }
+
+    if (!name.trim()) {
+      setError("Ponle un nombre a la actividad.");
+      return;
+    }
+    const rawUrl = url.trim();
+    const normalizedUrl = rawUrl ? normalizePlaceUrl(rawUrl) : null;
+    if (rawUrl && !normalizedUrl) {
+      setError("El enlace no es válido. Usa una dirección http o https.");
+      return;
+    }
+    const amount = price.trim() === "" ? null : Number(price.replace(",", "."));
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      setError("El precio por persona debe ser un número válido.");
+      return;
+    }
+    onSave({
+      kind: "activity",
+      date,
+      title: name.trim(),
+      url: normalizedUrl ?? undefined,
+      pricePerPerson: amount,
+      description: description.trim() || undefined,
+      notes: item?.notes,
+    });
+  };
+
+  const tab = (value: "activity" | "place", label: string) => (
+    <button
+      type="button"
+      onClick={() => setMode(value)}
+      aria-pressed={mode === value}
+      className={`cursor-pointer rounded-full border px-4 py-1.5 text-xs transition-colors ${
+        mode === value ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:bg-muted"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <DialogShell title={item ? "Editar itinerario" : "Añadir al itinerario"} onClose={onClose}>
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Tipo de entrada">
+          {tab("activity", "Actividad nueva")}
+          {tab("place", "Lugar guardado")}
+        </div>
+
+        <label className="flex flex-col gap-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+          Fecha
+          <input
+            type="date"
+            value={date}
+            min={trip.startDate}
+            max={trip.endDate}
+            onChange={(e) => setDate(e.target.value)}
+            className="field-input normal-case tracking-normal text-foreground"
+          />
+        </label>
+
+        {mode === "activity" ? (
+          <>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre de la actividad" maxLength={120} className="field-input font-serif text-lg" />
+            <label className="flex flex-col gap-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              Enlace
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://…"
+                inputMode="url"
+                className="field-input normal-case tracking-normal text-foreground"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              Precio por persona (€)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="Gratis / sin indicar"
+                className="field-input normal-case tracking-normal text-foreground"
+              />
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Breve descripción: horario, qué incluye, cómo llegar…"
+              maxLength={300}
+              className="field-input min-h-[5rem] resize-y"
+            />
+          </>
+        ) : places.length === 0 ? (
+          <p className="rounded-2xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+            Todavía no hay lugares guardados en {trip.destination}. Guárdalos con el + de «Lugares guardados» y vuelve aquí para ponerles fecha.
+          </p>
+        ) : (
+          <label className="flex flex-col gap-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+            Lugar
+            <select value={placeId} onChange={(e) => setPlaceId(e.target.value)} className="field-input normal-case tracking-normal text-foreground">
+              {places.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.favorite ? "♥ " : ""}
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <div className="flex items-center gap-3">
+          <button type="submit" disabled={mode === "place" && places.length === 0} className="btn-dark disabled:opacity-50">
+            Guardar
+          </button>
+          <button type="button" onClick={onClose} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            Cancelar
+          </button>
+          {onRemove && (
+            <span className="ml-auto">
+              <DeleteButton label="Quitar" onConfirm={onRemove} />
+            </span>
+          )}
+        </div>
+      </form>
     </DialogShell>
   );
 }

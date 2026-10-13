@@ -56,6 +56,10 @@ function fmtRange(trip: Trip): string {
 function fmtMoney(n: number): string {
   return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+// Precio por persona: con céntimos fijos cuando los hay ("3,10 €", no "3,1 €"), sin ellos si es entero.
+function fmtPrice(n: number): string {
+  return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+}
 
 // La web reduce cada foto a 1200 px de lado máximo y JPEG 0.82 antes de embeberla (readResizedImage en
 // TravelPlannerTemplate.tsx) para no pasarse de los 8 MB de `content` por página (ver
@@ -142,17 +146,14 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const [destination, setDestination] = useState("");
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
-  const [activityDate, setActivityDate] = useState<string | null>(null);
-  const [activityTitle, setActivityTitle] = useState("");
+  // "new" = entrada nueva del itinerario (el "+" de la cabecera de "Mi itinerario").
+  const [editingItemId, setEditingItemId] = useState<string | "new" | null>(null);
 
   const update = (patch: Partial<TravelContent>) => onChange({ trips, places: legacyPlaces, ...patch });
 
   const sortedTrips = useMemo(() => [...trips].sort((a, b) => a.startDate.localeCompare(b.startDate)), [trips]);
   const upcoming = sortedTrips.filter((t) => t.endDate >= today);
   const selected = trips.find((t) => t.id === selectedId) ?? pickDefaultTrip(trips, today);
-  // Fecha de la nueva actividad, siempre dentro del viaje (como min/max en la web): si se cambió de
-  // viaje o se acortaron sus fechas después de elegirla, se recorta en vez de dejar una fuera de rango.
-  const itineraryDate = selected ? clampDateKey(activityDate ?? selected.startDate, selected.startDate, selected.endDate) : today;
   const itinerary = useMemo(() => [...(selected?.itinerary ?? [])].sort((a, b) => a.date.localeCompare(b.date)), [selected]);
   const places = selected?.places ?? [];
   const favorites = places.filter((p) => p.favorite).length;
@@ -175,15 +176,23 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
     await update({ trips: trips.filter((t) => t.id !== id) });
   };
 
-  const addActivity = async () => {
-    const title = activityTitle.trim();
-    if (!selected || !title) return;
-    const item: TravelItineraryItem = { id: Crypto.randomUUID(), date: itineraryDate, title };
-    setActivityTitle("");
-    await patchTrip(selected.id, { itinerary: [...selected.itinerary, item] });
+  // Una entrada del itinerario es una actividad (nombre, enlace, precio/pp y descripción) o la visita a un
+  // lugar guardado, ambas con su fecha.
+  const saveItem = async (id: string | "new", values: Omit<TravelItineraryItem, "id">) => {
+    if (!selected) return;
+    const next =
+      id === "new"
+        ? [...selected.itinerary, { id: Crypto.randomUUID(), ...values }]
+        : selected.itinerary.map((it) => (it.id === id ? { id: it.id, ...values } : it));
+    setEditingItemId(null);
+    await patchTrip(selected.id, { itinerary: next });
   };
 
-  const removeActivity = (itemId: string) => selected && patchTrip(selected.id, { itinerary: selected.itinerary.filter((it) => it.id !== itemId) });
+  const removeItem = async (itemId: string) => {
+    if (!selected) return;
+    setEditingItemId(null);
+    await patchTrip(selected.id, { itinerary: selected.itinerary.filter((it) => it.id !== itemId) });
+  };
 
   // Los lugares son del viaje seleccionado: cualquier cambio reescribe `places` de ESE viaje.
   const setPlaces = async (next: SavedPlace[]) => {
@@ -239,6 +248,8 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const tripPanelTitle = !selected ? "Próximo viaje" : selected.endDate < today ? "Último viaje" : selected.id === upcoming[0]?.id ? "Próximo viaje" : "Viaje";
   const editingTrip = trips.find((t) => t.id === editingTripId) ?? null;
   const editingPlace = places.find((p) => p.id === editingPlaceId) ?? null;
+  const editingItem = itinerary.find((it) => it.id === editingItemId) ?? null;
+  const itemDialogOpen = selected !== null && (editingItemId === "new" || editingItem !== null);
   const placeDialogOpen = selected !== null && (editingPlaceId === "new" || editingPlace !== null);
 
   return (
@@ -321,35 +332,60 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Mi itinerario</Text>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Mi itinerario</Text>
+          {selected && (
+            <Pressable style={styles.plusButton} onPress={() => setEditingItemId("new")} hitSlop={8} accessibilityLabel="Añadir al itinerario">
+              <Text style={styles.plusButtonText}>+</Text>
+            </Pressable>
+          )}
+        </View>
         {selected ? (
           <>
             {itinerary.length === 0 ? (
-              <Text style={styles.emptyText}>Todavía no hay actividades. Añade la primera abajo.</Text>
+              <Text style={styles.emptyText}>Todavía no hay nada planificado. Con el + añade una actividad o un lugar guardado a su fecha.</Text>
             ) : (
               <View style={styles.timeline}>
-                {(showFullItinerary ? itinerary : itinerary.slice(0, ITINERARY_PREVIEW)).map((it) => (
-                  <View key={it.id} style={styles.timelineRow}>
-                    <View style={styles.timelineDot} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.mutedSmall}>{fmtDate(it.date)}</Text>
-                      <Text style={styles.timelineTitle}>{it.title}</Text>
-                      {it.notes ? <Text style={styles.mutedSmall}>{it.notes}</Text> : null}
+                {(showFullItinerary ? itinerary : itinerary.slice(0, ITINERARY_PREVIEW)).map((it) => {
+                  const isPlace = it.kind === "place";
+                  const place = isPlace ? places.find((p) => p.id === it.placeId) : undefined;
+                  const name = place?.name ?? it.title;
+                  const url = isPlace ? place?.url : it.url;
+                  const description = isPlace ? place?.description : it.description;
+                  const price = !isPlace && it.pricePerPerson != null ? it.pricePerPerson : null;
+                  return (
+                    <View key={it.id} style={styles.timelineRow}>
+                      <View style={styles.timelineDot} />
+                      {/* Tocar la entrada la edita; el enlace se abre aparte. */}
+                      <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => setEditingItemId(it.id)} accessibilityLabel={`Editar ${name}`}>
+                        <Text style={styles.mutedSmall}>{fmtDate(it.date)}</Text>
+                        <Text style={styles.timelineTitle}>
+                          {isPlace ? "📍 " : ""}
+                          {name}
+                          {price !== null ? <Text style={styles.timelinePrice}>{`  · ${fmtPrice(price)}/pp`}</Text> : null}
+                        </Text>
+                        {description ? (
+                          <Text style={styles.mutedSmall} numberOfLines={2}>
+                            {description}
+                          </Text>
+                        ) : null}
+                        {it.notes ? <Text style={styles.mutedSmall}>{it.notes}</Text> : null}
+                      </Pressable>
+                      {url ? (
+                        <Pressable onPress={() => Linking.openURL(url).catch(() => undefined)} hitSlop={8} accessibilityLabel={`Abrir ${hostnameOf(url)}`}>
+                          <Text style={styles.timelineLink} numberOfLines={1}>
+                            {hostnameOf(url)}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable onPress={() => removeItem(it.id)} hitSlop={8} accessibilityLabel={`Quitar ${name}`}>
+                        <Text style={styles.deleteX}>✕</Text>
+                      </Pressable>
                     </View>
-                    <Pressable onPress={() => removeActivity(it.id)} hitSlop={8}>
-                      <Text style={styles.deleteX}>✕</Text>
-                    </Pressable>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             )}
-            <DateField compact value={itineraryDate} min={selected.startDate} max={selected.endDate} onChange={setActivityDate} />
-            <View style={styles.addRow}>
-              <TextInput style={[styles.input, styles.addInput]} placeholder="Nueva actividad…" value={activityTitle} onChangeText={setActivityTitle} onSubmitEditing={addActivity} />
-              <Pressable style={styles.addButton} onPress={addActivity}>
-                <Text style={styles.addButtonText}>+</Text>
-              </Pressable>
-            </View>
             {itinerary.length > ITINERARY_PREVIEW && (
               <Pressable style={styles.outlineButton} onPress={() => setShowFullItinerary((v) => !v)}>
                 <Text style={styles.outlineButtonText}>{showFullItinerary ? "Ver menos" : `Ver itinerario completo (${itinerary.length})`}</Text>
@@ -436,6 +472,24 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
                   ])
                 }
                 onClose={() => setEditingTripId(null)}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={itemDialogOpen} animationType="slide" transparent onRequestClose={() => setEditingItemId(null)}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            {itemDialogOpen && selected && editingItemId && (
+              <ItineraryForm
+                key={editingItemId}
+                trip={selected}
+                places={places}
+                item={editingItem ?? undefined}
+                onSave={(values) => saveItem(editingItemId, values)}
+                onDelete={editingItem ? () => removeItem(editingItem.id) : undefined}
+                onClose={() => setEditingItemId(null)}
               />
             )}
           </View>
@@ -556,6 +610,157 @@ function TripForm({
       <Pressable style={styles.deleteButton} onPress={onDelete}>
         <Text style={styles.deleteButtonText}>Eliminar viaje</Text>
       </Pressable>
+      <Pressable style={styles.cancelButton} onPress={onClose}>
+        <Text style={styles.cancelButtonText}>Cancelar</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+// Alta/edición de una entrada del itinerario: o una ACTIVIDAD nueva (nombre, enlace, precio por persona
+// y una breve descripción) o la VISITA a un lugar ya guardado del viaje; en los dos casos con su fecha,
+// que solo puede caer dentro del viaje (como min/max en la web).
+function ItineraryForm({
+  trip,
+  places,
+  item,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  trip: Trip;
+  places: SavedPlace[];
+  item?: TravelItineraryItem; // undefined = entrada nueva
+  onSave: (values: Omit<TravelItineraryItem, "id">) => Promise<void>;
+  onDelete?: () => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"activity" | "place">(item?.kind === "place" ? "place" : "activity");
+  const [date, setDate] = useState(clampDateKey(item?.date ?? trip.startDate, trip.startDate, trip.endDate));
+  const [name, setName] = useState(item?.kind === "place" ? "" : (item?.title ?? ""));
+  const [url, setUrl] = useState(item?.url ?? "");
+  const [price, setPrice] = useState(item?.pricePerPerson != null ? String(item.pricePerPerson).replace(".", ",") : "");
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [placeId, setPlaceId] = useState(item?.placeId && places.some((p) => p.id === item.placeId) ? item.placeId : (places[0]?.id ?? ""));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setError(null);
+    if (mode === "place") {
+      const place = places.find((p) => p.id === placeId);
+      if (!place) {
+        setError("Elige un lugar guardado.");
+        return;
+      }
+      setSaving(true);
+      await onSave({ kind: "place", date, title: place.name, placeId: place.id, notes: item?.notes });
+      setSaving(false);
+      return;
+    }
+
+    if (!name.trim()) {
+      setError("Ponle un nombre a la actividad.");
+      return;
+    }
+    const rawUrl = url.trim();
+    const normalizedUrl = rawUrl ? normalizePlaceUrl(rawUrl) : null;
+    if (rawUrl && !normalizedUrl) {
+      setError("El enlace no es válido. Usa una dirección http o https.");
+      return;
+    }
+    const amount = price.trim() === "" ? null : Number(price.replace(",", "."));
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      setError("El precio por persona debe ser un número válido.");
+      return;
+    }
+    setSaving(true);
+    await onSave({
+      kind: "activity",
+      date,
+      title: name.trim(),
+      url: normalizedUrl ?? undefined,
+      pricePerPerson: amount,
+      description: description.trim() || undefined,
+      notes: item?.notes,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <Text style={styles.modalTitle}>{item ? "Editar itinerario" : "Añadir al itinerario"}</Text>
+
+      <View style={[styles.chipRow, { marginBottom: 12 }]}>
+        {(
+          [
+            ["activity", "Actividad nueva"],
+            ["place", "Lugar guardado"],
+          ] as const
+        ).map(([value, label]) => (
+          <Pressable key={value} style={[styles.chip, mode === value && styles.chipSelected]} onPress={() => setMode(value)}>
+            <Text style={[styles.chipText, mode === value && styles.chipTextSelected]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <DateField label="Fecha" value={date} min={trip.startDate} max={trip.endDate} onChange={setDate} />
+
+      {mode === "activity" ? (
+        <View style={{ gap: 10, marginTop: 12 }}>
+          <TextInput style={styles.input} placeholder="Nombre de la actividad" value={name} onChangeText={setName} maxLength={120} />
+          <TextInput
+            style={styles.input}
+            placeholder="Enlace (https://…)"
+            value={url}
+            onChangeText={setUrl}
+            keyboardType="url"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Precio por persona (€)"
+            value={price}
+            onChangeText={(t) => setPrice(t.replace(/[^0-9.,]/g, ""))}
+            keyboardType="decimal-pad"
+          />
+          <TextInput
+            style={[styles.input, styles.inputMultiline]}
+            placeholder="Breve descripción: horario, qué incluye, cómo llegar…"
+            value={description}
+            onChangeText={setDescription}
+            maxLength={300}
+            multiline
+          />
+        </View>
+      ) : places.length === 0 ? (
+        <Text style={[styles.emptyText, { marginTop: 12 }]}>
+          Todavía no hay lugares guardados en {trip.destination}. Guárdalos con el + de «Lugares guardados» y vuelve aquí para ponerles fecha.
+        </Text>
+      ) : (
+        <View style={{ gap: 6, marginTop: 12 }}>
+          <Text style={styles.fieldLabel}>Lugar</Text>
+          {places.map((p) => (
+            <Pressable key={p.id} style={[styles.placeOption, placeId === p.id && styles.placeOptionSelected]} onPress={() => setPlaceId(p.id)}>
+              <Text style={[styles.placeOptionText, placeId === p.id && styles.chipTextSelected]} numberOfLines={1}>
+                {p.favorite ? "♥ " : ""}
+                {p.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {error ? <Text style={[styles.errorText, { marginTop: 8 }]}>{error}</Text> : null}
+      <Pressable style={[styles.primaryButton, { marginTop: 14 }]} onPress={submit} disabled={saving || (mode === "place" && places.length === 0)}>
+        <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
+      </Pressable>
+      {onDelete ? (
+        <Pressable style={styles.deleteButton} onPress={onDelete}>
+          <Text style={styles.deleteButtonText}>Quitar del itinerario</Text>
+        </Pressable>
+      ) : null}
       <Pressable style={styles.cancelButton} onPress={onClose}>
         <Text style={styles.cancelButtonText}>Cancelar</Text>
       </Pressable>
@@ -773,6 +978,11 @@ const styles = StyleSheet.create({
     borderColor: colors.card,
   },
   timelineTitle: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.foreground },
+  timelinePrice: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  timelineLink: { fontFamily: fonts.sans, fontSize: 11, color: colors.primary, maxWidth: 90 },
+  placeOption: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.input, paddingHorizontal: 12, paddingVertical: 10 },
+  placeOptionSelected: { backgroundColor: colors.foreground, borderColor: colors.foreground },
+  placeOptionText: { fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },
   deleteX: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, paddingHorizontal: 4 },
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   addInput: { flex: 1 },

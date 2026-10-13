@@ -164,8 +164,16 @@ export interface AgendaContent {
 export interface TravelItineraryItem {
   id: string;
   date: string; // YYYY-MM-DD
+  // Nombre de la actividad o, si `kind` es "place", el del lugar al añadirlo (por si se borra después).
   title: string;
-  notes?: string;
+  notes?: string; // LEGADO: antes la única nota libre de una actividad
+  // "activity" (por defecto, también las antiguas) o "place" = visita a un lugar guardado del viaje
+  // (Trip.places, por `placeId`). Mismos campos que TravelItineraryItem en dashboard/src/types.ts.
+  kind?: "activity" | "place";
+  url?: string;
+  pricePerPerson?: number | null; // EUR
+  description?: string;
+  placeId?: string;
 }
 export interface Trip {
   id: string;
