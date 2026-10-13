@@ -17,7 +17,7 @@ import { colors, fonts, radius, shadow } from "../theme";
 
 // Puerto de dashboard/src/components/BudgetSummaryCard.tsx: "Resumen del presupuesto" de Finanzas —
 // un donut con los gastos del mes por categoría y, a sus lados, cada categoría con lo gastado frente
-// a lo que le toca (su % de los ingresos del mes): la mitad a la izquierda con el texto alineado a la
+// a su máximo (su % de la última nómina o, sin nómina, de los ingresos del mes): la mitad a la izquierda con el texto alineado a la
 // izquierda y la mitad a la derecha alineada a la derecha. Se pide y se edita por REST (ver
 // api/finance.ts), así que necesita conexión: sin ella se avisa en vez de enseñar una tarjeta vacía.
 //
@@ -63,7 +63,9 @@ interface Slice {
   spent: number;
 }
 
-function Donut({ slices, total }: { slices: Slice[]; total: number }) {
+// En el centro, "gastado / máximo": el máximo es la suma de los máximos de las categorías; si lo
+// gastado lo supera, sale en rojo, igual que en cada categoría.
+function Donut({ slices, total, max }: { slices: Slice[]; total: number; max: number }) {
   let offset = 0;
   return (
     <View style={styles.donut}>
@@ -94,8 +96,11 @@ function Donut({ slices, total }: { slices: Slice[]; total: number }) {
         </G>
       </Svg>
       <View style={styles.donutCenter} pointerEvents="none">
-        <Text style={styles.donutTotal} numberOfLines={1} adjustsFontSizeToFit>
+        <Text style={[styles.donutTotal, total > max && { color: colors.destructive }]} numberOfLines={1} adjustsFontSizeToFit>
           {eur(total)}
+        </Text>
+        <Text style={styles.donutMax} numberOfLines={1} adjustsFontSizeToFit>
+          / {eur(max)}
         </Text>
         <Text style={styles.donutCaption}>GASTADO</Text>
       </View>
@@ -106,7 +111,7 @@ function Donut({ slices, total }: { slices: Slice[]; total: number }) {
 type Side = "left" | "right";
 
 // Una categoría a un lado del donut: su nombre, "gastado / presupuesto" con el lápiz de editar al
-// lado y, debajo, su % de los ingresos. Si se pasa de lo que le toca, el gasto sale en rojo.
+// lado y, debajo, su % de la nómina. Si se pasa de su máximo, el gasto sale en rojo.
 function CategoryLabel({
   name,
   color,
@@ -151,7 +156,7 @@ function CategoryLabel({
 }
 
 // Formulario compartido por "añadir" (botón +) y "editar" (lápiz de cada categoría): nombre, color y
-// % de los ingresos del mes. Los errores del servidor (nombre repetido, pasarse del 100%...) se
+// % de la última nómina. Los errores del servidor (nombre repetido, pasarse del 100%...) se
 // enseñan tal cual, que ya vienen redactados para el usuario.
 function CategoryForm({
   initial,
@@ -199,13 +204,13 @@ function CategoryForm({
       <Text style={styles.modalTitle}>{onDelete ? "Editar categoría" : "Nueva categoría"}</Text>
       <Text style={styles.fieldLabel}>Nombre</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} maxLength={50} placeholder="Nombre de la categoría" autoFocus />
-      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>% de los ingresos del mes</Text>
+      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>% de tu última nómina</Text>
       <TextInput
         style={styles.input}
         value={percent}
         onChangeText={(t) => setPercent(t.replace(/[^0-9.,]/g, ""))}
         keyboardType="decimal-pad"
-        accessibilityLabel="Porcentaje de los ingresos"
+        accessibilityLabel="Porcentaje de la nómina"
       />
       <Text style={styles.hint}>{maxPercent > 0 ? `Puedes asignar hasta ${pct(maxPercent)}.` : "Ya has asignado el 100%."}</Text>
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Color</Text>
@@ -287,7 +292,15 @@ export function BudgetSummaryCard({
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Resumen del presupuesto</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.cardTitle}>Resumen del presupuesto</Text>
+          {/* De dónde sale el máximo de cada categoría (ver budgetService.getBudgetSummary) */}
+          <Text style={styles.baseText}>
+            {summary.budgetBase.source === "nomina" && summary.budgetBase.date
+              ? `Sobre tu nómina del ${new Date(summary.budgetBase.date).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}: ${eur(summary.budgetBase.amount)}`
+              : `Sin nómina registrada: sobre los ingresos del mes (${eur(summary.budgetBase.amount)})`}
+          </Text>
+        </View>
         <Pressable style={styles.plusButton} onPress={() => setForm("new")} hitSlop={8} accessibilityLabel="Añadir categoría">
           <Text style={styles.plusButtonText}>+</Text>
         </Pressable>
@@ -295,7 +308,7 @@ export function BudgetSummaryCard({
 
       <View style={styles.body}>
         <View style={[styles.column, { alignItems: "flex-start" }]}>{left.map((c) => labelFor(c, "left"))}</View>
-        <Donut slices={slices} total={total} />
+        <Donut slices={slices} total={total} max={summary.totalBudget} />
         <View style={[styles.column, { alignItems: "flex-end" }]}>
           {right.map((c) => labelFor(c, "right"))}
           {summary.uncategorizedSpent > 0 && <CategoryLabel name="Sin categoría" color="muted" spent={summary.uncategorizedSpent} side="right" />}
@@ -364,6 +377,8 @@ const styles = StyleSheet.create({
   donut: { width: DONUT_PX, height: DONUT_PX, alignItems: "center", justifyContent: "center" },
   donutCenter: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", paddingHorizontal: 26 },
   donutTotal: { fontFamily: fonts.serif, fontSize: 20, color: colors.foreground },
+  donutMax: { fontFamily: fonts.sans, fontSize: 10, color: colors.mutedForeground },
+  baseText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
   donutCaption: { fontFamily: fonts.sans, fontSize: 8, letterSpacing: 1.2, color: colors.mutedForeground },
 
   label: { gap: 2, maxWidth: "100%" },
