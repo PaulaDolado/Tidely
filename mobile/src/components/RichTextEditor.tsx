@@ -41,8 +41,10 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   // contenido realmente cambió por fuera").
   const lastSyncedRef = useRef("");
   const readyRef = useRef(false);
-  const [prompt, setPrompt] = useState<{ kind: "link" | "equation" | "bookmark" } | null>(null);
+  const [prompt, setPrompt] = useState<{ kind: "link" | "equation" | "bookmark" | "table" } | null>(null);
   const [promptValue, setPromptValue] = useState("");
+  // Solo lo usa el diálogo de tabla (filas en promptValue, columnas aquí).
+  const [promptValue2, setPromptValue2] = useState("");
   const [submittingPrompt, setSubmittingPrompt] = useState(false);
 
   const inject = (js: string) => webViewRef.current?.injectJavaScript(`${js}; true;`);
@@ -89,6 +91,13 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       setPrompt({ kind: "bookmark" });
       return;
     }
+    if (msg.type === "request-table") {
+      // Mismos valores por defecto que los window.prompt de insertTable en la web (3 x 3).
+      setPromptValue("3");
+      setPromptValue2("3");
+      setPrompt({ kind: "table" });
+      return;
+    }
     if (msg.type === "request-image") {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -133,6 +142,13 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       return;
     }
 
+    if (prompt.kind === "table") {
+      // Los límites (1-20 filas, 1-10 columnas) los aplica applyTable dentro de la página.
+      inject(`window.applyTable(${JSON.stringify(value)}, ${JSON.stringify(promptValue2.trim())})`);
+      setPrompt(null);
+      return;
+    }
+
     const fn = prompt.kind === "link" ? "applyLink" : "applyEquation";
     inject(`window.${fn}(${JSON.stringify(value)})`);
     setPrompt(null);
@@ -153,20 +169,49 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         <KeyboardAvoidingView style={styles.promptBackdrop} behavior="padding">
           <View style={styles.promptCard}>
             <Text style={styles.promptTitle}>
-              {prompt?.kind === "link" ? "URL del enlace" : prompt?.kind === "bookmark" ? "URL de la web" : "Fórmula en LaTeX"}
+              {prompt?.kind === "link"
+                ? "URL del enlace"
+                : prompt?.kind === "bookmark"
+                  ? "URL de la web"
+                  : prompt?.kind === "table"
+                    ? "Tamaño de la tabla"
+                    : "Fórmula en LaTeX"}
             </Text>
-            <TextInput
-              autoFocus
-              style={styles.promptInput}
-              value={promptValue}
-              onChangeText={setPromptValue}
-              placeholder={prompt?.kind === "equation" ? "E = mc^2" : "https://"}
-              placeholderTextColor={colors.mutedForeground}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!submittingPrompt}
-              onSubmitEditing={submitPrompt}
-            />
+            {prompt?.kind === "table" ? (
+              <>
+                <Text style={styles.promptLabel}>Filas (1-20)</Text>
+                <TextInput
+                  autoFocus
+                  style={styles.promptInput}
+                  value={promptValue}
+                  onChangeText={setPromptValue}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <Text style={styles.promptLabel}>Columnas (1-10)</Text>
+                <TextInput
+                  style={styles.promptInput}
+                  value={promptValue2}
+                  onChangeText={setPromptValue2}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  onSubmitEditing={submitPrompt}
+                />
+              </>
+            ) : (
+              <TextInput
+                autoFocus
+                style={styles.promptInput}
+                value={promptValue}
+                onChangeText={setPromptValue}
+                placeholder={prompt?.kind === "equation" ? "E = mc^2" : "https://"}
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!submittingPrompt}
+                onSubmitEditing={submitPrompt}
+              />
+            )}
             <View style={styles.promptActions}>
               <Pressable onPress={() => setPrompt(null)} hitSlop={8} disabled={submittingPrompt}>
                 <Text style={styles.promptCancel}>Cancelar</Text>
@@ -188,6 +233,7 @@ const styles = StyleSheet.create({
   promptBackdrop: { flex: 1, backgroundColor: "rgba(45,41,38,0.4)", alignItems: "center", justifyContent: "center", padding: 24 },
   promptCard: { width: "100%", maxWidth: 400, backgroundColor: colors.card, borderRadius: radius.card, padding: 20, gap: 12 },
   promptTitle: { fontFamily: fonts.sansBold, fontSize: 14, color: colors.foreground },
+  promptLabel: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground, marginBottom: -6 },
   promptInput: {
     borderWidth: 1,
     borderColor: colors.inputBorder,

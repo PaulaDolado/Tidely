@@ -18,10 +18,10 @@
 // Protocolo con React Native (ver RichTextEditor.tsx):
 //   WebView → RN (postMessage, JSON): {type:"ready"} | {type:"change", html} |
 //     {type:"request-link"} | {type:"request-equation", current} | {type:"request-image"} |
-//     {type:"request-bookmark"} | {type:"alert", message}
+//     {type:"request-bookmark"} | {type:"request-table"} | {type:"alert", message}
 //   RN → WebView (injectJavaScript llamando a estas funciones globales):
 //     setEditorHtml(html) | applyLink(url) | applyEquation(latex) | applyImage(dataUri) |
-//     applyBookmark(previewJson)
+//     applyBookmark(previewJson) | applyTable(rows, cols)
 export const RICH_EDITOR_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -32,11 +32,16 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; background: #fdfcfb; font-family: -apple-system, Roboto, sans-serif; }
+  #toolbar-wrap { position: sticky; top: 0; z-index: 10; background: #f6f3ee; border-bottom: 1px solid #e5e0d8; }
   #toolbar {
     display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 2px; padding: 6px 6px;
-    border-bottom: 1px solid #e5e0d8; background: #f6f3ee; position: sticky; top: 0; z-index: 10;
     -webkit-overflow-scrolling: touch;
   }
+  #color-panel { display: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px 10px; border-top: 1px solid #e5e0d8; }
+  #color-panel.open { display: flex; }
+  #color-panel .swatch { width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.18); padding: 0; flex: none; }
+  #color-panel .swatch:active { transform: scale(0.9); }
+  #color-panel .clear-hilite { border: 1px solid #e5e0d8; background: #fff; border-radius: 14px; padding: 5px 10px; font-size: 12px; color: #6b6258; }
   #toolbar button {
     flex: none; border: none; background: transparent; border-radius: 8px; padding: 7px 9px;
     font-size: 13px; color: #6b6258; white-space: nowrap;
@@ -67,10 +72,17 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   #editor .todo-list li::before { content: ""; position: absolute; left: 0; top: 3px; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid #9c948a; }
   #editor .todo-list li.todo-checked { color: #9c948a; text-decoration: line-through; }
   #editor .todo-list li.todo-checked::before { content: "\\2713"; display: flex; align-items: center; justify-content: center; border-color: #8a6a4b; background: #8a6a4b; color: #fff; font-size: 11px; text-decoration: none; }
-  #editor .callout { display: flex; gap: 8px; margin: 0.5em 0; border-radius: 12px; background: rgba(0,0,0,0.05); padding: 10px 14px; }
+  #editor .callout { display: flex; align-items: flex-start; gap: 8px; margin: 0.5em 0; border-radius: 12px; background: rgba(0,0,0,0.05); padding: 10px 14px; }
+  #editor .callout-icon { flex-shrink: 0; }
+  #editor .callout-text { flex: 1; min-width: 0; }
   #editor table { margin: 0.5em 0; width: 100%; border-collapse: collapse; }
   #editor td, #editor th { border: 1px solid #e5e0d8; padding: 6px 8px; vertical-align: top; }
   #editor .toc { margin: 0.75em 0; border-radius: 12px; border: 1px solid #e5e0d8; padding: 10px 14px; }
+  #editor .toc-title { margin: 0 0 4px; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; color: #6b6258; }
+  #editor .toc ul { list-style: none; padding-left: 0; margin: 0; font-size: 14px; }
+  #editor .toc li { margin: 4px 0; }
+  #editor .toc-indent-1 { padding-left: 16px; }
+  #editor .toc-indent-2 { padding-left: 32px; }
   #editor .col-layout { display: grid; gap: 12px; margin: 0.5em 0; }
   #editor .col-layout.cols-2 { grid-template-columns: repeat(2, 1fr); }
   #editor .col-layout.cols-3 { grid-template-columns: repeat(3, 1fr); }
@@ -79,12 +91,15 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   #editor .bookmark-card { display: flex; margin: 0.5em 0; border: 1px solid #e5e0d8; border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; }
   #editor .bookmark-text { flex: 1; min-width: 0; padding: 10px 14px; }
   #editor .bookmark-title { font-weight: 600; }
+  #editor .bookmark-desc { font-size: 12px; color: #6b6258; margin-top: 2px; }
+  #editor .bookmark-url { font-size: 11px; color: #6b6258; margin-top: 6px; }
   #editor .bookmark-thumb { width: 90px; flex-shrink: 0; }
   #editor .bookmark-thumb img { width: 100%; height: 100%; object-fit: cover; margin: 0; border-radius: 0; }
   #editor .equation { margin: 0.75em 0; text-align: center; overflow-x: auto; }
 </style>
 </head>
 <body>
+<div id="toolbar-wrap">
 <div id="toolbar">
   <button data-cmd="formatBlock" data-arg="<h1>">H1</button>
   <button data-cmd="formatBlock" data-arg="<h2>">H2</button>
@@ -95,6 +110,8 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   <button data-cmd="italic" style="font-style:italic">I</button>
   <button data-cmd="underline" style="text-decoration:underline">S</button>
   <button data-cmd="strikeThrough" style="text-decoration:line-through">T</button>
+  <button id="btn-forecolor" title="Color de texto"><span style="font-weight:700;border-bottom:3px solid #c0392b">A</span></button>
+  <button id="btn-hilite" title="Resaltar"><span style="background:#fff2ac;padding:0 4px;font-weight:700">A</span></button>
   <span class="sep"></span>
   <select id="sel-font" title="Tipografía">
     <option value="" disabled selected>Tipografía</option>
@@ -106,6 +123,8 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   <span class="sep"></span>
   <button data-cmd="formatBlock" data-arg="<blockquote>">❝ Cita</button>
   <button id="btn-callout">💡 Destacado</button>
+  <button data-cmd="formatBlock" data-arg="<pre>" title="Bloque de código">&lt;/&gt;</button>
+  <button data-cmd="insertHorizontalRule" title="Línea divisoria">─ Línea</button>
   <button id="btn-table">▦ Tabla</button>
   <button id="btn-equation">∑ Ecuación</button>
   <button id="btn-toc">☰ Índice</button>
@@ -121,8 +140,14 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   <button id="btn-bookmark">🌐 Web</button>
   <button id="btn-image">🖼 Imagen</button>
   <span class="sep"></span>
+  <button data-cmd="justifyLeft" title="Alinear a la izquierda">⯇</button>
+  <button data-cmd="justifyCenter" title="Centrar">≡</button>
+  <button data-cmd="justifyRight" title="Alinear a la derecha">⯈</button>
+  <span class="sep"></span>
   <button data-cmd="undo">↺</button>
   <button data-cmd="redo">↻</button>
+</div>
+<div id="color-panel"></div>
 </div>
 <div id="editor" contenteditable="true" data-placeholder=""></div>
 <script>
@@ -161,13 +186,63 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   // actual — mismo motivo que el mousedown de cada ToolbarButton en el editor de escritorio.
   [
     ["btn-checklist", '<ul class="todo-list"><li>Tarea</li></ul><p><br></p>'],
-    ["btn-callout", '<div class="callout"><span>\\ud83d\\udca1</span><span>Texto destacado</span></div><p><br></p>'],
-    ["btn-table", "<table><tbody>" + ("<tr>" + "<td><br></td>".repeat(3) + "</tr>").repeat(3) + "</tbody></table><p><br></p>"],
+    // Mismas clases callout-icon/callout-text que insertCallout en el editor de escritorio, para
+    // que un destacado creado aquí se vea igual (mismo CSS) al abrirlo en la web.
+    ["btn-callout", '<div class="callout"><span class="callout-icon">\\ud83d\\udca1</span><span class="callout-text">Texto destacado</span></div><p><br></p>'],
   ].forEach(function (pair) {
     var btn = document.getElementById(pair[0]);
     var html = pair[1];
     btn.addEventListener("mousedown", function (e) { e.preventDefault(); saveSelection(); });
     btn.addEventListener("click", function () { exec("insertHTML", html); });
+  });
+
+  // Tabla: RN pide filas y columnas (mismo motivo que enlace/ecuación: nada de window.prompt) y
+  // devuelve las dos cifras a applyTable, con los mismos límites que insertTable en la web
+  // (1-20 filas, 1-10 columnas, 3 si no es un número válido).
+  document.getElementById("btn-table").addEventListener("mousedown", function (e) { e.preventDefault(); saveSelection(); });
+  document.getElementById("btn-table").addEventListener("click", function () { post({ type: "request-table" }); });
+  window.applyTable = function (rowsInput, colsInput) {
+    var rows = Math.min(Math.max(parseInt(rowsInput, 10) || 3, 1), 20);
+    var cols = Math.min(Math.max(parseInt(colsInput, 10) || 3, 1), 10);
+    var row = "<tr>" + "<td><br></td>".repeat(cols) + "</tr>";
+    exec("insertHTML", "<table><tbody>" + row.repeat(rows) + "</tbody></table><p><br></p>");
+  };
+
+  // Color de texto / resaltado: la web usa <input type="color">, que en un WebView táctil no es
+  // fiable, así que aquí es un panel con una paleta fija de muestras. Los botones de la barra y
+  // las muestras hacen preventDefault en mousedown para no robarle la selección al editor.
+  var TEXT_COLORS = ["#1a1a1a", "#6b6b6b", "#c0392b", "#d97706", "#ca8a04", "#16a34a", "#0d9488", "#2563eb", "#7c3aed", "#db2777"];
+  var HILITE_COLORS = ["#fff2ac", "#ffe0b2", "#ffd6d6", "#ffd9ec", "#e6d9ff", "#cfe8ff", "#d4f5d4", "#e0e0e0"];
+  var colorPanel = document.getElementById("color-panel");
+  var panelMode = null;
+  function closePanel() { colorPanel.className = ""; colorPanel.innerHTML = ""; panelMode = null; }
+  function openPanel(mode) {
+    if (panelMode === mode) { closePanel(); return; }
+    panelMode = mode;
+    colorPanel.innerHTML = "";
+    var cmd = mode === "text" ? "foreColor" : "hiliteColor";
+    (mode === "text" ? TEXT_COLORS : HILITE_COLORS).forEach(function (hex) {
+      var sw = document.createElement("button");
+      sw.className = "swatch";
+      sw.style.background = hex;
+      sw.addEventListener("mousedown", function (e) { e.preventDefault(); });
+      sw.addEventListener("click", function () { exec(cmd, hex); closePanel(); });
+      colorPanel.appendChild(sw);
+    });
+    if (mode === "hilite") {
+      var clear = document.createElement("button");
+      clear.className = "clear-hilite";
+      clear.textContent = "✕ Quitar resaltado";
+      clear.addEventListener("mousedown", function (e) { e.preventDefault(); });
+      clear.addEventListener("click", function () { exec("hiliteColor", "transparent"); closePanel(); });
+      colorPanel.appendChild(clear);
+    }
+    colorPanel.className = "open";
+  }
+  [["btn-forecolor", "text"], ["btn-hilite", "hilite"]].forEach(function (pair) {
+    var btn = document.getElementById(pair[0]);
+    btn.addEventListener("mousedown", function (e) { e.preventDefault(); saveSelection(); });
+    btn.addEventListener("click", function () { openPanel(pair[1]); });
   });
 
   document.getElementById("btn-link").addEventListener("mousedown", function (e) { e.preventDefault(); saveSelection(); });
@@ -332,8 +407,14 @@ export const RICH_EDITOR_HTML = `<!DOCTYPE html>
   editor.addEventListener("input", emitChange);
   editor.addEventListener("blur", emitChange);
 
+  // Además de escribir el HTML, vuelve a pedir las tipografías de Google Fonts que ya use ese
+  // contenido (igual que el useEffect del editor de escritorio): una página guardada con
+  // "Playfair Display" no la tiene cargada en esta sesión hasta que alguien la elija de nuevo.
   window.setEditorHtml = function (html) {
     if (editor.innerHTML !== html) editor.innerHTML = html;
+    GOOGLE_FONTS.forEach(function (font) {
+      if ((html || "").indexOf(font) !== -1) loadGoogleFont(font);
+    });
   };
   window.setEditorPlaceholder = function (text) {
     editor.setAttribute("data-placeholder", text || "");

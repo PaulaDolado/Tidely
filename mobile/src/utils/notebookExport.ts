@@ -9,6 +9,17 @@ interface ExportPage {
 
 const KATEX_CSS_URL = "https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/katex.min.css";
 
+// Mismas tipografías que GOOGLE_FONTS en dashboard/src/utils/googleFonts.ts (y que el selector de
+// richEditorHtml.ts). El documento exportado vive fuera del editor, así que lista TODAS en vez de
+// cargar solo las usadas, igual que allGoogleFontsLinkTags() en la web.
+const GOOGLE_FONTS = ["Inter", "Roboto", "Playfair Display", "Merriweather", "Lora", "Poppins", "Space Mono", "Caveat"];
+
+function allGoogleFontsLinkTags(): string {
+  return GOOGLE_FONTS.map(
+    (f) => `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(f)}:wght@400;600;700&display=swap" />`
+  ).join("\n");
+}
+
 // Mismos estilos que SHARED_CONTENT_CSS en dashboard/src/utils/notebookExport.ts.
 const SHARED_CONTENT_CSS = `
   body { font-family: Georgia, 'Times New Roman', serif; color: #1a1a1a; line-height: 1.6; }
@@ -33,6 +44,10 @@ const SHARED_CONTENT_CSS = `
   .page-content table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
   .page-content td, .page-content th { border: 1px solid #ccc; padding: 0.4rem 0.6rem; vertical-align: top; }
   .page-content .toc { border: 1px solid #ccc; border-radius: 10px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+  .page-content .toc-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b6b6b; margin: 0 0 0.4rem; }
+  .page-content .toc ul { list-style: none; padding-left: 0; margin: 0; font-size: 0.9rem; }
+  .page-content .toc-indent-1 { padding-left: 1rem; }
+  .page-content .toc-indent-2 { padding-left: 2rem; }
   .page-content .col-layout { display: grid; gap: 1rem; margin: 0.5rem 0; }
   .page-content .col-layout.cols-2 { grid-template-columns: repeat(2, 1fr); }
   .page-content .col-layout.cols-3 { grid-template-columns: repeat(3, 1fr); }
@@ -41,6 +56,8 @@ const SHARED_CONTENT_CSS = `
   .page-content .bookmark-card { display: flex; border: 1px solid #ccc; border-radius: 10px; overflow: hidden; text-decoration: none; color: inherit; margin: 0.5rem 0; }
   .page-content .bookmark-text { padding: 0.75rem 1rem; flex: 1; min-width: 0; }
   .page-content .bookmark-title { font-weight: 600; }
+  .page-content .bookmark-desc { font-size: 0.8rem; color: #6b6b6b; margin-top: 0.25rem; }
+  .page-content .bookmark-url { font-size: 0.75rem; color: #6b6b6b; margin-top: 0.4rem; }
   .page-content .bookmark-thumb { width: 120px; flex-shrink: 0; }
   .page-content .bookmark-thumb img { width: 100%; height: 100%; object-fit: cover; margin: 0; border-radius: 0; }
   .page-content .equation { text-align: center; margin: 0.75rem 0; }
@@ -73,6 +90,7 @@ export function buildNotebookPdfHtml(documentTitle: string, subtitle: string, pa
 <meta charset="utf-8" />
 <title>${escapeHtml(documentTitle)}</title>
 <link rel="stylesheet" href="${KATEX_CSS_URL}" />
+${allGoogleFontsLinkTags()}
 <style>
   @media print { .page-block { page-break-inside: avoid; } }
   ${SHARED_CONTENT_CSS}
@@ -93,6 +111,8 @@ export function buildNotebookWordHtml(documentTitle: string, subtitle: string, p
 <!--[if gte mso 9]>
 <xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml>
 <![endif]-->
+<!-- Word ignora los <link> externos al abrir un .doc, así que aquí no se añaden las tipografías de
+     Google Fonts ni KaTeX (caen a su equivalente más cercano), igual que en la web. -->
 <style>${SHARED_CONTENT_CSS}</style>
 </head>
 <body>${bodyHtml}</body>
