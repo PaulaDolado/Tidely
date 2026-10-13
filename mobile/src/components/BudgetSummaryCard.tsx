@@ -13,6 +13,7 @@ import {
   deleteBudgetCategory,
   updateBudgetCategory,
 } from "../api/finance";
+import { MonthPickerButton, Period, periodLabel } from "./MonthSwitcher";
 import { colors, fonts, radius, shadow } from "../theme";
 
 // Puerto de dashboard/src/components/BudgetSummaryCard.tsx: "Resumen del presupuesto" de Finanzas —
@@ -245,10 +246,14 @@ function CategoryForm({
 export function BudgetSummaryCard({
   summary,
   failed,
+  period,
+  onPeriodChange,
   onChanged,
 }: {
   summary: BudgetSummary | null;
   failed: boolean; // la última petición del presupuesto falló (sin conexión...)
+  period: Period; // mes que se enseña (el botón de calendario de la cabecera lo cambia)
+  onPeriodChange: (p: Period) => void;
   onChanged: () => Promise<void> | void;
 }) {
   const insets = useSafeAreaInsets();
@@ -258,7 +263,13 @@ export function BudgetSummaryCard({
   if (!summary) {
     return (
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Resumen del presupuesto</Text>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.cardTitle}>Resumen del presupuesto</Text>
+            <Text style={styles.periodText}>{periodLabel(period)}</Text>
+          </View>
+          <MonthPickerButton value={period} onChange={onPeriodChange} />
+        </View>
         {failed ? <Text style={styles.emptyText}>El presupuesto necesita conexión. Se cargará al volver a tenerla.</Text> : <ActivityIndicator color={colors.primary} />}
       </View>
     );
@@ -305,6 +316,7 @@ export function BudgetSummaryCard({
       <View style={styles.cardHeader}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.cardTitle}>Resumen del presupuesto</Text>
+          <Text style={styles.periodText}>{periodLabel(period)}</Text>
           {/* De dónde sale el máximo de cada categoría (ver budgetService.getBudgetSummary) */}
           <Text style={styles.baseText}>
             {summary.budgetBase.source === "nomina" && summary.budgetBase.date
@@ -312,9 +324,12 @@ export function BudgetSummaryCard({
               : `Sin nómina registrada: sobre los ingresos del mes (${eur(summary.budgetBase.amount)})`}
           </Text>
         </View>
-        <Pressable style={styles.plusButton} onPress={() => setForm("new")} hitSlop={8} accessibilityLabel="Añadir categoría">
-          <Text style={styles.plusButtonText}>+</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <MonthPickerButton value={period} onChange={onPeriodChange} />
+          <Pressable style={styles.plusButton} onPress={() => setForm("new")} hitSlop={8} accessibilityLabel="Añadir categoría">
+            <Text style={styles.plusButtonText}>+</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.body}>
@@ -406,7 +421,9 @@ const styles = StyleSheet.create({
   donutCenter: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", paddingHorizontal: 26 },
   donutTotal: { fontFamily: fonts.serif, fontSize: 20, color: colors.foreground },
   donutMax: { fontFamily: fonts.sans, fontSize: 10, color: colors.mutedForeground },
-  baseText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
+  baseText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
+  periodText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.foreground, opacity: 0.8, marginTop: 2 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   donutCaption: { fontFamily: fonts.sans, fontSize: 8, letterSpacing: 1.2, color: colors.mutedForeground },
 
   label: { gap: 2, maxWidth: "100%" },

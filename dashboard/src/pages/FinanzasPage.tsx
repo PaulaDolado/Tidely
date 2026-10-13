@@ -6,7 +6,7 @@ import { Loading, ErrorMessage } from "../components/Feedback";
 import { MiniLineChart } from "../components/MiniLineChart";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
 import { DayPicker } from "../components/DayPicker";
-import { currentPeriod, isCurrentPeriod, MonthSwitcher, Period, periodLabel } from "../components/MonthSwitcher";
+import { currentPeriod, isCurrentPeriod, monthName, Period, periodLabel } from "../components/MonthSwitcher";
 import { downloadCsv, transactionsToCsv } from "../utils/financeExport";
 import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, TotalBalance, Transaction } from "../types";
 
@@ -18,7 +18,8 @@ function eur(n: number): string {
 
 export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsGoal["type"]) => void }) {
   const [editingId, setEditingId] = useState<number | null>(null);
-  // Mes que enseñan "Resumen del presupuesto", "Resumen del mes" y el top de categorías (selector ‹ mes ›);
+  // Mes que enseñan "Resumen del presupuesto", "Resumen del mes" y el top de categorías (botón de calendario
+  // de la tarjeta del presupuesto);
   // las tarjetas de arriba (acumulado), la tendencia y la proyección no dependen de él.
   const [period, setPeriod] = useState<Period>(currentPeriod);
   const {
@@ -165,12 +166,10 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
         </div>
 
         <div className="space-y-6 lg:col-span-4 xl:col-span-5 2xl:col-span-4">
-          <MonthSwitcher value={period} onChange={setPeriod} />
-
-          <BudgetSummaryCard summary={budget} onChanged={reloadBudget} />
+          <BudgetSummaryCard summary={budget} period={period} onPeriodChange={setPeriod} onChanged={reloadBudget} />
 
           <div className="rounded-3xl bg-solid-card p-8 text-solid-card-foreground">
-            <h2 className="mb-6 text-xs uppercase tracking-widest opacity-60">Resumen del mes</h2>
+            <h2 className="mb-6 text-xs uppercase tracking-widest opacity-60">{isCurrentPeriod(period) ? "Resumen del mes" : `Resumen de ${monthName(period)}`}</h2>
             <div className={`space-y-4 transition-opacity ${loadingBalance ? "opacity-50" : ""}`}>
               <Row label="Ingresos" value={`+${eur(balance?.income ?? 0)}`} />
               <Row label="Gastos" value={`−${eur(balance?.expense ?? 0)}`} />

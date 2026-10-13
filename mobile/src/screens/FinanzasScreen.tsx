@@ -23,7 +23,7 @@ import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext
 import { api } from "../api/client";
 import { BudgetSummary, getBudgetSummary } from "../api/finance";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
-import { currentPeriod, isCurrentPeriod, MonthSwitcher, Period, periodLabel } from "../components/MonthSwitcher";
+import { currentPeriod, isCurrentPeriod, monthName, Period, periodLabel } from "../components/MonthSwitcher";
 import { useAuth } from "../auth/AuthContext";
 import { ENABLED_SECTIONS } from "../types";
 import { transactionsToCsv } from "../utils/financeExport";
@@ -255,13 +255,11 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
                 de una sola columna (ver el comentario de cabecera), pero el usuario lo quiere de
                 vuelta con el mismo estilo que en la web, justo antes de "Top categorías". */}
             {/* Como en la web, "Resumen del presupuesto" va justo encima de "Resumen del mes". */}
-            <MonthSwitcher value={period} onChange={changePeriod} />
-
-            <BudgetSummaryCard summary={budget} failed={budgetFailed} onChanged={reloadBudget} />
+            <BudgetSummaryCard summary={budget} failed={budgetFailed} period={period} onPeriodChange={changePeriod} onChanged={reloadBudget} />
 
             {balance && (
               <View style={styles.cardPrimary}>
-                <Text style={[styles.cardTitle, styles.cardTitlePrimary]}>Resumen del mes</Text>
+                <Text style={[styles.cardTitle, styles.cardTitlePrimary]}>{isCurrentPeriod(period) ? "Resumen del mes" : `Resumen de ${monthName(period)}`}</Text>
                 <View style={{ gap: 16 }}>
                   <View style={styles.summaryMonthRow}>
                     <Text style={styles.summaryMonthLabel}>Ingresos</Text>

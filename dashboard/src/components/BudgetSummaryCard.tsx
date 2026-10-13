@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
+import { MonthPickerButton, Period, periodLabel } from "./MonthSwitcher";
 import { BudgetSummary, BudgetSummaryCategory, CalendarColor } from "../types";
 
 function eur(n: number): string {
@@ -275,9 +276,13 @@ function CategoryLabel({
  */
 export function BudgetSummaryCard({
   summary,
+  period,
+  onPeriodChange,
   onChanged,
 }: {
   summary: BudgetSummary | null;
+  period: Period; // mes que se enseña (el botón de calendario de la cabecera lo cambia)
+  onPeriodChange: (p: Period) => void;
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -342,25 +347,29 @@ export function BudgetSummaryCard({
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Resumen del presupuesto</h2>
+          <p className="mt-1 text-[11px] font-medium text-foreground/80">{periodLabel(period)}</p>
           {/* De dónde sale el máximo de cada categoría (ver budgetService.getBudgetSummary) */}
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             {summary.budgetBase.source === "nomina" && summary.budgetBase.date
               ? `Sobre tu nómina del ${new Date(summary.budgetBase.date).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}: ${eur(summary.budgetBase.amount)}`
               : `Sin nómina registrada: sobre los ingresos del mes (${eur(summary.budgetBase.amount)})`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setEditingId(null);
-            setAdding((v) => !v);
-          }}
-          aria-label={adding ? "Cerrar" : "Añadir categoría"}
-          title={adding ? "Cerrar" : "Añadir categoría"}
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-sm leading-none text-background transition-opacity hover:opacity-80"
-        >
-          {adding ? "×" : "+"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <MonthPickerButton value={period} onChange={onPeriodChange} />
+          <button
+            type="button"
+            onClick={() => {
+              setEditingId(null);
+              setAdding((v) => !v);
+            }}
+            aria-label={adding ? "Cerrar" : "Añadir categoría"}
+            title={adding ? "Cerrar" : "Añadir categoría"}
+            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-sm leading-none text-background transition-opacity hover:opacity-80"
+          >
+            {adding ? "×" : "+"}
+          </button>
+        </div>
       </div>
 
       {adding && (
