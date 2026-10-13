@@ -588,6 +588,51 @@ export interface Trip {
   // Lugares guardados DE ESTE VIAJE (marcadores). Opcional: las páginas guardadas antes de que
   // pertenecieran a cada viaje no lo tienen — ver normalizeTravelContent en utils/travel.ts.
   places?: SavedPlace[];
+  // Secciones de debajo del itinerario, también DEL viaje. Opcionales: las páginas guardadas antes no las
+  // tienen (se leen siempre con `?? []`).
+  packing?: PackingItem[];
+  transport?: TransportDetail[];
+  contacts?: TripContact[];
+}
+
+// "Qué empacar": una casilla por cosa que llevar.
+export interface PackingItem {
+  id: string;
+  text: string;
+  packed?: boolean;
+}
+
+export type TransportType = "flight" | "train" | "bus" | "boat" | "car" | "other";
+
+// Archivo adjunto (tarjeta de embarque, billete...) embebido como data URL en el JSON de la página —
+// ver MAX_ATTACHMENT_BYTES / MAX_TOTAL_ATTACHMENT_CHARS en utils/travel.ts.
+export interface TripAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number; // bytes del archivo original
+  dataUrl: string; // "data:<mime>;base64,..."
+}
+
+// "Detalles del transporte": un trayecto con su fecha, hora, datos (operador, número, asiento, localizador...)
+// y los archivos adjuntos.
+export interface TransportDetail {
+  id: string;
+  type: TransportType;
+  title?: string; // p. ej. "Madrid → Lisboa"; sin él se enseña el nombre del tipo
+  date: string; // YYYY-MM-DD (puede caer fuera del viaje: se sale el día antes)
+  time?: string; // HH:MM
+  details?: string;
+  attachments?: TripAttachment[];
+}
+
+// "Contactos importantes": alojamiento, seguro, embajada... con ubicación, teléfono y/o correo.
+export interface TripContact {
+  id: string;
+  name: string;
+  location?: string;
+  phone?: string;
+  email?: string;
 }
 
 // Un lugar guardado: se ve como un marcador (miniatura de la URL + nombre + descripción).

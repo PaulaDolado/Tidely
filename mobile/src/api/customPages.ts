@@ -185,6 +185,39 @@ export interface Trip {
   budget?: number | null; // EUR
   itinerary: TravelItineraryItem[];
   places?: SavedPlace[]; // lugares guardados DE este viaje
+  // Opcionales para que las páginas antiguas sigan funcionando: leer siempre con `?? []`.
+  packing?: PackingItem[]; // "Qué empacar"
+  transport?: TransportDetail[]; // "Detalles del transporte"
+  contacts?: TripContact[]; // "Contactos importantes"
+}
+export interface PackingItem {
+  id: string;
+  text: string;
+  packed?: boolean;
+}
+export type TransportType = "flight" | "train" | "bus" | "boat" | "car" | "other";
+export interface TripAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number; // bytes del archivo original
+  dataUrl: string; // "data:<mime>;base64,<...>"
+}
+export interface TransportDetail {
+  id: string;
+  type: TransportType;
+  title?: string; // p. ej. "Madrid → Lisboa"
+  date: string; // YYYY-MM-DD
+  time?: string; // "HH:MM"
+  details?: string; // operador, nº de vuelo/tren, asiento, reserva, terminal…
+  attachments?: TripAttachment[];
+}
+export interface TripContact {
+  id: string;
+  name: string;
+  location?: string;
+  phone?: string;
+  email?: string;
 }
 export interface SavedPlace {
   id: string;

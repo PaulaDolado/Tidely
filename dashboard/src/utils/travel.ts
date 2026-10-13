@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { SavedPlace, Trip } from "../types";
+import { SavedPlace, TransportType, Trip, TripAttachment } from "../types";
 
 // Lógica de datos de la plantilla "viajes" (ver TravelPlannerTemplate), separada del componente para
 // que sea fácil de razonar: normalizar el contenido guardado, elegir el viaje por defecto y
@@ -79,4 +79,76 @@ export async function fetchLinkPreview(url: string): Promise<LinkPreviewResult |
   } catch {
     return null;
   }
+}
+
+// --- Archivos adjuntos y datos de las secciones del viaje (transporte, contactos, equipaje) ---
+
+// Los archivos (tarjeta de embarque, billetes...) se guardan embebidos como data URL dentro del
+// `content` de la página, igual que las fotos: el backend lo trata como JSON opaco y lo limita a
+// 8.000.000 de caracteres (ver CONTENT_BYTE_LIMIT en customPagesValidators.ts). Por eso hay un tope por
+// archivo y otro para el conjunto de adjuntos de la página, dejando sitio a las fotos de los viajes.
+export const MAX_ATTACHMENT_BYTES = 1_500_000;
+export const MAX_TOTAL_ATTACHMENT_CHARS = 4_000_000;
+
+export const TRANSPORT_TYPES: { value: TransportType; label: string; icon: string }[] = [
+  { value: "flight", label: "Vuelo", icon: "✈️" },
+  { value: "train", label: "Tren", icon: "🚆" },
+  { value: "bus", label: "Autobús", icon: "🚌" },
+  { value: "boat", label: "Barco", icon: "⛴️" },
+  { value: "car", label: "Coche", icon: "🚗" },
+  { value: "other", label: "Otro", icon: "🧭" },
+];
+
+export function transportMeta(type: TransportType) {
+  return TRANSPORT_TYPES.find((t) => t.value === type) ?? TRANSPORT_TYPES[TRANSPORT_TYPES.length - 1];
+}
+
+/** Caracteres que ocupan los adjuntos de transporte de todos los viajes (el límite es sobre el JSON). */
+export function attachmentChars(trips: Trip[]): number {
+  let total = 0;
+  for (const trip of trips) {
+    for (const t of trip.transport ?? []) for (const a of t.attachments ?? []) total += a.dataUrl.length;
+  }
+  return total;
+}
+
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Abre un adjunto: imágenes y PDF en otra pestaña y el resto se descarga. Chrome no deja navegar a una
+ * `data:` URL desde un enlace, así que se pasa por un Blob. */
+export async function openAttachment(att: TripAttachment): Promise<void> {
+  const blob = await (await fetch(att.dataUrl)).blob();
+  const url = URL.createObjectURL(blob);
+  if (att.mime.startsWith("image/") || att.mime === "application/pdf") {
+    window.open(url, "_blank", "noopener");
+  } else {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = att.name;
+    a.click();
+  }
+  // Se libera tarde: la pestaña nueva necesita la URL viva mientras carga.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** "12 dic · 08:35" para el transporte (la hora es opcional). */
+export function formatTransportWhen(date: string, time?: string): string {
+  const day = new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+  return time ? `${day} · ${time}` : day;
+}
+
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/** Teléfono "razonable": solo dígitos, espacios y + - ( ) . con al menos 5 dígitos. */
+export function isValidPhone(value: string): boolean {
+  return /^[0-9+\-().\s]+$/.test(value) && (value.match(/\d/g) ?? []).length >= 5;
 }

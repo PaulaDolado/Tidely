@@ -5,8 +5,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
-import { SavedPlace, TravelContent, TravelItineraryItem, Trip } from "../api/customPages";
+import { PackingItem, SavedPlace, TransportDetail, TransportType, TravelContent, TravelItineraryItem, Trip, TripAttachment, TripContact } from "../api/customPages";
 import { fetchLinkPreview, hostnameOf, normalizePlaceUrl, normalizeTravelContent, pickDefaultTrip } from "../utils/travel";
+import { attachmentChars, openAttachment, pickAttachment, totalAttachmentChars } from "../utils/travelFiles";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 
 // Plantilla "viajes" de las páginas personalizadas — puerto de
@@ -22,6 +23,24 @@ const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // igual límite que el resto de imáge
 const ITINERARY_PREVIEW = 4;
 const PLACES_PREVIEW = 4;
 const PLACE_DESCRIPTION_MAX = 160;
+
+// Tipos de transporte: el icono y la etiqueta salen de aquí (la etiqueta también es el título por defecto).
+const TRANSPORT_TYPES: { value: TransportType; icon: string; label: string }[] = [
+  { value: "flight", icon: "✈️", label: "Vuelo" },
+  { value: "train", icon: "🚆", label: "Tren" },
+  { value: "bus", icon: "🚌", label: "Autobús" },
+  { value: "boat", icon: "⛴️", label: "Barco" },
+  { value: "car", icon: "🚗", label: "Coche" },
+  { value: "other", icon: "🧭", label: "Otro" },
+];
+function transportMeta(type: TransportType) {
+  return TRANSPORT_TYPES.find((t) => t.value === type) ?? TRANSPORT_TYPES[TRANSPORT_TYPES.length - 1];
+}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Teléfono "suelto": solo dígitos, espacios y + - ( ) . con al menos 5 dígitos.
+function isValidPhone(phone: string): boolean {
+  return /^[0-9\s+\-().]+$/.test(phone) && phone.replace(/\D/g, "").length >= 5;
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -148,6 +167,12 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const [to, setTo] = useState(today);
   // "new" = entrada nueva del itinerario (el "+" de la cabecera de "Mi itinerario").
   const [editingItemId, setEditingItemId] = useState<string | "new" | null>(null);
+  // "Qué empacar": el campo de texto en línea se abre con el "+" y se queda abierto para ir anotando seguido.
+  const [packingOpen, setPackingOpen] = useState(false);
+  const [packingDraft, setPackingDraft] = useState("");
+  // "new" = entrada nueva (el "+" de la cabecera de cada bloque).
+  const [editingTransportId, setEditingTransportId] = useState<string | "new" | null>(null);
+  const [editingContactId, setEditingContactId] = useState<string | "new" | null>(null);
 
   const update = (patch: Partial<TravelContent>) => onChange({ trips, places: legacyPlaces, ...patch });
 
@@ -157,6 +182,13 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const itinerary = useMemo(() => [...(selected?.itinerary ?? [])].sort((a, b) => a.date.localeCompare(b.date)), [selected]);
   const places = selected?.places ?? [];
   const favorites = places.filter((p) => p.favorite).length;
+  const packing = selected?.packing ?? [];
+  const packedCount = packing.filter((p) => p.packed).length;
+  const transport = useMemo(
+    () => [...(selected?.transport ?? [])].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? "")),
+    [selected],
+  );
+  const contacts = selected?.contacts ?? [];
 
   const addTrip = async () => {
     const trimmed = destination.trim();
@@ -212,6 +244,50 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
     setEditingPlaceId(null);
   };
 
+  // Qué empacar: cada cambio reescribe `packing` del viaje seleccionado.
+  const setPacking = async (next: PackingItem[]) => {
+    if (selected) await patchTrip(selected.id, { packing: next });
+  };
+
+  const addPackingItem = async () => {
+    const text = packingDraft.trim();
+    if (!text) {
+      // Enviar vacío cierra el campo (es la forma de "terminar" de anotar).
+      setPackingOpen(false);
+      return;
+    }
+    // Se vacía el campo ya, sin esperar a guardar, para poder seguir escribiendo el siguiente.
+    setPackingDraft("");
+    await setPacking([...packing, { id: Crypto.randomUUID(), text }]);
+  };
+
+  const saveTransport = async (id: string | "new", values: Omit<TransportDetail, "id">) => {
+    if (!selected) return;
+    const current = selected.transport ?? [];
+    const next = id === "new" ? [...current, { id: Crypto.randomUUID(), ...values }] : current.map((d) => (d.id === id ? { id: d.id, ...values } : d));
+    setEditingTransportId(null);
+    await patchTrip(selected.id, { transport: next });
+  };
+
+  const removeTransport = async (id: string) => {
+    if (!selected) return;
+    setEditingTransportId(null);
+    await patchTrip(selected.id, { transport: (selected.transport ?? []).filter((d) => d.id !== id) });
+  };
+
+  const saveContact = async (id: string | "new", values: Omit<TripContact, "id">) => {
+    if (!selected) return;
+    const next = id === "new" ? [...contacts, { id: Crypto.randomUUID(), ...values }] : contacts.map((c) => (c.id === id ? { id: c.id, ...values } : c));
+    setEditingContactId(null);
+    await patchTrip(selected.id, { contacts: next });
+  };
+
+  const removeContact = async (id: string) => {
+    if (!selected) return;
+    setEditingContactId(null);
+    await patchTrip(selected.id, { contacts: contacts.filter((c) => c.id !== id) });
+  };
+
   const daysToGo = selected ? diffDays(selected.startDate, today) : null;
   const ongoing = selected ? selected.startDate <= today && selected.endDate >= today : false;
   const stats = [
@@ -251,6 +327,10 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const editingItem = itinerary.find((it) => it.id === editingItemId) ?? null;
   const itemDialogOpen = selected !== null && (editingItemId === "new" || editingItem !== null);
   const placeDialogOpen = selected !== null && (editingPlaceId === "new" || editingPlace !== null);
+  const editingTransport = transport.find((d) => d.id === editingTransportId) ?? null;
+  const transportDialogOpen = selected !== null && (editingTransportId === "new" || editingTransport !== null);
+  const editingContact = contacts.find((c) => c.id === editingContactId) ?? null;
+  const contactDialogOpen = selected !== null && (editingContactId === "new" || editingContact !== null);
 
   return (
     <View style={{ gap: 16 }}>
@@ -274,7 +354,16 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
         {sortedTrips.length > 1 && (
           <View style={styles.chipRow}>
             {sortedTrips.map((t) => (
-              <Pressable key={t.id} style={[styles.chip, selected?.id === t.id && styles.chipSelected]} onPress={() => setSelectedId(t.id)}>
+              <Pressable
+                key={t.id}
+                style={[styles.chip, selected?.id === t.id && styles.chipSelected]}
+                onPress={() => {
+                  setSelectedId(t.id);
+                  // El campo de equipaje en línea es de un viaje concreto: se cierra al cambiar de viaje.
+                  setPackingOpen(false);
+                  setPackingDraft("");
+                }}
+              >
                 <Text style={[styles.chipText, selected?.id === t.id && styles.chipTextSelected]}>{t.destination}</Text>
               </Pressable>
             ))}
@@ -454,6 +543,154 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
         )}
       </View>
 
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Qué empacar</Text>
+          {selected && (
+            <View style={styles.headerRight}>
+              {packing.length > 0 && <Text style={styles.counterText}>{`${packedCount}/${packing.length}`}</Text>}
+              <Pressable style={styles.plusButton} onPress={() => setPackingOpen(true)} hitSlop={8} accessibilityLabel="Añadir a la lista de equipaje">
+                <Text style={styles.plusButtonText}>+</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+        {!selected ? (
+          <Text style={styles.emptyText}>La lista de equipaje aparece aquí al elegir un viaje.</Text>
+        ) : (
+          <>
+            {packingOpen && (
+              <TextInput
+                style={styles.input}
+                placeholder="Añade algo a la maleta…"
+                value={packingDraft}
+                onChangeText={setPackingDraft}
+                onSubmitEditing={addPackingItem}
+                submitBehavior="submit"
+                returnKeyType="done"
+                autoFocus
+                maxLength={120}
+              />
+            )}
+            {packing.length === 0 ? (
+              !packingOpen && <Text style={styles.emptyText}>Anota aquí lo que no puedes olvidar para {selected.destination}.</Text>
+            ) : (
+              <View style={{ gap: 4 }}>
+                {packing.map((p) => (
+                  <View key={p.id} style={styles.packingRow}>
+                    <Pressable
+                      style={styles.packingMain}
+                      onPress={() => setPacking(packing.map((x) => (x.id === p.id ? { ...x, packed: !x.packed } : x)))}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: !!p.packed }}
+                    >
+                      <View style={[styles.checkbox, p.packed && styles.checkboxOn]}>{p.packed ? <Text style={styles.checkboxTick}>✓</Text> : null}</View>
+                      <Text style={[styles.packingText, p.packed && styles.packingTextDone]}>{p.text}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setPacking(packing.filter((x) => x.id !== p.id))} hitSlop={8} accessibilityLabel={`Quitar ${p.text}`}>
+                      <Text style={styles.deleteX}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Detalles del transporte</Text>
+          {selected && (
+            <Pressable style={styles.plusButton} onPress={() => setEditingTransportId("new")} hitSlop={8} accessibilityLabel="Añadir transporte">
+              <Text style={styles.plusButtonText}>+</Text>
+            </Pressable>
+          )}
+        </View>
+        {!selected ? (
+          <Text style={styles.emptyText}>El transporte aparece aquí al elegir un viaje.</Text>
+        ) : transport.length === 0 ? (
+          <Text style={styles.emptyText}>Guarda aquí vuelos, trenes y demás de {selected.destination}, con sus billetes o tarjetas de embarque.</Text>
+        ) : (
+          <View style={{ gap: 14 }}>
+            {transport.map((d) => {
+              const meta = transportMeta(d.type);
+              const attachments = d.attachments ?? [];
+              return (
+                <View key={d.id} style={styles.transportRow}>
+                  <Text style={styles.transportIcon}>{meta.icon}</Text>
+                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                    <Pressable onPress={() => setEditingTransportId(d.id)} accessibilityLabel={`Editar ${d.title || meta.label}`}>
+                      <Text style={styles.timelineTitle}>{d.title?.trim() || meta.label}</Text>
+                      <Text style={styles.mutedSmall}>{d.time ? `${fmtDate(d.date)} · ${d.time}` : fmtDate(d.date)}</Text>
+                      {d.details ? (
+                        <Text style={styles.mutedSmall} numberOfLines={2}>
+                          {d.details}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                    {attachments.length > 0 && (
+                      <View style={styles.attachmentRow}>
+                        {attachments.map((a) => (
+                          <AttachmentChip key={a.id} attachment={a} />
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Contactos importantes</Text>
+          {selected && (
+            <Pressable style={styles.plusButton} onPress={() => setEditingContactId("new")} hitSlop={8} accessibilityLabel="Añadir contacto">
+              <Text style={styles.plusButtonText}>+</Text>
+            </Pressable>
+          )}
+        </View>
+        {!selected ? (
+          <Text style={styles.emptyText}>Los contactos aparecen aquí al elegir un viaje.</Text>
+        ) : contacts.length === 0 ? (
+          <Text style={styles.emptyText}>Guarda aquí alojamientos, guías o teléfonos de emergencia de {selected.destination}.</Text>
+        ) : (
+          <View style={{ gap: 14 }}>
+            {contacts.map((c) => (
+              <View key={c.id} style={{ gap: 3 }}>
+                <Pressable onPress={() => setEditingContactId(c.id)} accessibilityLabel={`Editar ${c.name}`}>
+                  <Text style={styles.contactName}>{c.name}</Text>
+                  {c.location ? <Text style={styles.mutedSmall}>📍 {c.location}</Text> : null}
+                </Pressable>
+                {c.phone ? (
+                  <Pressable
+                    style={styles.contactLinkWrap}
+                    onPress={() => Linking.openURL(`tel:${c.phone?.replace(/\s/g, "")}`).catch(() => Alert.alert("No se puede llamar", "Este dispositivo no puede iniciar la llamada."))}
+                    hitSlop={6}
+                    accessibilityLabel={`Llamar a ${c.name}`}
+                  >
+                    <Text style={styles.contactLink}>📞 {c.phone}</Text>
+                  </Pressable>
+                ) : null}
+                {c.email ? (
+                  <Pressable
+                    style={styles.contactLinkWrap}
+                    onPress={() => Linking.openURL(`mailto:${c.email}`).catch(() => Alert.alert("No se puede escribir", "No hay ninguna aplicación de correo disponible."))}
+                    hitSlop={6}
+                    accessibilityLabel={`Escribir a ${c.name}`}
+                  >
+                    <Text style={styles.contactLink}>✉️ {c.email}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
       <Modal visible={editingTrip !== null} animationType="slide" transparent onRequestClose={() => setEditingTripId(null)}>
         <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
@@ -506,6 +743,57 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
                 onSave={(values) => savePlace(editingPlaceId, values)}
                 onDelete={editingPlace ? () => removePlace(editingPlace.id) : undefined}
                 onClose={() => setEditingPlaceId(null)}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={transportDialogOpen} animationType="slide" transparent onRequestClose={() => setEditingTransportId(null)}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            {transportDialogOpen && selected && editingTransportId && (
+              <TransportForm
+                key={editingTransportId}
+                trip={selected}
+                detail={editingTransport ?? undefined}
+                // Adjuntos que ya ocupan sitio fuera de este formulario (otros viajes y otras entradas).
+                otherChars={totalAttachmentChars(trips) - attachmentChars(editingTransport?.attachments)}
+                onSave={(values) => saveTransport(editingTransportId, values)}
+                onDelete={
+                  editingTransport
+                    ? () =>
+                        Alert.alert("Eliminar transporte", "Se borrará también con sus archivos adjuntos.", [
+                          { text: "Cancelar", style: "cancel" },
+                          { text: "Eliminar", style: "destructive", onPress: () => removeTransport(editingTransport.id) },
+                        ])
+                    : undefined
+                }
+                onClose={() => setEditingTransportId(null)}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={contactDialogOpen} animationType="slide" transparent onRequestClose={() => setEditingContactId(null)}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            {contactDialogOpen && editingContactId && (
+              <ContactForm
+                key={editingContactId}
+                contact={editingContact ?? undefined}
+                onSave={(values) => saveContact(editingContactId, values)}
+                onDelete={
+                  editingContact
+                    ? () =>
+                        Alert.alert("Eliminar contacto", `Se borrará "${editingContact.name}".`, [
+                          { text: "Cancelar", style: "cancel" },
+                          { text: "Eliminar", style: "destructive", onPress: () => removeContact(editingContact.id) },
+                        ])
+                    : undefined
+                }
+                onClose={() => setEditingContactId(null)}
               />
             )}
           </View>
@@ -768,6 +1056,260 @@ function ItineraryForm({
   );
 }
 
+// Chip de un adjunto: al tocarlo se escribe el archivo en la caché y se abre la hoja nativa de
+// compartir/abrir. Con `onRemove` (en el formulario) lleva una ✕ para quitarlo.
+function AttachmentChip({ attachment, onRemove }: { attachment: TripAttachment; onRemove?: () => void }) {
+  const [opening, setOpening] = useState(false);
+  const open = async () => {
+    if (opening) return;
+    setOpening(true);
+    try {
+      await openAttachment(attachment);
+    } catch (e) {
+      Alert.alert("No se pudo abrir el archivo", e instanceof Error ? e.message : "Inténtalo de nuevo.");
+    } finally {
+      setOpening(false);
+    }
+  };
+  return (
+    <View style={styles.attachmentChip}>
+      <Pressable onPress={open} hitSlop={6} accessibilityLabel={`Abrir ${attachment.name}`} style={{ flexShrink: 1 }}>
+        <Text style={styles.attachmentChipText} numberOfLines={1}>
+          {opening ? "Abriendo…" : `📎 ${attachment.name}`}
+        </Text>
+      </Pressable>
+      {onRemove ? (
+        <Pressable onPress={onRemove} hitSlop={8} accessibilityLabel={`Quitar ${attachment.name}`}>
+          <Text style={styles.deleteX}>✕</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function timeToDate(time: string): Date {
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date();
+  d.setHours(Number.isFinite(h) ? h : 9, Number.isFinite(m) ? m : 0, 0, 0);
+  return d;
+}
+
+// Alta/edición de un transporte (vuelo, tren…): tipo, título opcional, fecha (sin limitar al rango del
+// viaje: se puede salir el día antes o volver el día después), hora opcional, datos libres y adjuntos.
+function TransportForm({
+  trip,
+  detail,
+  otherChars,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  trip: Trip;
+  detail?: TransportDetail; // undefined = transporte nuevo
+  otherChars: number; // caracteres de adjuntos que ya ocupan sitio fuera de este formulario
+  onSave: (values: Omit<TransportDetail, "id">) => Promise<void>;
+  onDelete?: () => void;
+  onClose: () => void;
+}) {
+  const [type, setType] = useState<TransportType>(detail?.type ?? "flight");
+  const [title, setTitle] = useState(detail?.title ?? "");
+  const [date, setDate] = useState(detail?.date ?? trip.startDate);
+  const [time, setTime] = useState(detail?.time ?? "");
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [details, setDetails] = useState(detail?.details ?? "");
+  const [attachments, setAttachments] = useState<TripAttachment[]>(detail?.attachments ?? []);
+  const [picking, setPicking] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const attach = async () => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const result = await pickAttachment(otherChars + attachmentChars(attachments));
+      if (!result) return;
+      if ("error" in result) {
+        Alert.alert("No se pudo adjuntar", result.error);
+        return;
+      }
+      setAttachments((prev) => [...prev, result.attachment]);
+    } catch (e) {
+      Alert.alert("No se pudo adjuntar", e instanceof Error ? e.message : "No se pudo leer el archivo.");
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    await onSave({
+      type,
+      title: title.trim() || undefined,
+      date,
+      time: time || undefined,
+      details: details.trim() || undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <Text style={styles.modalTitle}>{detail ? "Editar transporte" : "Añadir transporte"}</Text>
+
+      <View style={[styles.chipRow, { marginBottom: 12 }]}>
+        {TRANSPORT_TYPES.map((t) => (
+          <Pressable key={t.value} style={[styles.chip, type === t.value && styles.chipSelected]} onPress={() => setType(t.value)}>
+            <Text style={[styles.chipText, type === t.value && styles.chipTextSelected]}>
+              {t.icon} {t.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <TextInput style={styles.input} placeholder="Título (p. ej. Madrid → Lisboa)" value={title} onChangeText={setTitle} maxLength={120} />
+
+      <View style={[styles.dateRow, { marginTop: 12 }]}>
+        <DateField label="Fecha" value={date} onChange={setDate} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.fieldLabel}>Hora</Text>
+          <Pressable style={styles.dateButton} onPress={() => setTimeOpen(true)}>
+            <Text style={styles.dateButtonText}>🕐 {time || "Sin hora"}</Text>
+          </Pressable>
+          {time ? (
+            <Pressable onPress={() => setTime("")} hitSlop={6}>
+              <Text style={styles.removeText}>Quitar hora</Text>
+            </Pressable>
+          ) : null}
+          {timeOpen && (
+            <DateTimePicker
+              value={timeToDate(time || "09:00")}
+              mode="time"
+              display="default"
+              is24Hour
+              onValueChange={(_event: DateTimePickerChangeEvent, selected: Date) => {
+                setTimeOpen(false);
+                if (selected) setTime(`${pad2(selected.getHours())}:${pad2(selected.getMinutes())}`);
+              }}
+              onDismiss={() => setTimeOpen(false)}
+            />
+          )}
+        </View>
+      </View>
+
+      <TextInput
+        style={[styles.input, styles.inputMultiline]}
+        placeholder="Datos: operador, nº de vuelo o tren, asiento, referencia de reserva, terminal…"
+        value={details}
+        onChangeText={setDetails}
+        maxLength={600}
+        multiline
+      />
+
+      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Archivos adjuntos</Text>
+      {attachments.length > 0 && (
+        <View style={[styles.attachmentRow, { marginBottom: 8 }]}>
+          {attachments.map((a) => (
+            <AttachmentChip key={a.id} attachment={a} onRemove={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))} />
+          ))}
+        </View>
+      )}
+      <Pressable style={styles.outlineButton} onPress={attach} disabled={picking}>
+        <Text style={styles.outlineButtonText}>{picking ? "Leyendo archivo…" : "📎 Adjuntar archivo (tarjeta de embarque, billete…)"}</Text>
+      </Pressable>
+
+      <Pressable style={[styles.primaryButton, { marginTop: 14 }]} onPress={submit} disabled={saving || picking}>
+        <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
+      </Pressable>
+      {onDelete ? (
+        <Pressable style={styles.deleteButton} onPress={onDelete}>
+          <Text style={styles.deleteButtonText}>Eliminar</Text>
+        </Pressable>
+      ) : null}
+      <Pressable style={styles.cancelButton} onPress={onClose}>
+        <Text style={styles.cancelButtonText}>Cancelar</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+// Alta/edición de un contacto del viaje. Solo el nombre es obligatorio; teléfono y correo se validan
+// "por encima" (no hace falta un formato estricto, solo cazar erratas evidentes).
+function ContactForm({
+  contact,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  contact?: TripContact; // undefined = contacto nuevo
+  onSave: (values: Omit<TripContact, "id">) => Promise<void>;
+  onDelete?: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(contact?.name ?? "");
+  const [location, setLocation] = useState(contact?.location ?? "");
+  const [phone, setPhone] = useState(contact?.phone ?? "");
+  const [email, setEmail] = useState(contact?.email ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setError(null);
+    if (!name.trim()) {
+      setError("Ponle un nombre al contacto.");
+      return;
+    }
+    if (phone.trim() && !isValidPhone(phone.trim())) {
+      setError("El teléfono no es válido. Usa solo números, espacios y + - ( ).");
+      return;
+    }
+    if (email.trim() && !EMAIL_RE.test(email.trim())) {
+      setError("El correo no es válido.");
+      return;
+    }
+    setSaving(true);
+    await onSave({
+      name: name.trim(),
+      location: location.trim() || undefined,
+      phone: phone.trim() || undefined,
+      email: email.trim() || undefined,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <Text style={styles.modalTitle}>{contact ? "Editar contacto" : "Nuevo contacto"}</Text>
+      <View style={{ gap: 10 }}>
+        <TextInput style={styles.input} placeholder="Nombre" value={name} onChangeText={setName} maxLength={120} />
+        <TextInput style={styles.input} placeholder="Ubicación" value={location} onChangeText={setLocation} maxLength={160} />
+        <TextInput style={styles.input} placeholder="Teléfono" value={phone} onChangeText={setPhone} keyboardType="phone-pad" maxLength={40} />
+        <TextInput
+          style={styles.input}
+          placeholder="Correo"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={160}
+        />
+      </View>
+      {error ? <Text style={[styles.errorText, { marginTop: 8 }]}>{error}</Text> : null}
+      <Pressable style={[styles.primaryButton, { marginTop: 14 }]} onPress={submit} disabled={saving}>
+        <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
+      </Pressable>
+      {onDelete ? (
+        <Pressable style={styles.deleteButton} onPress={onDelete}>
+          <Text style={styles.deleteButtonText}>Eliminar</Text>
+        </Pressable>
+      ) : null}
+      <Pressable style={styles.cancelButton} onPress={onClose}>
+        <Text style={styles.cancelButtonText}>Cancelar</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
 // Miniatura del marcador: la imagen de la página y, si no hay o no carga, su icono; sin ninguno de
 // los dos (o sin URL), un 📍. `imageData` es la foto subida a mano de los lugares antiguos.
 function PlaceThumb({ place }: { place: SavedPlace }) {
@@ -1006,6 +1548,34 @@ const styles = StyleSheet.create({
   heartOn: { color: colors.destructive },
   favoriteToggle: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 8 },
   favoriteToggleText: { fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },
+
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  counterText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
+  packingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  packingMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.inputBorder, alignItems: "center", justifyContent: "center" },
+  checkboxOn: { backgroundColor: colors.foreground, borderColor: colors.foreground },
+  checkboxTick: { fontFamily: fonts.sansBold, fontSize: 13, lineHeight: 15, color: colors.background },
+  packingText: { flex: 1, fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },
+  packingTextDone: { textDecorationLine: "line-through", opacity: 0.45 },
+  transportRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  transportIcon: { fontSize: 22, width: 30, textAlign: "center" },
+  attachmentRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
+  attachmentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: withAlpha(colors.primary, 0.4),
+  },
+  attachmentChipText: { fontFamily: fonts.sans, fontSize: 12, color: colors.primary },
+  contactName: { fontFamily: fonts.sansBold, fontSize: 14, color: colors.foreground },
+  contactLinkWrap: { alignSelf: "flex-start" },
+  contactLink: { fontFamily: fonts.sans, fontSize: 13, color: colors.primary },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(45,41,38,0.4)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card, padding: 20, maxHeight: "90%" },
