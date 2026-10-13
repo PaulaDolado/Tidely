@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PageHeader } from "../components/AppShell";
 import { api } from "../api/client";
@@ -109,7 +109,9 @@ export function PlanificadorPage({
 } = {}) {
   const { data, loading, error, reload } = useFetch(() => api.get<{ planners: Planner[] }>("/planner/boards"), []);
   const { data: projectsData } = useFetch(() => api.get<{ projects: Project[] }>("/projects?limit=100"), []);
-  const planners = data?.planners ?? [];
+  // useMemo: sin él, mientras `data` es undefined sale un `[]` nuevo en cada render y los efectos que
+  // dependen de `planners` se reejecutan sin parar.
+  const planners = useMemo(() => data?.planners ?? [], [data]);
   const projects = projectsData?.projects ?? [];
 
   const [contentView, setContentView] = useState<ViewMode>("kanban");

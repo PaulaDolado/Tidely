@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../components/AppShell";
 import { api, ApiError } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
@@ -71,7 +71,7 @@ type ViewMode = "flechas" | "apilado";
  */
 export function SchedulePage() {
   const { data, loading, error, reload } = useFetch(() => api.get<{ schedules: Schedule[] }>("/schedule"), []);
-  const schedules = data?.schedules ?? [];
+  const schedules = useMemo(() => data?.schedules ?? [], [data]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem(VIEW_MODE_KEY) as ViewMode) || "flechas");
   const [activeIndex, setActiveIndex] = useState(0);

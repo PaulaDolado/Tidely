@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../components/AppShell";
 import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
@@ -429,7 +429,7 @@ function ProjectPages({ projectId, projectTitle }: { projectId: number; projectT
     () => api.get<{ pages: ProjectPage[] }>(`/projects/${projectId}/pages`),
     [projectId]
   );
-  const pages = data?.pages ?? [];
+  const pages = useMemo(() => data?.pages ?? [], [data]);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [content, setContent] = useState("");
