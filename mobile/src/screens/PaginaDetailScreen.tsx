@@ -44,9 +44,7 @@ import {
   KanbanColumn,
   KanbanContent,
   NotaContent,
-  PAGE_ICON_OPTIONS,
   SimpleGoal,
-  TEMPLATE_ICONS,
   TEMPLATE_LABELS,
   TravelContent,
 } from "../api/customPages";
@@ -88,8 +86,6 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
-  const [showIconPicker, setShowIconPicker] = useState(false);
-  const [customIconDraft, setCustomIconDraft] = useState("");
   const [editingEntry, setEditingEntry] = useState<GalleryEntry | null>(null);
   const [notaHtml, setNotaHtml] = useState("");
   const [notaDirty, setNotaDirty] = useState(false);
@@ -149,16 +145,6 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     const nextTitle = title.trim() || page.title;
     await persist({ title: nextTitle, subtitle: subtitle.trim() || null });
     navigation.setParams({ title: nextTitle });
-  };
-
-  // Elegir de la paleta o escribir uno propio guarda al momento (no hace falta perder el foco) —
-  // mismo criterio que dashboard/src/pages/CustomPagePage.tsx (saveIcon ahí). `null` quita el
-  // icono propio y vuelve a mostrar el de la plantilla (ver TEMPLATE_ICONS).
-  const saveIcon = async (next: string | null) => {
-    if (!page) return;
-    await persist({ icon: next });
-    setShowIconPicker(false);
-    setCustomIconDraft("");
   };
 
   const saveGalleryItems = async (items: GalleryEntry[]) => {
@@ -284,10 +270,6 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     <SafeAreaView style={styles.container}>
       {syncError && <Text style={styles.errorBanner}>{syncError} — se reintentará solo</Text>}
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable style={styles.iconButton} onPress={() => setShowIconPicker(true)} hitSlop={8}>
-          <Text style={styles.iconButtonText}>{page.icon ?? TEMPLATE_ICONS[page.template as CustomPageTemplate] ?? "📝"}</Text>
-          <Text style={styles.iconButtonLabel}>Cambiar icono</Text>
-        </Pressable>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} onBlur={saveTitleAndSubtitle} placeholder="Título" />
         <TextInput
           style={styles.subtitleInput}
@@ -400,48 +382,6 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={showIconPicker} animationType="slide" transparent onRequestClose={() => setShowIconPicker(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
-          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
-            <Text style={styles.modalTitle}>Icono de la página</Text>
-            <View style={styles.iconGrid}>
-              {PAGE_ICON_OPTIONS.map((opt) => (
-                <Pressable
-                  key={opt}
-                  style={[styles.iconOption, page.icon === opt && styles.iconOptionSelected]}
-                  onPress={() => saveIcon(opt)}
-                >
-                  <Text style={styles.iconOptionText}>{opt}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={styles.customIconRow}>
-              <TextInput
-                style={styles.customIconInput}
-                value={customIconDraft}
-                onChangeText={setCustomIconDraft}
-                placeholder="O escribe el tuyo…"
-                maxLength={8}
-              />
-              <Pressable
-                style={styles.customIconSubmit}
-                onPress={() => customIconDraft.trim() && saveIcon(customIconDraft.trim())}
-                disabled={!customIconDraft.trim()}
-              >
-                <Text style={styles.customIconSubmitText}>Usar</Text>
-              </Pressable>
-            </View>
-            {page.icon && (
-              <Pressable style={styles.iconResetButton} onPress={() => saveIcon(null)}>
-                <Text style={styles.iconResetButtonText}>Quitar icono propio (usar el de la plantilla)</Text>
-              </Pressable>
-            )}
-            <Pressable style={styles.cancelButton} onPress={() => setShowIconPicker(false)}>
-              <Text style={styles.cancelButtonText}>Cerrar</Text>
-            </Pressable>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -2126,37 +2066,6 @@ const styles = StyleSheet.create({
 
   titleInput: { fontFamily: fonts.serif, fontSize: 28, color: colors.foreground, padding: 0 },
   subtitleInput: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, padding: 0, marginBottom: 8 },
-  iconButton: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 4 },
-  iconButtonText: { fontSize: 22 },
-  iconButtonLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
-  iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
-  iconOption: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.input,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.muted,
-  },
-  iconOptionSelected: { backgroundColor: withAlpha(colors.primary, 0.15), borderWidth: 1, borderColor: colors.primary },
-  iconOptionText: { fontSize: 18 },
-  customIconRow: { flexDirection: "row", gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 },
-  customIconInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.input,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.foreground,
-    backgroundColor: colors.card,
-  },
-  customIconSubmit: { backgroundColor: colors.foreground, borderRadius: radius.input, paddingHorizontal: 14, justifyContent: "center" },
-  customIconSubmitText: { fontFamily: fonts.sansMedium, color: colors.background, fontSize: 13 },
-  iconResetButton: { alignItems: "center", padding: 10, marginTop: 4 },
-  iconResetButtonText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
 
   addButton: { alignSelf: "flex-start", backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 16, paddingVertical: 10 },
   addButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 13 },

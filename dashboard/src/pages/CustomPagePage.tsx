@@ -26,11 +26,6 @@ import {
 
 const FIELD_TYPE_LABELS: Record<CustomFieldType, string> = { text: "Texto", number: "Número", date: "Fecha", select: "Selección" };
 
-// Paleta rápida del selector de icono de la página (ver "Cambiar icono" en la cabecera) — los 8
-// de las plantillas más unos genéricos habituales; el campo "o escribe el tuyo" de más abajo
-// cubre cualquier otro emoji que no esté aquí.
-const PAGE_ICON_OPTIONS = ["📝", "🗂️", "🖼️", "💰", "📁", "🎯", "📅", "☀️", "⭐", "✅", "📌", "📚", "💡", "🔥", "❤️", "🏆"];
-
 const SAVE_DEBOUNCE_MS = 600;
 
 /**
@@ -57,12 +52,6 @@ export function CustomPagePage({
   // Cadena vacía = "no ha escrito ninguno todavía", no "borrar el de la plantilla" — el
   // placeholder del input (ver más abajo) es quien muestra icono+nombre por defecto en ese caso.
   const [subtitle, setSubtitle] = useState("");
-  // null = no ha elegido ninguno todavía, se muestra el de la plantilla (ver meta.icon más abajo)
-  // — mismo criterio que `subtitle`.
-  const [icon, setIcon] = useState<string | null>(null);
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [customIconDraft, setCustomIconDraft] = useState("");
-  const iconPickerRef = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState<CustomPageContentMap[CustomPageTemplate] | null>(null);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -86,20 +75,9 @@ export function CustomPagePage({
       setTitle(page.title);
       setSubtitle(page.subtitle ?? "");
       lastSavedSubtitleRef.current = page.subtitle ?? "";
-      setIcon(page.icon);
       setContent(page.content);
     }
   }, [page]);
-
-  // Cierra la paleta de iconos al tocar fuera — mismo patrón que AnnualCalendarLegend.
-  useEffect(() => {
-    if (!iconPickerOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (iconPickerRef.current && !iconPickerRef.current.contains(e.target as Node)) setIconPickerOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [iconPickerOpen]);
 
   const scheduleSave = (nextContent: CustomPageContentMap[CustomPageTemplate]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -158,17 +136,6 @@ export function CustomPagePage({
     lastSavedSubtitleRef.current = trimmed;
   };
 
-  // Elegir de la paleta o escribir uno propio guarda al momento (no hace falta perder el foco,
-  // a diferencia de subtitle/title); `null` quita el icono propio y vuelve a mostrar el de la
-  // plantilla — mismo criterio que vaciar el subtítulo.
-  const saveIcon = async (next: string | null) => {
-    if (!page) return;
-    setIcon(next);
-    setIconPickerOpen(false);
-    setCustomIconDraft("");
-    await api.put(`/custom-pages/${pageId}`, { icon: next });
-  };
-
   const removePage = async () => {
     await api.delete(`/custom-pages/${pageId}`);
     onDeleted();
@@ -194,56 +161,6 @@ export function CustomPagePage({
             className="w-full min-w-0 border-b border-transparent bg-transparent font-serif text-4xl outline-none focus:border-primary"
           />
           <div className="relative mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <button
-              type="button"
-              title="Cambiar icono"
-              onClick={() => setIconPickerOpen((v) => !v)}
-              className="shrink-0 cursor-pointer rounded hover:bg-muted"
-            >
-              {icon ?? meta.icon}
-            </button>
-            {iconPickerOpen && (
-              <div
-                ref={iconPickerRef}
-                className="absolute left-0 top-full z-10 mt-1 w-64 rounded-2xl border border-border bg-card p-3 shadow-[var(--shadow-soft)]"
-              >
-                <div className="flex flex-wrap gap-1">
-                  {PAGE_ICON_OPTIONS.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => saveIcon(opt)}
-                      className={`flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-base hover:bg-muted ${
-                        icon === opt ? "bg-primary/10 ring-1 ring-primary" : ""
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
-                  <input
-                    value={customIconDraft}
-                    onChange={(e) => setCustomIconDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && customIconDraft.trim()) saveIcon(customIconDraft.trim());
-                    }}
-                    placeholder="O escribe el tuyo…"
-                    maxLength={8}
-                    className="field-input min-w-0 flex-1 text-sm"
-                  />
-                  {icon !== null && (
-                    <button
-                      type="button"
-                      onClick={() => saveIcon(null)}
-                      className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
-                    >
-                      Quitar
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
             {/* Vacío por defecto — el placeholder es quien muestra "Kanban"/"Nota"/etc., para no
                 confundir "el usuario escribió esto" con "es solo el nombre de la plantilla". */}
             <input
