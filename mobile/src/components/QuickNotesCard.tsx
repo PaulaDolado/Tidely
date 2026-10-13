@@ -61,7 +61,7 @@ export function QuickNotesCard() {
             <View key={note.id} style={styles.row}>
               <Pressable style={styles.rowContent} onPress={() => handleToggle(note.id)}>
                 <Checkbox checked={note.checked === 1} />
-                <Text style={[styles.noteText, note.checked === 1 && styles.noteTextDone]} numberOfLines={3}>
+                <Text style={[styles.noteText, note.checked === 1 && styles.noteTextDone]}>
                   {note.content}
                 </Text>
               </Pressable>

@@ -1,20 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet } from "react-native";
-import { Text } from "./AppText";
-import Svg, { Circle, Line, Path } from "react-native-svg";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Pressable, ScrollView, StyleSheet, Alert, LayoutChangeEvent } from "react-native";
+import { Text, TextInput } from "./AppText";
+import Svg, { Circle, G, Line, Path, Text as SvgText } from "react-native-svg";
 import { runSync } from "../sync";
-import { listHabits, listHabitLogsForHabit, toggleHabitToday } from "../db/habitsRepo";
+import { listHabits, listHabitLogsForHabit, toggleHabitOnDate, upsertHabits, deleteHabit } from "../db/habitsRepo";
+import { createHabit, renameHabit, removeHabit, habitErrorMessage } from "../api/habits";
 import { LocalHabit } from "../types";
 import { colors, fonts, radius, withAlpha } from "../theme";
 
 const DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 
-// Geometría del gráfico de evolución mensual (ver HabitsEvolutionChart) — un punto por día,
-// separados lo bastante para que quepa el número del día debajo sin solaparse.
-const POINT_SPACING = 22;
-const CHART_HEIGHT = 120;
-const CHART_PADDING_TOP = 14;
-const CHART_PADDING_BOTTOM = 10;
+// Geometría del gráfico de progreso (ver HabitsProgressPanel) — mismas proporciones que el SVG de
+// dashboard/src/components/HabitsTrackerCard.tsx, pero en píxeles reales en vez de un viewBox
+// escalado, para que el texto de los ejes no se encoja en pantallas estrechas.
+const CHART_H = 170;
+const PAD_L = 34;
+const PAD_R = 10;
+const PAD_T = 12;
+const PAD_B = 24;
+// En la vista mensual cada día necesita un mínimo de ancho para que quepa su número debajo; si 31
+// días no entran en la tarjeta, el gráfico se desplaza en horizontal.
+const MONTH_MIN_POINT_SPACING = 20;
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
@@ -41,26 +47,16 @@ function currentWeekDates(): string[] {
 // funciones tienen que construir/leer sus fechas en UTC también — mezclar con
 // getFullYear/getMonth/getDate (hora LOCAL) desalinearía un día entero el "hoy" resaltado y el
 // recuento de cada día para cualquier timezone por delante de UTC.
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
+function utcMonthStart(offsetMonths: number): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths, 1));
 }
 
-function startOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-}
-
-function addMonths(date: Date, n: number): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + n, 1));
-}
-
-function daysInMonth(monthStart: Date): number {
-  return new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
-}
-
-/** Clave "YYYY-MM-DD" del día `day` (1-indexado) del mes de `monthStart` — mismo formato que
- * `completedDates` (ver `todayKey()`/`toggleHabitToday` en habitsRepo.ts). */
-function dateKeyOf(monthStart: Date, day: number): string {
-  return `${monthStart.getUTCFullYear()}-${pad2(monthStart.getUTCMonth() + 1)}-${pad2(day)}`;
+function monthDateKeys(monthStart: Date): string[] {
+  const count = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
+  return Array.from({ length: count }, (_, i) =>
+    new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), i + 1)).toISOString().slice(0, 10)
+  );
 }
 
 interface HabitWithLogs extends LocalHabit {
@@ -69,17 +65,23 @@ interface HabitWithLogs extends LocalHabit {
 
 /**
  * Puerto de dashboard/src/components/HabitsTrackerCard.tsx — misma tira de 7 puntos (lunes a
- * domingo) por hábito, mismos colores (bg-habit/10 border-habit/30). A diferencia de la web, el
- * móvil solo puede marcar/desmarcar HOY (ver habitsRepo.ts: "el móvil no crea/edita hábitos, solo
- * marca el día"), así que los puntos de otros días son de solo lectura y no hay alta, renombrado
- * ni borrado de hábitos aquí — eso solo se puede hacer desde la web.
+ * domingo) por hábito, mismos colores (bg-habit/10 border-habit/30), y mismas acciones: marcar
+ * cualquier día de la semana en curso (los futuros quedan deshabilitados), crear, renombrar (tocar
+ * el nombre) y borrar hábitos, y el panel de progreso con vista semanal/mensual.
+ *
+ * Las marcas diarias son offline-first (SQLite + sync, ver habitsRepo.ts). Crear/renombrar/borrar
+ * no forman parte del sync del móvil: van directos por REST (api/habits.ts, necesitan conexión) y
+ * después se reflejan en la caché local para que la tarjeta se refresque al instante.
  */
 export function HabitsCard() {
   const [habits, setHabits] = useState<HabitWithLogs[]>([]);
   const [loaded, setLoaded] = useState(false);
   const days = currentWeekDates();
-  const [showChart, setShowChart] = useState(false);
-  const [chartMonth, setChartMonth] = useState(() => startOfMonth(new Date()));
+  const [showProgress, setShowProgress] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const list = await listHabits();
@@ -97,144 +99,351 @@ export function HabitsCard() {
     reload();
   }, [reload]);
 
-  const handleToggleToday = async (habitId: number) => {
-    await toggleHabitToday(habitId);
+  const handleToggleDay = async (habitId: number, date: string) => {
+    // Los días que aún no han llegado no se pueden marcar (en la web tampoco tiene sentido
+    // adelantar un hábito) — el botón ya va deshabilitado, esto es solo una red de seguridad.
+    if (date > todayKey()) return;
+    await toggleHabitOnDate(habitId, date);
     await reload();
     runSync();
+  };
+
+  const handleAdd = async () => {
+    const title = newTitle.trim();
+    if (!title || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const created = await createHabit(title);
+      await upsertHabits([created]);
+      setNewTitle("");
+      setAdding(false);
+      await reload();
+    } catch (e) {
+      setMessage(habitErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRename = async (id: number, title: string) => {
+    setMessage(null);
+    try {
+      const updated = await renameHabit(id, title);
+      await upsertHabits([updated]);
+      await reload();
+    } catch (e) {
+      setMessage(habitErrorMessage(e));
+    }
+  };
+
+  const handleDelete = (habit: HabitWithLogs) => {
+    // En la web el borrado es un ✕ al pasar el ratón; en el móvil un toque accidental es mucho más
+    // fácil, y borrar un hábito se lleva por delante todo su historial — por eso pide confirmación.
+    Alert.alert("Eliminar hábito", `¿Eliminar "${habit.title}" y todo su historial?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          setMessage(null);
+          try {
+            await removeHabit(habit.id);
+            await deleteHabit(habit.id);
+            await reload();
+          } catch (e) {
+            setMessage(habitErrorMessage(e));
+          }
+        },
+      },
+    ]);
   };
 
   if (!loaded) return null;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Hábitos diarios</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Hábitos diarios</Text>
+        <View style={styles.headerButtons}>
+          {habits.length > 0 && (
+            <Pressable
+              onPress={() => setShowProgress((v) => !v)}
+              accessibilityLabel={showProgress ? "Ocultar progreso" : "Ver progreso"}
+              hitSlop={6}
+              style={[styles.circleButton, styles.progressButton, showProgress && styles.progressButtonActive]}
+            >
+              <Text style={[styles.progressButtonText, showProgress && styles.progressButtonTextActive]}>📈</Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => setAdding((v) => !v)}
+            accessibilityLabel={adding ? "Cerrar" : "Añadir hábito"}
+            hitSlop={6}
+            style={[styles.circleButton, styles.addButton]}
+          >
+            <Text style={styles.addButtonText}>{adding ? "×" : "+"}</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {adding && (
+        <TextInput
+          autoFocus
+          style={styles.addInput}
+          value={newTitle}
+          onChangeText={setNewTitle}
+          placeholder="Nombre del hábito"
+          placeholderTextColor={colors.mutedForeground}
+          editable={!busy}
+          returnKeyType="done"
+          onSubmitEditing={handleAdd}
+        />
+      )}
+
+      {message && <Text style={styles.message}>{message}</Text>}
+
       {habits.length === 0 ? (
         <Text style={styles.emptyText}>Todavía no tienes hábitos activos.</Text>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
           {habits.map((habit, i) => (
-            <View key={habit.id} style={[styles.column, i > 0 && styles.columnBorder]}>
-              <Text style={styles.habitTitle} numberOfLines={1}>
-                {habit.title}
-              </Text>
-              <View style={styles.dotsRow}>
-                {days.map((date, di) => {
-                  const isToday = date === todayKey();
-                  const isCompleted = habit.completedDates.has(date);
-                  return (
-                    <Pressable
-                      key={date}
-                      disabled={!isToday}
-                      onPress={() => handleToggleToday(habit.id)}
-                      style={styles.dotColumn}
-                    >
-                      <Text style={[styles.dayLetter, isToday && styles.dayLetterToday]}>{DAY_LETTERS[di]}</Text>
-                      <View style={[styles.dot, isCompleted ? styles.dotCompleted : styles.dotEmpty, isToday && styles.dotToday]} />
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
+            <HabitColumn
+              key={habit.id}
+              habit={habit}
+              days={days}
+              first={i === 0}
+              onToggleDay={handleToggleDay}
+              onRename={handleRename}
+              onDelete={() => handleDelete(habit)}
+            />
           ))}
         </ScrollView>
       )}
 
-      {habits.length > 0 && (
-        <>
-          <Pressable style={styles.chartToggle} onPress={() => setShowChart((v) => !v)}>
-            <Text style={styles.chartToggleText}>{showChart ? "Ocultar gráfico" : "📈 Ver gráfico"}</Text>
+      {showProgress && habits.length > 0 && <HabitsProgressPanel habits={habits} weekDays={days} />}
+    </View>
+  );
+}
+
+function HabitColumn({
+  habit,
+  days,
+  first,
+  onToggleDay,
+  onRename,
+  onDelete,
+}: {
+  habit: HabitWithLogs;
+  days: string[];
+  first: boolean;
+  onToggleDay: (habitId: number, date: string) => void;
+  onRename: (id: number, title: string) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(habit.title);
+  // Un ref además del estado: al pulsar "intro" el TextInput dispara onSubmitEditing y justo
+  // después onBlur, y sin esto el renombrado se enviaría dos veces.
+  const editingRef = useRef(false);
+  const today = todayKey();
+
+  const startEditing = () => {
+    setTitle(habit.title);
+    editingRef.current = true;
+    setEditing(true);
+  };
+
+  const saveTitle = () => {
+    if (!editingRef.current) return;
+    editingRef.current = false;
+    setEditing(false);
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === habit.title) {
+      setTitle(habit.title);
+      return;
+    }
+    onRename(habit.id, trimmed);
+  };
+
+  return (
+    <View style={[styles.column, !first && styles.columnBorder]}>
+      <View style={styles.columnHeader}>
+        {editing ? (
+          <TextInput
+            autoFocus
+            style={styles.habitTitleInput}
+            value={title}
+            onChangeText={setTitle}
+            onBlur={saveTitle}
+            onSubmitEditing={saveTitle}
+            returnKeyType="done"
+          />
+        ) : (
+          <Pressable style={styles.habitTitleButton} onPress={startEditing} accessibilityLabel="Renombrar hábito">
+            <Text style={styles.habitTitle} numberOfLines={1}>
+              {habit.title}
+            </Text>
           </Pressable>
-          {showChart && (
-            <View style={styles.chartSection}>
-              <View style={styles.chartNav}>
-                <Pressable onPress={() => setChartMonth((m) => addMonths(m, -1))} hitSlop={8}>
-                  <Text style={styles.chartNavButton}>‹</Text>
-                </Pressable>
-                <Text style={styles.chartNavLabel}>
-                  {chartMonth.toLocaleDateString("es-ES", { month: "long", year: "numeric", timeZone: "UTC" })}
-                </Text>
-                <Pressable onPress={() => setChartMonth((m) => addMonths(m, 1))} hitSlop={8}>
-                  <Text style={styles.chartNavButton}>›</Text>
-                </Pressable>
-              </View>
-              <HabitsEvolutionChart habits={habits} monthStart={chartMonth} />
-            </View>
-          )}
-        </>
-      )}
+        )}
+        <Pressable onPress={onDelete} hitSlop={8} accessibilityLabel="Eliminar hábito">
+          <Text style={styles.deleteMark}>✕</Text>
+        </Pressable>
+      </View>
+      <View style={styles.dotsRow}>
+        {days.map((date, di) => {
+          const isToday = date === today;
+          const isFuture = date > today;
+          const isCompleted = habit.completedDates.has(date);
+          return (
+            <Pressable
+              key={date}
+              disabled={isFuture}
+              onPress={() => onToggleDay(habit.id, date)}
+              style={[styles.dotColumn, isFuture && styles.dotColumnFuture]}
+            >
+              <Text style={[styles.dayLetter, isToday && styles.dayLetterToday]}>{DAY_LETTERS[di]}</Text>
+              <View style={[styles.dot, isCompleted ? styles.dotCompleted : styles.dotEmpty, isToday && styles.dotToday]} />
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 /**
- * Evolución diaria del mes: un punto por día con el número de hábitos marcados ESE día (de 0 al
- * total de hábitos activos), unidos por líneas — a diferencia de la tira semanal de arriba (un
- * hábito por columna), aquí se agregan TODOS los hábitos en una sola serie para ver los picos
- * ("hoy hice 4 de 5 hábitos") de un vistazo. Sin equivalente en la web todavía — nuevo, no un
- * puerto — pero mismo criterio visual que el resto de gráficos del móvil (GoalsProgressCard):
- * geometría calculada a mano sobre `react-native-svg`, sin librería de gráficos aparte.
+ * Progreso de los hábitos (puerto de HabitsProgressPanel de la web): por cada día, el % de hábitos
+ * activos que se marcaron ese día (3 de 4 = 75%), con un punto por día unidos por una línea. Vista
+ * semanal (la semana en curso, lunes a domingo, igual que la tira de arriba) o mensual (con el mes
+ * anterior a un toque: el servidor solo guarda ~62 días de historial, ver HISTORY_DAYS en
+ * habitsService). Los días que aún no han llegado no se pintan: no son un 0%, son "todavía no".
+ * Geometría calculada a mano sobre `react-native-svg`, sin librería de gráficos aparte.
  */
-function HabitsEvolutionChart({ habits, monthStart }: { habits: HabitWithLogs[]; monthStart: Date }) {
-  const total = habits.length;
-  const days = daysInMonth(monthStart);
-  const counts = Array.from({ length: days }, (_, i) => {
-    const key = dateKeyOf(monthStart, i + 1);
-    return habits.reduce((n, h) => (h.completedDates.has(key) ? n + 1 : n), 0);
+function HabitsProgressPanel({ habits, weekDays }: { habits: HabitWithLogs[]; weekDays: string[] }) {
+  const [mode, setMode] = useState<"week" | "month">("week");
+  const [monthOffset, setMonthOffset] = useState(0); // 0 = este mes, -1 = el anterior
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const today = todayKey();
+
+  const monthStart = utcMonthStart(monthOffset);
+  const dates = mode === "week" ? weekDays : monthDateKeys(monthStart);
+  const labels = mode === "week" ? DAY_LETTERS : dates.map((d) => String(Number(d.slice(8, 10))));
+
+  const points = dates.map((date, i) => {
+    const marked = habits.reduce((n, h) => (h.completedDates.has(date) ? n + 1 : n), 0);
+    return { date, label: labels[i], marked, percent: Math.round((marked / habits.length) * 100), future: date > today };
   });
+  const elapsed = points.filter((p) => !p.future);
 
-  const maxY = Math.max(1, total);
-  const chartWidth = Math.max(days * POINT_SPACING, 200);
-  const plotHeight = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
-  const xOf = (i: number) => i * POINT_SPACING + POINT_SPACING / 2;
-  const yOf = (count: number) => CHART_PADDING_TOP + plotHeight * (1 - count / maxY);
+  // Semana: el gráfico ocupa justo el ancho de la tarjeta. Mes: al menos MONTH_MIN_POINT_SPACING
+  // por día; si no cabe, se desplaza en horizontal.
+  const chartWidth =
+    mode === "week" ? availableWidth : Math.max(availableWidth, PAD_L + PAD_R + points.length * MONTH_MIN_POINT_SPACING);
+  const innerW = chartWidth - PAD_L - PAD_R;
+  const innerH = CHART_H - PAD_T - PAD_B;
+  const xOf = (i: number) => PAD_L + ((i + 0.5) * innerW) / points.length;
+  const yOf = (percent: number) => PAD_T + innerH * (1 - percent / 100);
+  const linePath = points
+    .map((p, i) => (p.future ? null : `${i === 0 || points[i - 1].future ? "M" : "L"} ${xOf(i)} ${yOf(p.percent)}`))
+    .filter(Boolean)
+    .join(" ");
 
-  const linePath = counts.map((count, i) => `${i === 0 ? "M" : "L"} ${xOf(i)} ${yOf(count)}`).join(" ");
-  const now = new Date();
-  const todayIndex =
-    now.getUTCFullYear() === monthStart.getUTCFullYear() && now.getUTCMonth() === monthStart.getUTCMonth() ? now.getUTCDate() - 1 : -1;
+  const totalMarked = elapsed.reduce((n, p) => n + p.marked, 0);
+  const average = elapsed.length > 0 ? Math.round(elapsed.reduce((n, p) => n + p.percent, 0) / elapsed.length) : null;
+  const rawMonthLabel = monthStart.toLocaleDateString("es-ES", { month: "long", year: "numeric", timeZone: "UTC" });
+  const monthLabel = rawMonthLabel.charAt(0).toUpperCase() + rawMonthLabel.slice(1);
+
+  const onChartLayout = (e: LayoutChangeEvent) => setAvailableWidth(Math.floor(e.nativeEvent.layout.width));
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <Svg width={chartWidth} height={CHART_HEIGHT}>
-        <Line
-          x1={0}
-          y1={yOf(0)}
-          x2={chartWidth}
-          y2={yOf(0)}
-          stroke={withAlpha(colors.habit, 0.25)}
-          strokeWidth={1}
-          strokeDasharray="2 3"
-        />
-        <Line
-          x1={0}
-          y1={yOf(maxY)}
-          x2={chartWidth}
-          y2={yOf(maxY)}
-          stroke={withAlpha(colors.habit, 0.25)}
-          strokeWidth={1}
-          strokeDasharray="2 3"
-        />
-        {counts.length > 1 && <Path d={linePath} stroke={colors.habit} strokeWidth={2} fill="none" strokeLinejoin="round" strokeLinecap="round" />}
-        {counts.map((count, i) => (
-          <Circle
-            key={i}
-            cx={xOf(i)}
-            cy={yOf(count)}
-            r={i === todayIndex ? 4.5 : 3}
-            fill={i === todayIndex ? colors.habit : colors.card}
-            stroke={colors.habit}
-            strokeWidth={i === todayIndex ? 0 : 1.5}
-          />
-        ))}
-      </Svg>
-      <View style={styles.chartDayLabels}>
-        {counts.map((_, i) => (
-          <Text key={i} style={[styles.chartDayLabel, { width: POINT_SPACING }, i === todayIndex && styles.chartDayLabelToday]}>
-            {i + 1}
-          </Text>
-        ))}
+    <View style={styles.progress}>
+      <View style={styles.progressHeader}>
+        <View style={styles.segmented}>
+          {(["week", "month"] as const).map((m, i) => (
+            <Pressable key={m} onPress={() => setMode(m)} style={[styles.segment, i > 0 && styles.segmentBorder, mode === m && styles.segmentActive]}>
+              <Text style={[styles.segmentText, mode === m && styles.segmentTextActive]}>{m === "week" ? "Semana" : "Mes"}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {mode === "month" && (
+          <View style={styles.monthNav}>
+            <Pressable onPress={() => setMonthOffset(-1)} disabled={monthOffset === -1} hitSlop={8} accessibilityLabel="Mes anterior">
+              <Text style={[styles.monthNavButton, monthOffset === -1 && styles.monthNavButtonDisabled]}>‹</Text>
+            </Pressable>
+            <Text style={styles.monthNavLabel}>{monthLabel}</Text>
+            <Pressable onPress={() => setMonthOffset(0)} disabled={monthOffset === 0} hitSlop={8} accessibilityLabel="Mes siguiente">
+              <Text style={[styles.monthNavButton, monthOffset === 0 && styles.monthNavButtonDisabled]}>›</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
-    </ScrollView>
+
+      <View onLayout={onChartLayout}>
+        {availableWidth > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} scrollEnabled={chartWidth > availableWidth}>
+            <Svg width={chartWidth} height={CHART_H}>
+              {[0, 50, 100].map((tick) => (
+                <G key={tick}>
+                  <Line
+                    x1={PAD_L}
+                    x2={chartWidth - PAD_R}
+                    y1={yOf(tick)}
+                    y2={yOf(tick)}
+                    stroke={withAlpha(colors.habit, 0.25)}
+                    strokeWidth={1}
+                    strokeDasharray="3 4"
+                  />
+                  <SvgText x={PAD_L - 6} y={yOf(tick) + 3} textAnchor="end" fontSize={10} fill={colors.mutedForeground} fontFamily={fonts.sans}>
+                    {`${tick}%`}
+                  </SvgText>
+                </G>
+              ))}
+              {linePath !== "" && <Path d={linePath} fill="none" stroke={colors.habit} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+              {points.map((p, i) => (
+                <G key={p.date}>
+                  {!p.future && (
+                    <Circle
+                      cx={xOf(i)}
+                      cy={yOf(p.percent)}
+                      r={p.date === today ? 5 : 3.5}
+                      fill={p.date === today ? colors.habit : colors.card}
+                      stroke={colors.habit}
+                      strokeWidth={p.date === today ? 0 : 1.8}
+                    />
+                  )}
+                  <SvgText
+                    x={xOf(i)}
+                    y={CHART_H - 6}
+                    textAnchor="middle"
+                    fontSize={mode === "week" ? 11 : 9}
+                    fill={p.date === today ? colors.habit : colors.mutedForeground}
+                    fontFamily={p.date === today ? fonts.sansBold : fonts.sans}
+                  >
+                    {p.label}
+                  </SvgText>
+                </G>
+              ))}
+            </Svg>
+          </ScrollView>
+        )}
+      </View>
+
+      {average === null ? (
+        <Text style={styles.progressEmpty}>Todavía no hay días para calcular el progreso.</Text>
+      ) : (
+        <View style={styles.summary}>
+          <Text style={styles.summaryPercent}>{average}%</Text>
+          <View style={styles.summaryTextBox}>
+            <Text style={styles.summaryTitle}>Cumplimiento medio {mode === "week" ? "de la semana" : "del mes"}</Text>
+            <Text style={styles.summaryDetail}>
+              {totalMarked} {totalMarked === 1 ? "marca" : "marcas"} en {elapsed.length} {elapsed.length === 1 ? "día" : "días"} con{" "}
+              {habits.length} {habits.length === 1 ? "hábito" : "hábitos"}
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -247,14 +456,37 @@ const styles = StyleSheet.create({
     backgroundColor: withAlpha(colors.habit, 0.1),
     padding: 24,
   },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16 },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
   title: {
+    flex: 1,
+    minWidth: 0,
     fontFamily: fonts.sansBold,
     fontSize: 10,
     textTransform: "uppercase",
     letterSpacing: 0.6,
     color: colors.habit,
-    marginBottom: 16,
   },
+  circleButton: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  progressButton: { borderWidth: 1, borderColor: colors.habit },
+  progressButtonActive: { backgroundColor: colors.habit },
+  progressButtonText: { fontSize: 12 },
+  progressButtonTextActive: { color: colors.primaryForeground },
+  addButton: { backgroundColor: colors.habit },
+  addButtonText: { fontFamily: fonts.sansBold, fontSize: 16, lineHeight: 18, color: colors.primaryForeground },
+  addInput: {
+    backgroundColor: colors.background,
+    borderRadius: radius.input,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.foreground,
+  },
+  message: { fontFamily: fonts.sans, fontSize: 12, color: colors.destructive, marginBottom: 12 },
   emptyText: {
     fontFamily: fonts.sans,
     fontSize: 13,
@@ -262,19 +494,33 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   row: { gap: 16 },
-  column: { minWidth: 104, gap: 6 },
+  column: { minWidth: 128, gap: 6 },
   columnBorder: {
     borderLeftWidth: 1,
     borderLeftColor: withAlpha(colors.habit, 0.25),
     paddingLeft: 16,
   },
+  columnHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  habitTitleButton: { flex: 1, minWidth: 0 },
   habitTitle: {
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.foreground,
   },
+  habitTitleInput: {
+    flex: 1,
+    minWidth: 0,
+    padding: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.habit,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.foreground,
+  },
+  deleteMark: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
   dotsRow: { flexDirection: "row", gap: 4 },
   dotColumn: { alignItems: "center", gap: 4 },
+  dotColumnFuture: { opacity: 0.4 },
   dayLetter: { fontFamily: fonts.sans, fontSize: 9, color: colors.mutedForeground },
   dayLetterToday: { fontFamily: fonts.sansBold, color: colors.habit },
   dot: { width: 14, height: 14, borderRadius: 7 },
@@ -282,14 +528,38 @@ const styles = StyleSheet.create({
   dotCompleted: { backgroundColor: colors.habit },
   dotToday: { borderWidth: 2, borderColor: colors.habit },
 
-  // --- Gráfico de evolución mensual (HabitsEvolutionChart) ---
-  chartToggle: { alignSelf: "flex-start", marginTop: 16 },
-  chartToggleText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.habit },
-  chartSection: { marginTop: 12 },
-  chartNav: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
-  chartNavButton: { fontFamily: fonts.sansBold, fontSize: 15, color: colors.habit, paddingHorizontal: 4 },
-  chartNavLabel: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.foreground, textTransform: "capitalize" },
-  chartDayLabels: { flexDirection: "row" },
-  chartDayLabel: { fontFamily: fonts.sans, fontSize: 9, color: colors.mutedForeground, textAlign: "center" },
-  chartDayLabelToday: { fontFamily: fonts.sansBold, color: colors.habit },
+  // --- Panel de progreso (HabitsProgressPanel) ---
+  progress: { marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: withAlpha(colors.habit, 0.25) },
+  progressHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 },
+  segmented: {
+    flexDirection: "row",
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: withAlpha(colors.habit, 0.4),
+    overflow: "hidden",
+  },
+  segment: { paddingHorizontal: 12, paddingVertical: 4 },
+  segmentBorder: { borderLeftWidth: 1, borderLeftColor: withAlpha(colors.habit, 0.4) },
+  segmentActive: { backgroundColor: colors.habit },
+  segmentText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.habit },
+  segmentTextActive: { color: colors.primaryForeground },
+  monthNav: { flexDirection: "row", alignItems: "center", gap: 8 },
+  monthNavButton: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.habit, paddingHorizontal: 4 },
+  monthNavButtonDisabled: { opacity: 0.3 },
+  monthNavLabel: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.foreground, minWidth: 110, textAlign: "center" },
+  progressEmpty: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 8 },
+  summary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginTop: 12,
+    borderRadius: radius.input,
+    backgroundColor: withAlpha(colors.habit, 0.1),
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  summaryPercent: { fontFamily: fonts.serif, fontSize: 30, color: colors.habit },
+  summaryTextBox: { flex: 1, minWidth: 0 },
+  summaryTitle: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.foreground },
+  summaryDetail: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
 });

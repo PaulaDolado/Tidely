@@ -8,6 +8,8 @@ import { runSync } from "../sync";
 import { getCombinedStreak } from "../api/today";
 import { listTodayEvents, ParsedEvent } from "../db/eventsRepo";
 import { listTasksDueToday, toggleTaskDone } from "../db/tasksRepo";
+import { getSubtaskProgress, SubtaskProgress } from "../db/subtaskCounts";
+import { useNavigation } from "@react-navigation/native";
 import { listHabits, isHabitDoneToday, toggleHabitToday } from "../db/habitsRepo";
 import { listNotes, createNoteLocal, toggleNoteChecked, deleteNoteLocal } from "../db/notesRepo";
 import { EventOccurrence } from "../utils/recurrence";
@@ -74,12 +76,18 @@ export function HoyScreen() {
   const { user, logout } = useAuth();
   const { isConnected } = useNetInfo();
   const { collapsed } = useSidebar();
+  // HoyScreen es una pantalla del Tab.Navigator, así que useNavigation() funciona sin recibir props.
+  // Tipado a mano (como `route` en AgendaScreen) en vez de importar los tipos de App.tsx — ver el
+  // comentario de AgendaScreen sobre por qué no se usa RouteProp/NavigationProp aquí.
+  const navigation = useNavigation() as unknown as { navigate: (route: string, params?: object) => void };
 
   const [events, setEvents] = useState<EventOccurrence<ParsedEvent>[]>([]);
   // Categorías de evento (mismo criterio que AgendaScreen): se leen directas de la API, no del
   // caché SQLite — solo hacen falta para pintar la etiqueta/color de cada evento de hoy.
   const [categories, setCategories] = useState<EventCategory[]>([]);
   const [tasks, setTasks] = useState<LocalTask[]>([]);
+  // "☑ hechas/total" de las subtareas de cada tarea de hoy (id de tarea → progreso).
+  const [subtaskProgress, setSubtaskProgress] = useState<Record<string, SubtaskProgress>>({});
   const [habits, setHabits] = useState<(LocalHabit & { done: boolean })[]>([]);
   const [notes, setNotes] = useState<LocalNote[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
@@ -108,6 +116,7 @@ export function HoyScreen() {
         done: await isHabitDoneToday(h.id),
       }))
     );
+    setSubtaskProgress(await getSubtaskProgress(nextTasks.map((t) => t.id)));
     setEvents(nextEvents);
     setTasks(nextTasks);
     setHabits(habitsWithDone);
@@ -165,6 +174,21 @@ export function HoyScreen() {
     }, SYNC_INTERVAL_MS);
     return () => clearInterval(id);
   }, [isConnected, sync]);
+
+  // Misma navegación que la web (HoyPage.tsx → onNavigate): el evento abre la Agenda en SU día y
+  // lo resalta, la tarea abre el Planificador resaltándola. Los nombres de parámetro
+  // (focusDate/focusEventId/focusTaskId) son el contrato que leen AgendaScreen y PlanificadorScreen.
+  // La fecha va en UTC (misma clave que usa AgendaScreen para sus días).
+  const handleOpenEvent = (occ: EventOccurrence<ParsedEvent>) => {
+    navigation.navigate("Agenda", {
+      focusDate: occ.startTime.toISOString().slice(0, 10),
+      focusEventId: String(occ.event.id),
+    });
+  };
+
+  const handleOpenTask = (id: string) => {
+    navigation.navigate("Planificador", { focusTaskId: String(id) });
+  };
 
   const handleToggleTask = async (id: string) => {
     await toggleTaskDone(id);
@@ -292,9 +316,10 @@ export function HoyScreen() {
               {events.map((occ) => {
                 const typeStyle = eventCategoryStyle(categories, occ.event.categoryId);
                 return (
-                  <View
+                  <Pressable
                     key={`${occ.event.id}-${occ.startTime.toISOString()}`}
                     style={styles.eventRow}
+                    onPress={() => handleOpenEvent(occ)}
                   >
                     <Text style={styles.eventTime}>
                       {formatTime(occ.startTime)}
@@ -322,7 +347,7 @@ export function HoyScreen() {
                         {eventCategoryLabel(categories, occ.event)}
                       </Text>
                     </View>
-                  </View>
+                  </Pressable>
                 );
               })}
             </Section>
@@ -330,29 +355,49 @@ export function HoyScreen() {
             {/* TAREAS */}
             <Section title="✅ Tareas con vencimiento hoy">
               {tasks.length === 0 && (
-                <EmptyText text="Ninguna tarea vence hoy." />
+                <View style={styles.emptyTasksRow}>
+                  <Text style={styles.emptyTasksText}>Ninguna tarea vence hoy.</Text>
+                  <Pressable onPress={() => navigation.navigate("Planificador")} hitSlop={8}>
+                    <Text style={styles.plannerLink}>Ir al Planificador →</Text>
+                  </Pressable>
+                </View>
               )}
-              {tasks.map((t) => (
-                <Pressable
-                  key={t.id}
-                  style={styles.taskRow}
-                  onPress={() => handleToggleTask(t.id)}
-                >
-                  <Checkbox checked={t.status === "done"} />
-                  <Text
-                    style={[
-                      styles.taskTitle,
-                      t.status === "done" && styles.taskTitleDone,
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {t.title}
-                  </Text>
-                  {(t.synced === 0 || t.pendingOp === "update") && (
-                    <Text style={styles.pendingTag}>pendiente</Text>
-                  )}
-                </Pressable>
-              ))}
+              {tasks.map((t) => {
+                const progress = subtaskProgress[t.id];
+                return (
+                  <View key={t.id} style={styles.taskRow}>
+                    {/* El checkbox alterna hecha/pendiente; el título (a su lado) abre la tarea en el
+                        Planificador, como en la web (HoyPage.tsx) — antes toda la fila era un único
+                        botón de "hecha", sin forma de saltar a la tarea. */}
+                    <Pressable
+                      onPress={() => handleToggleTask(t.id)}
+                      hitSlop={8}
+                      accessibilityLabel={t.status === "done" ? "Marcar como pendiente" : "Marcar como hecha"}
+                    >
+                      <Checkbox checked={t.status === "done"} />
+                    </Pressable>
+                    <Pressable style={styles.taskTitleButton} onPress={() => handleOpenTask(t.id)}>
+                      <Text
+                        style={[
+                          styles.taskTitle,
+                          t.status === "done" && styles.taskTitleDone,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {t.title}
+                      </Text>
+                    </Pressable>
+                    {progress && progress.total > 0 && (
+                      <Text style={styles.subtaskCount}>
+                        ☑ {progress.done}/{progress.total}
+                      </Text>
+                    )}
+                    {(t.synced === 0 || t.pendingOp === "update") && (
+                      <Text style={styles.pendingTag}>pendiente</Text>
+                    )}
+                  </View>
+                );
+              })}
             </Section>
 
             {/* ENTRADAS RECIENTES EN TUS LIBRETAS */}
@@ -424,7 +469,6 @@ export function HoyScreen() {
                         styles.noteText,
                         n.checked === 1 && styles.noteTextDone,
                       ]}
-                      numberOfLines={2}
                     >
                       {n.content}
                     </Text>
@@ -772,11 +816,41 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 0,
   },
+  // El título es un botón aparte del checkbox (abre la tarea en el Planificador): flex:1 +
+  // minWidth:0 para que un título largo se parta en 2 líneas en vez de empujar la fila.
+  taskTitleButton: {
+    flex: 1,
+    minWidth: 0,
+  },
   taskTitle: {
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.foreground,
+  },
+  subtaskCount: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.mutedForeground,
+  },
+  emptyTasksRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 8,
+  },
+  emptyTasksText: {
     flex: 1,
+    minWidth: 0,
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.mutedForeground,
+    fontStyle: "italic",
+  },
+  plannerLink: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 13,
+    color: colors.primary,
   },
   taskTitleDone: {
     textDecorationLine: "line-through",

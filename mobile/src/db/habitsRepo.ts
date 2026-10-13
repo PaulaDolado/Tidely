@@ -1,7 +1,9 @@
 import { getDb } from "./index";
 import { LocalHabit, LocalHabitLog, ServerHabit, ServerHabitLog } from "../types";
 
-// --- Habit (solo caché de lectura — el móvil no crea/edita hábitos, solo marca el día) ---
+// --- Habit (caché local del servidor — alta/renombrado/borrado van por REST, ver api/habits.ts, y
+// tras cada llamada correcta se refleja aquí con upsertHabits/deleteHabit; el sync offline solo
+// sube las marcas diarias, los HabitLog) ---
 
 export async function upsertHabits(habits: ServerHabit[]): Promise<void> {
   const db = await getDb();
@@ -79,22 +81,23 @@ export async function isHabitDoneToday(habitId: number): Promise<boolean> {
   return row != null;
 }
 
-/** Marca/desmarca hoy para un hábito. Si el registro nunca llegó a sincronizarse (`pending =
- * 'create'`) al desmarcarlo se borra sin más — nunca existió en el servidor, no hay nada que
- * subir como borrado. */
-export async function toggleHabitToday(habitId: number): Promise<void> {
+/** Marca/desmarca un día concreto ("YYYY-MM-DD", misma clave UTC que `todayKey()` y que la que sube
+ * sync/push.ts) para un hábito — como en la web, se puede marcar cualquier día de la semana en
+ * curso, no solo hoy. Si el registro nunca llegó a sincronizarse (`pending = 'create'`) al
+ * desmarcarlo se borra sin más — nunca existió en el servidor, no hay nada que subir como
+ * borrado. */
+export async function toggleHabitOnDate(habitId: number, date: string): Promise<void> {
   const db = await getDb();
-  const today = todayKey();
   const existing = await db.getFirstAsync<LocalHabitLog>(
     "SELECT * FROM habit_logs WHERE habitId = ? AND date = ?",
-    [habitId, today]
+    [habitId, date]
   );
 
   if (existing && existing.pending !== "delete") {
     if (existing.pending === "create") {
-      await db.runAsync("DELETE FROM habit_logs WHERE habitId = ? AND date = ?", [habitId, today]);
+      await db.runAsync("DELETE FROM habit_logs WHERE habitId = ? AND date = ?", [habitId, date]);
     } else {
-      await db.runAsync("UPDATE habit_logs SET pending = 'delete' WHERE habitId = ? AND date = ?", [habitId, today]);
+      await db.runAsync("UPDATE habit_logs SET pending = 'delete' WHERE habitId = ? AND date = ?", [habitId, date]);
     }
     return;
   }
@@ -102,8 +105,13 @@ export async function toggleHabitToday(habitId: number): Promise<void> {
   await db.runAsync(
     `INSERT INTO habit_logs (habitId, date, serverId, pending) VALUES (?, ?, NULL, 'create')
      ON CONFLICT(habitId, date) DO UPDATE SET pending = 'create'`,
-    [habitId, today]
+    [habitId, date]
   );
+}
+
+/** Marca/desmarca hoy para un hábito (atajo de `toggleHabitOnDate`, lo usa la pantalla "Hoy"). */
+export async function toggleHabitToday(habitId: number): Promise<void> {
+  await toggleHabitOnDate(habitId, todayKey());
 }
 
 export async function listPendingHabitLogs(): Promise<LocalHabitLog[]> {
