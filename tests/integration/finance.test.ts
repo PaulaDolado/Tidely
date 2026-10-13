@@ -133,6 +133,33 @@ describe("Finance Endpoints", () => {
     });
   });
 
+  describe("GET /finance/transactions (paginación)", () => {
+    it("pagina sin repetir ni perder movimientos aunque compartan fecha", async () => {
+      const sameDay = new Date(year, month - 1, 5, 12, 0, 0).toISOString();
+      for (let i = 1; i <= 25; i += 1) {
+        await request(app).post("/finance/transactions").set(authed()).send({
+          type: "expense",
+          amount: i,
+          category: "food",
+          description: `mov-${i}`,
+          date: sameDay,
+        });
+      }
+
+      const seen: string[] = [];
+      for (let page = 1; page <= 3; page += 1) {
+        const res = await request(app).get("/finance/transactions").query({ limit: 10, page }).set(authed());
+        expect(res.status).toBe(200);
+        expect(res.body.pagination.total).toBe(25);
+        expect(res.body.pagination.pages).toBe(3);
+        seen.push(...res.body.transactions.map((t: { description: string }) => t.description));
+      }
+
+      expect(seen).toHaveLength(25);
+      expect(new Set(seen).size).toBe(25);
+    });
+  });
+
   describe("GET /finance/transactions", () => {
     it("debería filtrar por categoría", async () => {
       await request(app).post("/finance/transactions").set(authed()).send({

@@ -7,10 +7,25 @@ import { MiniLineChart } from "../components/MiniLineChart";
 import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
 import { DayPicker } from "../components/DayPicker";
 import { currentPeriod, isCurrentPeriod, monthName, Period, periodLabel } from "../components/MonthSwitcher";
+import { PageSize, readStoredPageSize, storePageSize, TransactionsPager } from "../components/TransactionsPager";
 import { downloadCsv, transactionsToCsv } from "../utils/financeExport";
 import { BudgetSummary, FinanceAnalytics, MonthlyBalance, Pagination, SavingsGoal, TotalBalance, Transaction } from "../types";
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+// Una página de movimientos; con "Todo" se piden de 100 en 100 (el máximo del backend) hasta tenerlos todos.
+async function fetchTransactions(page: number, pageSize: PageSize): Promise<{ transactions: Transaction[]; pagination: Pagination }> {
+  if (pageSize !== "all") {
+    return api.get(`/finance/transactions?limit=${pageSize}&page=${page}`);
+  }
+  const first = await api.get<{ transactions: Transaction[]; pagination: Pagination }>("/finance/transactions?limit=100&page=1");
+  const transactions = [...first.transactions];
+  for (let next = 2; next <= first.pagination.pages; next += 1) {
+    const res = await api.get<{ transactions: Transaction[]; pagination: Pagination }>(`/finance/transactions?limit=100&page=${next}`);
+    transactions.push(...res.transactions);
+  }
+  return { transactions, pagination: { page: 1, limit: transactions.length, total: first.pagination.total, pages: 1 } };
+}
 
 function eur(n: number): string {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
@@ -28,12 +43,27 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
     error: balanceError,
     reload: reloadBalance,
   } = useFetch(() => api.get<MonthlyBalance>(`/finance/balance/${period.month}/${period.year}`), [period.month, period.year]);
+  // Lista de movimientos paginada: 10 por página por defecto (recordado) y, si hay más de 10, un pie con el
+  // tamaño de página (10, 20, 30…, "Todo") y las flechas ‹ › — ver TransactionsPager.
+  const [pageSize, setPageSize] = useState<PageSize>(readStoredPageSize);
+  const [page, setPage] = useState(1);
   const {
     data: txData,
     loading: loadingTx,
     error: txError,
     reload: reloadTx,
-  } = useFetch(() => api.get<{ transactions: Transaction[]; pagination: Pagination }>("/finance/transactions?limit=15"), []);
+  } = useFetch(() => fetchTransactions(page, pageSize), [page, pageSize]);
+
+  // Si al borrar movimientos la página actual se queda sin nada, se vuelve a la última que tenga.
+  useEffect(() => {
+    if (txData && page > txData.pagination.pages && txData.pagination.pages >= 1) setPage(txData.pagination.pages);
+  }, [txData, page]);
+
+  const changePageSize = (size: PageSize) => {
+    storePageSize(size);
+    setPage(1);
+    setPageSize(size);
+  };
   const { data: analytics, reload: reloadAnalytics } = useFetch(() => api.get<FinanceAnalytics>("/finance/analytics"), []);
   // Top de categorías del mes elegido (el de arriba, `analytics`, siempre es el mes en curso: tendencia y proyección).
   const { data: periodAnalytics, reload: reloadPeriodAnalytics } = useFetch(
@@ -117,8 +147,8 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
           <div>
             <h2 className="mb-6 text-xl font-medium">Movimientos</h2>
             {txError && <ErrorMessage message={txError} />}
-            <div className="overflow-hidden rounded-3xl border border-border bg-card">
-              {loadingTx ? (
+            <div className={`overflow-hidden rounded-3xl border border-border bg-card transition-opacity ${loadingTx && txData ? "opacity-60" : ""}`}>
+              {loadingTx && !txData ? (
                 <Loading />
               ) : (txData?.transactions.length ?? 0) === 0 ? (
                 <p className="p-8 text-center text-sm text-muted-foreground">Sin movimientos todavía.</p>
@@ -150,6 +180,16 @@ export function FinanzasPage({ onOpenSavings }: { onOpenSavings: (type: SavingsG
                 ))
               )}
             </div>
+            {txData && txData.pagination.total > 10 && (
+              <TransactionsPager
+                total={txData.pagination.total}
+                page={page}
+                pages={txData.pagination.pages}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={changePageSize}
+              />
+            )}
           </div>
 
           {analytics && (

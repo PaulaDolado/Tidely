@@ -12,7 +12,8 @@ import {
   getAnalyticsLocal,
   getMonthlyBalanceLocal,
   getTotalBalanceLocal,
-  listTransactions,
+  countTransactions,
+  listTransactionsPage,
   MonthlyBalance,
   updateTransactionLocal,
 } from "../db/transactionsRepo";
@@ -79,6 +80,12 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
   const [budgetFailed, setBudgetFailed] = useState(false);
   const [total, setTotal] = useState<{ income: number; expense: number; balance: number } | null>(null);
   const [transactions, setTransactions] = useState<LocalTransaction[]>([]);
+  // Lista de movimientos paginada: 10 por página por defecto y, si hay más de 10, un pie con el tamaño de
+  // página (10, 20, 30…, "Todo") y las flechas ‹ ›. El ref deja a `loadTransactions` (estable) leer siempre
+  // la página elegida.
+  const [txTotal, setTxTotal] = useState(0);
+  const [txPaging, setTxPaging] = useState<{ page: number; size: PageSize }>({ page: 1, size: DEFAULT_PAGE_SIZE });
+  const txPagingRef = useRef(txPaging);
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
   // Mes que enseñan "Resumen del presupuesto", "Resumen del mes" y el top de categorías (selector
   // ‹ mes ›); las tarjetas de arriba (acumulado), la tendencia y la proyección no dependen de él. El
@@ -107,14 +114,37 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
     }
   }, []);
 
+  const loadTransactions = useCallback(async () => {
+    const { page, size } = txPagingRef.current;
+    const [rows, count] = await Promise.all([
+      listTransactionsPage(size === "all" ? null : size, size === "all" ? 0 : (page - 1) * size),
+      countTransactions(),
+    ]);
+    // Si al borrar movimientos la página actual se queda sin nada, se vuelve a la última que tenga.
+    if (size !== "all" && rows.length === 0 && count > 0 && page > 1) {
+      const next = { page: Math.ceil(count / size), size };
+      txPagingRef.current = next;
+      setTxPaging(next);
+      return loadTransactions();
+    }
+    setTransactions(rows);
+    setTxTotal(count);
+  }, []);
+
+  const changeTxPaging = (next: { page: number; size: PageSize }) => {
+    txPagingRef.current = next;
+    setTxPaging(next);
+    loadTransactions();
+  };
+
   const reload = useCallback(async () => {
     setLoading(true);
     const { month, year } = periodRef.current;
     reloadBudget();
-    const [bal, tot, txs, stats, periodStats, savingsGoals] = await Promise.all([
+    const [bal, tot, , stats, periodStats, savingsGoals] = await Promise.all([
       getMonthlyBalanceLocal(month, year),
       getTotalBalanceLocal(),
-      listTransactions(15),
+      loadTransactions(),
       getAnalyticsLocal(),
       getAnalyticsLocal(month, year),
       listSavingsGoals(),
@@ -122,12 +152,11 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
     setBalance(bal);
     setPeriodAnalytics(periodStats);
     setTotal(tot);
-    setTransactions(txs);
     setAnalytics(stats);
     setSavingsTotal(savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0));
     setInvestmentTotal(savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0));
     setLoading(false);
-  }, [reloadBudget]);
+  }, [reloadBudget, loadTransactions]);
 
   const changePeriod = (next: Period) => {
     periodRef.current = next;
@@ -348,6 +377,14 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
                   ))
                 )}
               </View>
+              {txTotal > 10 && (
+                <TransactionsPager
+                  total={txTotal}
+                  page={txPaging.page}
+                  size={txPaging.size}
+                  onChange={changeTxPaging}
+                />
+              )}
             </View>
           </>
         )}
@@ -519,6 +556,76 @@ function SummaryCard({ label, value, color, hint, onPress }: { label: string; va
   );
 }
 
+type PageSize = number | "all";
+const DEFAULT_PAGE_SIZE = 10;
+
+/** 10, 20, 30… hasta cubrir `total` (con tope en 100), más "Todo". */
+function pageSizeOptions(total: number): number[] {
+  const top = Math.min(100, Math.max(10, Math.ceil(total / 10) * 10));
+  return Array.from({ length: top / 10 }, (_, i) => (i + 1) * 10);
+}
+
+// Pie de la lista de movimientos (puerto de TransactionsPager de la web): cuántos mostrar por página
+// (10, 20, 30…, o "Todo") y flechas ‹ › con el rango visible ("11–20 de 47"). Solo se pinta con más de 10.
+function TransactionsPager({
+  total,
+  page,
+  size,
+  onChange,
+}: {
+  total: number;
+  page: number;
+  size: PageSize;
+  onChange: (next: { page: number; size: PageSize }) => void;
+}) {
+  const all = size === "all";
+  const perPage = all ? total : size;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to = Math.min(total, page * perPage);
+
+  return (
+    <View style={styles.pager}>
+      <View style={styles.pagerSizes}>
+        <Text style={styles.pagerLabel}>Mostrar</Text>
+        {[...pageSizeOptions(total), "all" as const].map((option) => {
+          const selected = option === size;
+          return (
+            <Pressable key={String(option)} style={[styles.pagerChip, selected && styles.pagerChipSelected]} onPress={() => onChange({ page: 1, size: option })}>
+              <Text style={[styles.pagerChipText, selected && styles.pagerChipTextSelected]}>{option === "all" ? "Todo" : option}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.pagerNav}>
+        <Text style={styles.pagerLabel}>{all ? `${total} movimientos` : `${from}–${to} de ${total}`}</Text>
+        {!all && pages > 1 && (
+          <View style={styles.pagerArrows}>
+            <Pressable
+              style={[styles.pagerArrow, page <= 1 && styles.pagerArrowDisabled]}
+              onPress={() => onChange({ page: page - 1, size })}
+              disabled={page <= 1}
+              hitSlop={6}
+              accessibilityLabel="Página anterior"
+            >
+              <Text style={styles.pagerArrowText}>‹</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.pagerArrow, page >= pages && styles.pagerArrowDisabled]}
+              onPress={() => onChange({ page: page + 1, size })}
+              disabled={page >= pages}
+              hitSlop={6}
+              accessibilityLabel="Página siguiente"
+            >
+              <Text style={styles.pagerArrowText}>›</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 // Un único formulario para crear (initial=undefined, fecha por defecto hoy) y para editar
 // (initial=la Transaction, precarga todos los campos incluida la fecha) — así se puede corregir
 // la fecha de un movimiento que se olvidó registrar el mes pasado sin borrarlo y crearlo de nuevo.
@@ -648,6 +755,18 @@ function MovementForm({
 }
 
 const styles = StyleSheet.create({
+  pager: { marginTop: 12, gap: 10 },
+  pagerSizes: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  pagerLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  pagerChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
+  pagerChipSelected: { backgroundColor: colors.foreground, borderColor: colors.foreground },
+  pagerChipText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  pagerChipTextSelected: { color: colors.background },
+  pagerNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  pagerArrows: { flexDirection: "row", gap: 8 },
+  pagerArrow: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", backgroundColor: colors.card },
+  pagerArrowDisabled: { opacity: 0.3 },
+  pagerArrowText: { fontFamily: fonts.sans, fontSize: 20, lineHeight: 22, color: colors.mutedForeground },
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },

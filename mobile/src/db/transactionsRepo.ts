@@ -37,6 +37,24 @@ export async function listTransactions(limit: number): Promise<LocalTransaction[
   );
 }
 
+/** Una página de movimientos (más recientes primero); `limit` null = todos. El desempate por updatedAt/id
+ * hace estable el orden entre páginas: varios movimientos comparten fecha y, sin él, al paginar se podían
+ * repetir unos y perder otros (mismo criterio que financeService.listTransactions en el backend). */
+export async function listTransactionsPage(limit: number | null, offset: number): Promise<LocalTransaction[]> {
+  const db = await getDb();
+  return db.getAllAsync<LocalTransaction>(
+    `SELECT * FROM transactions WHERE pendingOp IS NULL OR pendingOp != 'delete' ORDER BY date DESC, updatedAt DESC, id DESC LIMIT ? OFFSET ?`,
+    [limit ?? -1, offset]
+  );
+}
+
+/** Cuántos movimientos hay en total (sin los marcados para borrar), para paginar. */
+export async function countTransactions(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) as n FROM transactions WHERE pendingOp IS NULL OR pendingOp != 'delete'`);
+  return row?.n ?? 0;
+}
+
 /** Para calcular currentAmount de una meta de ahorro localmente — mismo criterio que
  * financeService.computeSavingsProgress en el backend (income - expense de esa categoría). */
 export async function sumTransactionsByCategory(category: string): Promise<{ income: number; expense: number }> {

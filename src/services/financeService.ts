@@ -216,7 +216,10 @@ export async function listTransactions(userId: number, filters: ListTransactions
   const [transactions, total] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      orderBy: { date: "desc" },
+      // `id` como desempate: sin él, los movimientos con la misma fecha (lo normal: se apuntan varios el mismo
+      // día) salían en orden arbitrario y cambiante entre peticiones, así que al paginar se repetían unos y
+      // se perdían otros.
+      orderBy: [{ date: "desc" }, { id: "desc" }],
       skip: (filters.page - 1) * filters.limit,
       take: filters.limit,
     }),
