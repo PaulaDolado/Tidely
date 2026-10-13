@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { SavedPlace, TransportType, Trip, TripAttachment } from "../types";
+import { SavedPlace, TransportDetail, TransportType, Trip, TripAttachment } from "../types";
 
 // Lógica de datos de la plantilla "viajes" (ver TravelPlannerTemplate), separada del componente para
 // que sea fácil de razonar: normalizar el contenido guardado, elegir el viaje por defecto y
@@ -138,10 +138,91 @@ export async function openAttachment(att: TripAttachment): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** "12 dic · 08:35" para el transporte (la hora es opcional). */
-export function formatTransportWhen(date: string, time?: string): string {
-  const day = new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
-  return time ? `${day} · ${time}` : day;
+function shortDay(date: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+/** Horario de un trayecto: "30 nov · 08:35 → 11:05", "30 nov 22:10 → 1 dic 06:40" (llega otro día),
+ * "30 nov · sale 08:35" (solo se sabe la salida) o solo "30 nov". */
+export function formatTransportSchedule(t: TransportDetail): string {
+  const arrivesOtherDay = !!t.arrivalDate && t.arrivalDate !== t.date;
+  if (arrivesOtherDay) {
+    return `${shortDay(t.date)}${t.departureTime ? ` ${t.departureTime}` : ""} → ${shortDay(t.arrivalDate as string)}${t.arrivalTime ? ` ${t.arrivalTime}` : ""}`;
+  }
+  if (t.departureTime && t.arrivalTime) return `${shortDay(t.date)} · ${t.departureTime} → ${t.arrivalTime}`;
+  if (t.departureTime) return `${shortDay(t.date)} · sale ${t.departureTime}`;
+  if (t.arrivalTime) return `${shortDay(t.date)} · llega ${t.arrivalTime}`;
+  return shortDay(t.date);
+}
+
+function toMinutes(date: string, time: string): number {
+  return Date.parse(`${date}T${time}:00Z`) / 60_000;
+}
+
+/** Minutos entre la llegada de `from` y la salida de `to` (negativo = la conexión no llega a tiempo);
+ * `null` si falta alguna hora. */
+export function layoverMinutes(from: TransportDetail, to: TransportDetail): number | null {
+  if (!from.arrivalTime || !to.departureTime) return null;
+  return toMinutes(to.date, to.departureTime) - toMinutes(from.arrivalDate ?? from.date, from.arrivalTime);
+}
+
+/** 80 → "1 h 20 min", 45 → "45 min", 120 → "2 h". */
+export function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/**
+ * Agrupa los trayectos en cadenas de conexión: cada cadena empieza en un trayecto al que NADIE apunta con
+ * `nextId` y sigue los `nextId`. Las cadenas salen ordenadas por la salida de su primer trayecto. Con
+ * guarda de ciclos: lo que quede sin visitar (un ciclo) se enseña como cadenas sueltas en vez de colgar.
+ */
+export function buildTransportChains(items: TransportDetail[]): TransportDetail[][] {
+  const byId = new Map(items.map((t) => [t.id, t]));
+  const referenced = new Set(items.map((t) => t.nextId).filter((id): id is string => !!id && byId.has(id)));
+  const order = (a: TransportDetail, b: TransportDetail) =>
+    `${a.date} ${a.departureTime ?? ""}`.localeCompare(`${b.date} ${b.departureTime ?? ""}`);
+  const visited = new Set<string>();
+  const chains: TransportDetail[][] = [];
+
+  const follow = (start: TransportDetail) => {
+    const chain: TransportDetail[] = [];
+    let current: TransportDetail | undefined = start;
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      chain.push(current);
+      current = current.nextId ? byId.get(current.nextId) : undefined;
+    }
+    chains.push(chain);
+  };
+
+  [...items].filter((t) => !referenced.has(t.id)).sort(order).forEach(follow);
+  [...items].filter((t) => !visited.has(t.id)).sort(order).forEach(follow);
+  return chains;
+}
+
+/** Trayectos a los que `from` puede enlazarse como continuación: no él mismo, no uno que ya continúa a OTRO
+ * trayecto y no uno que lo preceda en una cadena (cerraría un ciclo). */
+export function transferCandidates(items: TransportDetail[], fromId: string | undefined): TransportDetail[] {
+  const preceding = new Set<string>();
+  if (fromId) {
+    const byNext = new Map<string, string[]>();
+    for (const t of items) if (t.nextId) byNext.set(t.nextId, [...(byNext.get(t.nextId) ?? []), t.id]);
+    const stack = [fromId];
+    while (stack.length > 0) {
+      const id = stack.pop() as string;
+      for (const prev of byNext.get(id) ?? []) {
+        if (!preceding.has(prev)) {
+          preceding.add(prev);
+          stack.push(prev);
+        }
+      }
+    }
+  }
+  const takenByOthers = new Set(items.filter((t) => t.nextId && t.id !== fromId).map((t) => t.nextId as string));
+  return items.filter((t) => t.id !== fromId && !preceding.has(t.id) && !takenByOthers.has(t.id));
 }
 
 export function isValidEmail(value: string): boolean {

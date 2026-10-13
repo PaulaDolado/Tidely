@@ -207,10 +207,15 @@ export interface TransportDetail {
   id: string;
   type: TransportType;
   title?: string; // p. ej. "Madrid → Lisboa"
-  date: string; // YYYY-MM-DD
-  time?: string; // "HH:MM"
+  date: string; // fecha de SALIDA, YYYY-MM-DD
+  departureTime?: string; // "HH:MM"
+  arrivalDate?: string; // YYYY-MM-DD, solo si llega otro día distinto de `date`
+  arrivalTime?: string; // "HH:MM"
   details?: string; // operador, nº de vuelo/tren, asiento, reserva, terminal…
   attachments?: TripAttachment[];
+  needsTransfer?: boolean; // este tramo necesita un transbordo después
+  transferPlace?: string; // dónde es el transbordo (estación, aeropuerto…)
+  nextId?: string; // id del TransportDetail (del mismo viaje) que continúa a este
 }
 export interface TripContact {
   id: string;

@@ -8,6 +8,7 @@ import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-communi
 import { PackingItem, SavedPlace, TransportDetail, TransportType, TravelContent, TravelItineraryItem, Trip, TripAttachment, TripContact } from "../api/customPages";
 import { fetchLinkPreview, hostnameOf, normalizePlaceUrl, normalizeTravelContent, pickDefaultTrip } from "../utils/travel";
 import { attachmentChars, openAttachment, pickAttachment, totalAttachmentChars } from "../utils/travelFiles";
+import { buildTransportChains, formatLayover, formatSchedule, layoverMinutes, linkCandidates, shortDay, validateTransportTimes } from "../utils/travelTransport";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 
 // Plantilla "viajes" de las páginas personalizadas — puerto de
@@ -112,6 +113,9 @@ function DateField({
   compact,
   min,
   max,
+  emptyLabel,
+  pickerStart,
+  onClear,
 }: {
   label?: string;
   value: string;
@@ -121,17 +125,27 @@ function DateField({
   // itinerario, que solo puede caer dentro del viaje.
   min?: string;
   max?: string;
+  // Fecha opcional (la de llegada de un transporte): con `value` vacío se muestra `emptyLabel`, el
+  // selector abre en `pickerStart` y, con una fecha elegida, "Quitar fecha" la vacía.
+  emptyLabel?: string;
+  pickerStart?: string;
+  onClear?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <View style={compact ? undefined : { flex: 1 }}>
       {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
       <Pressable style={styles.dateButton} onPress={() => setOpen(true)}>
-        <Text style={styles.dateButtonText}>📅 {fmtDate(value, true)}</Text>
+        <Text style={styles.dateButtonText}>📅 {value ? fmtDate(value, true) : (emptyLabel ?? "Sin fecha")}</Text>
       </Pressable>
+      {value && onClear ? (
+        <Pressable onPress={onClear} hitSlop={6}>
+          <Text style={styles.removeText}>Quitar fecha</Text>
+        </Pressable>
+      ) : null}
       {open && (
         <DateTimePicker
-          value={keyToDate(value)}
+          value={keyToDate(value || pickerStart || todayKey())}
           mode="date"
           minimumDate={min ? keyToDate(min) : undefined}
           maximumDate={max ? keyToDate(max) : undefined}
@@ -173,6 +187,12 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   // "new" = entrada nueva (el "+" de la cabecera de cada bloque).
   const [editingTransportId, setEditingTransportId] = useState<string | "new" | null>(null);
   const [editingContactId, setEditingContactId] = useState<string | "new" | null>(null);
+  // "Crear transporte de conexión": el formulario nuevo que se abre justo después de guardar un tramo
+  // sabe de qué tramo viene (para enlazarlo al guardar) y arranca en la fecha de llegada de ese tramo.
+  // `transportFormSeq` cambia la `key` del formulario: si no, "new" tras "new" reutilizaría el estado.
+  const [connectFromId, setConnectFromId] = useState<string | null>(null);
+  const [connectDate, setConnectDate] = useState<string | null>(null);
+  const [transportFormSeq, setTransportFormSeq] = useState(0);
 
   const update = (patch: Partial<TravelContent>) => onChange({ trips, places: legacyPlaces, ...patch });
 
@@ -184,10 +204,9 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const favorites = places.filter((p) => p.favorite).length;
   const packing = selected?.packing ?? [];
   const packedCount = packing.filter((p) => p.packed).length;
-  const transport = useMemo(
-    () => [...(selected?.transport ?? [])].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? "")),
-    [selected],
-  );
+  const transport = useMemo(() => selected?.transport ?? [], [selected]);
+  // Cada transbordo es OTRO transporte del viaje enlazado con `nextId`: se pintan agrupados en cadenas.
+  const transportChains = useMemo(() => buildTransportChains(transport), [transport]);
   const contacts = selected?.contacts ?? [];
 
   const addTrip = async () => {
@@ -261,18 +280,41 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
     await setPacking([...packing, { id: Crypto.randomUUID(), text }]);
   };
 
-  const saveTransport = async (id: string | "new", values: Omit<TransportDetail, "id">) => {
+  const closeTransport = () => {
+    setEditingTransportId(null);
+    setConnectFromId(null);
+    setConnectDate(null);
+  };
+
+  // `createConnection`: el formulario pidió "Crear transporte de conexión" — se guarda este tramo y se abre
+  // otro nuevo. Todo el cambio (tramo + enlace del tramo anterior) va en UN solo patchTrip: dos seguidos
+  // partirían del mismo `selected` y el segundo pisaría al primero.
+  const saveTransport = async (id: string | "new", values: Omit<TransportDetail, "id">, createConnection?: boolean) => {
     if (!selected) return;
     const current = selected.transport ?? [];
-    const next = id === "new" ? [...current, { id: Crypto.randomUUID(), ...values }] : current.map((d) => (d.id === id ? { id: d.id, ...values } : d));
-    setEditingTransportId(null);
+    const legId = id === "new" ? Crypto.randomUUID() : id;
+    let next = id === "new" ? [...current, { id: legId, ...values }] : current.map((d) => (d.id === id ? { id: d.id, ...values } : d));
+    // Este tramo era el "nuevo transporte de conexión" de otro: ahora que existe, el otro continúa con él.
+    if (id === "new" && connectFromId) next = next.map((d) => (d.id === connectFromId ? { ...d, nextId: legId } : d));
+    if (createConnection) {
+      setConnectFromId(legId);
+      setConnectDate(values.arrivalDate ?? values.date);
+      setTransportFormSeq((n) => n + 1);
+      setEditingTransportId("new");
+    } else {
+      closeTransport();
+    }
     await patchTrip(selected.id, { transport: next });
   };
 
+  // Al borrar un tramo, los que lo tenían como continuación dejan de apuntar a un id que ya no existe
+  // (conservan "necesita transbordo", así que vuelven a mostrar el aviso de transbordo pendiente).
   const removeTransport = async (id: string) => {
     if (!selected) return;
-    setEditingTransportId(null);
-    await patchTrip(selected.id, { transport: (selected.transport ?? []).filter((d) => d.id !== id) });
+    closeTransport();
+    await patchTrip(selected.id, {
+      transport: (selected.transport ?? []).filter((d) => d.id !== id).map((d) => (d.nextId === id ? { ...d, nextId: undefined } : d)),
+    });
   };
 
   const saveContact = async (id: string | "new", values: Omit<TripContact, "id">) => {
@@ -545,7 +587,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Qué empacar</Text>
+          <CardTitle title="Qué empacar" destination={selected?.destination} />
           {selected && (
             <View style={styles.headerRight}>
               {packing.length > 0 && <Text style={styles.counterText}>{`${packedCount}/${packing.length}`}</Text>}
@@ -600,7 +642,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Detalles del transporte</Text>
+          <CardTitle title="Detalles del transporte" destination={selected?.destination} />
           {selected && (
             <Pressable style={styles.plusButton} onPress={() => setEditingTransportId("new")} hitSlop={8} accessibilityLabel="Añadir transporte">
               <Text style={styles.plusButtonText}>+</Text>
@@ -612,41 +654,63 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
         ) : transport.length === 0 ? (
           <Text style={styles.emptyText}>Guarda aquí vuelos, trenes y demás de {selected.destination}, con sus billetes o tarjetas de embarque.</Text>
         ) : (
-          <View style={{ gap: 14 }}>
-            {transport.map((d) => {
-              const meta = transportMeta(d.type);
-              const attachments = d.attachments ?? [];
-              return (
-                <View key={d.id} style={styles.transportRow}>
-                  <Text style={styles.transportIcon}>{meta.icon}</Text>
-                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Pressable onPress={() => setEditingTransportId(d.id)} accessibilityLabel={`Editar ${d.title || meta.label}`}>
-                      <Text style={styles.timelineTitle}>{d.title?.trim() || meta.label}</Text>
-                      <Text style={styles.mutedSmall}>{d.time ? `${fmtDate(d.date)} · ${d.time}` : fmtDate(d.date)}</Text>
-                      {d.details ? (
-                        <Text style={styles.mutedSmall} numberOfLines={2}>
-                          {d.details}
-                        </Text>
+          <View style={{ gap: 16 }}>
+            {transportChains.map((chain) => (
+              <View key={chain[0].id} style={{ gap: 8 }}>
+                {chain.map((d, i) => {
+                  const meta = transportMeta(d.type);
+                  const attachments = d.attachments ?? [];
+                  const prev = i > 0 ? chain[i - 1] : null;
+                  const layover = prev ? layoverMinutes(prev, d) : null;
+                  return (
+                    // Las continuaciones (transbordos) van sangradas y con una línea a la izquierda.
+                    <View key={d.id} style={prev ? styles.transportContinuation : undefined}>
+                      {prev ? (
+                        <View style={styles.transferConnector}>
+                          <Text style={styles.transferLabel}>{prev.transferPlace?.trim() ? `↳ Transbordo en ${prev.transferPlace.trim()}` : "↳ Transbordo"}</Text>
+                          {layover !== null && layover < 0 ? (
+                            <Text style={styles.transferWarning}>⚠ La conexión no llega a tiempo</Text>
+                          ) : layover !== null ? (
+                            <Text style={styles.mutedSmall}>{`escala de ${formatLayover(layover)}`}</Text>
+                          ) : null}
+                        </View>
                       ) : null}
-                    </Pressable>
-                    {attachments.length > 0 && (
-                      <View style={styles.attachmentRow}>
-                        {attachments.map((a) => (
-                          <AttachmentChip key={a.id} attachment={a} />
-                        ))}
+                      <View style={styles.transportRow}>
+                        <Text style={styles.transportIcon}>{meta.icon}</Text>
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Pressable onPress={() => setEditingTransportId(d.id)} accessibilityLabel={`Editar ${d.title || meta.label}`}>
+                            <Text style={styles.timelineTitle}>{d.title?.trim() || meta.label}</Text>
+                            <Text style={styles.mutedSmall}>{formatSchedule(d)}</Text>
+                            {d.details ? (
+                              <Text style={styles.mutedSmall} numberOfLines={2}>
+                                {d.details}
+                              </Text>
+                            ) : null}
+                          </Pressable>
+                          {attachments.length > 0 && (
+                            <View style={styles.attachmentRow}>
+                              {attachments.map((a) => (
+                                <AttachmentChip key={a.id} attachment={a} />
+                              ))}
+                            </View>
+                          )}
+                          {d.needsTransfer && i === chain.length - 1 ? (
+                            <Text style={styles.transferHint}>Transbordo pendiente: añade el transporte de conexión</Text>
+                          ) : null}
+                        </View>
                       </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
           </View>
         )}
       </View>
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Contactos importantes</Text>
+          <CardTitle title="Contactos importantes" destination={selected?.destination} />
           {selected && (
             <Pressable style={styles.plusButton} onPress={() => setEditingContactId("new")} hitSlop={8} accessibilityLabel="Añadir contacto">
               <Text style={styles.plusButtonText}>+</Text>
@@ -749,17 +813,20 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={transportDialogOpen} animationType="slide" transparent onRequestClose={() => setEditingTransportId(null)}>
+      <Modal visible={transportDialogOpen} animationType="slide" transparent onRequestClose={closeTransport}>
         <KeyboardAvoidingView style={styles.modalBackdrop} behavior="padding">
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
             {transportDialogOpen && selected && editingTransportId && (
               <TransportForm
-                key={editingTransportId}
+                key={`${editingTransportId}:${transportFormSeq}`}
                 trip={selected}
                 detail={editingTransport ?? undefined}
+                // Solo en el transporte de conexión recién abierto: tramo del que viene y fecha de partida.
+                previousId={editingTransport ? undefined : (connectFromId ?? undefined)}
+                initialDate={editingTransport ? undefined : (connectDate ?? undefined)}
                 // Adjuntos que ya ocupan sitio fuera de este formulario (otros viajes y otras entradas).
                 otherChars={totalAttachmentChars(trips) - attachmentChars(editingTransport?.attachments)}
-                onSave={(values) => saveTransport(editingTransportId, values)}
+                onSave={(values, createConnection) => saveTransport(editingTransportId, values, createConnection)}
                 onDelete={
                   editingTransport
                     ? () =>
@@ -769,7 +836,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
                         ])
                     : undefined
                 }
-                onClose={() => setEditingTransportId(null)}
+                onClose={closeTransport}
               />
             )}
           </View>
@@ -799,6 +866,21 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
           </View>
         </KeyboardAvoidingView>
       </Modal>
+    </View>
+  );
+}
+
+// Título de un bloque del viaje seleccionado con el destino debajo, en pequeño y apagado: deja claro que
+// el equipaje, el transporte y los contactos son DE ese viaje y no de la página entera.
+function CardTitle({ title, destination }: { title: string; destination?: string }) {
+  return (
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <Text style={styles.cardTitle}>{title}</Text>
+      {destination ? (
+        <Text style={styles.cardSubtitle} numberOfLines={1}>
+          {destination}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -1094,11 +1176,45 @@ function timeToDate(time: string): Date {
   return d;
 }
 
-// Alta/edición de un transporte (vuelo, tren…): tipo, título opcional, fecha (sin limitar al rango del
-// viaje: se puede salir el día antes o volver el día después), hora opcional, datos libres y adjuntos.
+/** Botón con la hora (HH:MM) que abre el selector nativo; con hora puesta, "Quitar hora" la vacía. */
+function TimeField({ label, value, onChange, defaultTime }: { label: string; value: string; onChange: (time: string) => void; defaultTime: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Pressable style={styles.dateButton} onPress={() => setOpen(true)}>
+        <Text style={styles.dateButtonText}>🕐 {value || "Sin hora"}</Text>
+      </Pressable>
+      {value ? (
+        <Pressable onPress={() => onChange("")} hitSlop={6}>
+          <Text style={styles.removeText}>Quitar hora</Text>
+        </Pressable>
+      ) : null}
+      {open && (
+        <DateTimePicker
+          value={timeToDate(value || defaultTime)}
+          mode="time"
+          display="default"
+          is24Hour
+          onValueChange={(_event: DateTimePickerChangeEvent, selected: Date) => {
+            setOpen(false);
+            if (selected) onChange(`${pad2(selected.getHours())}:${pad2(selected.getMinutes())}`);
+          }}
+          onDismiss={() => setOpen(false)}
+        />
+      )}
+    </View>
+  );
+}
+
+// Alta/edición de un transporte (vuelo, tren…): tipo, título opcional, salida y llegada (fecha y hora; la
+// fecha no se limita al rango del viaje: se puede salir el día antes o volver el día después), un
+// transbordo opcional —que es OTRO transporte del mismo viaje, enlazado con `nextId`—, datos libres y adjuntos.
 function TransportForm({
   trip,
   detail,
+  previousId,
+  initialDate,
   otherChars,
   onSave,
   onDelete,
@@ -1106,16 +1222,27 @@ function TransportForm({
 }: {
   trip: Trip;
   detail?: TransportDetail; // undefined = transporte nuevo
+  previousId?: string; // tramo del que continúa este transporte de conexión (aún sin enlazar en los datos)
+  initialDate?: string; // fecha de salida inicial de un transporte de conexión
   otherChars: number; // caracteres de adjuntos que ya ocupan sitio fuera de este formulario
-  onSave: (values: Omit<TransportDetail, "id">) => Promise<void>;
+  // `createConnection`: guardar este tramo y abrir enseguida uno nuevo que continúe con él.
+  onSave: (values: Omit<TransportDetail, "id">, createConnection?: boolean) => Promise<void>;
   onDelete?: () => void;
   onClose: () => void;
 }) {
   const [type, setType] = useState<TransportType>(detail?.type ?? "flight");
   const [title, setTitle] = useState(detail?.title ?? "");
-  const [date, setDate] = useState(detail?.date ?? trip.startDate);
-  const [time, setTime] = useState(detail?.time ?? "");
-  const [timeOpen, setTimeOpen] = useState(false);
+  const [date, setDate] = useState(detail?.date ?? initialDate ?? trip.startDate);
+  const [departureTime, setDepartureTime] = useState(detail?.departureTime ?? "");
+  const [arrivalDate, setArrivalDate] = useState(detail?.arrivalDate ?? "");
+  const [arrivalTime, setArrivalTime] = useState(detail?.arrivalTime ?? "");
+  const [needsTransfer, setNeedsTransfer] = useState(!!detail?.needsTransfer);
+  const [transferPlace, setTransferPlace] = useState(detail?.transferPlace ?? "");
+  const candidates = useMemo(() => linkCandidates(trip.transport ?? [], detail?.id, previousId), [trip.transport, detail?.id, previousId]);
+  // "" = aún sin elegir; el enlace guardado solo se conserva si sigue siendo un candidato válido.
+  const [nextId, setNextId] = useState(detail?.nextId && candidates.some((c) => c.id === detail.nextId) ? detail.nextId : "");
+  const [createNext, setCreateNext] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState(detail?.details ?? "");
   const [attachments, setAttachments] = useState<TripAttachment[]>(detail?.attachments ?? []);
   const [picking, setPicking] = useState(false);
@@ -1140,15 +1267,34 @@ function TransportForm({
   };
 
   const submit = async () => {
+    setError(null);
+    // La fecha de llegada solo se guarda si es otro día (si coincide con la de salida es lo mismo que vacía).
+    const arrivalDay = arrivalDate && arrivalDate !== date ? arrivalDate : undefined;
+    const problem = validateTransportTimes({ date, departureTime: departureTime || undefined, arrivalDate: arrivalDate || undefined, arrivalTime: arrivalTime || undefined });
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    // "Crear transporte de conexión" deja este tramo sin `nextId`: se enlaza al guardar el nuevo.
+    const connect = needsTransfer && createNext;
     setSaving(true);
-    await onSave({
-      type,
-      title: title.trim() || undefined,
-      date,
-      time: time || undefined,
-      details: details.trim() || undefined,
-      attachments: attachments.length > 0 ? attachments : undefined,
-    });
+    await onSave(
+      {
+        type,
+        title: title.trim() || undefined,
+        date,
+        departureTime: departureTime || undefined,
+        arrivalDate: arrivalDay,
+        arrivalTime: arrivalTime || undefined,
+        details: details.trim() || undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
+        // Con el transbordo apagado se limpian también el lugar y el enlace.
+        needsTransfer: needsTransfer ? true : undefined,
+        transferPlace: needsTransfer ? transferPlace.trim() || undefined : undefined,
+        nextId: needsTransfer && !connect ? nextId || undefined : undefined,
+      },
+      connect,
+    );
     setSaving(false);
   };
 
@@ -1169,32 +1315,81 @@ function TransportForm({
       <TextInput style={styles.input} placeholder="Título (p. ej. Madrid → Lisboa)" value={title} onChangeText={setTitle} maxLength={120} />
 
       <View style={[styles.dateRow, { marginTop: 12 }]}>
-        <DateField label="Fecha" value={date} onChange={setDate} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.fieldLabel}>Hora</Text>
-          <Pressable style={styles.dateButton} onPress={() => setTimeOpen(true)}>
-            <Text style={styles.dateButtonText}>🕐 {time || "Sin hora"}</Text>
-          </Pressable>
-          {time ? (
-            <Pressable onPress={() => setTime("")} hitSlop={6}>
-              <Text style={styles.removeText}>Quitar hora</Text>
-            </Pressable>
-          ) : null}
-          {timeOpen && (
-            <DateTimePicker
-              value={timeToDate(time || "09:00")}
-              mode="time"
-              display="default"
-              is24Hour
-              onValueChange={(_event: DateTimePickerChangeEvent, selected: Date) => {
-                setTimeOpen(false);
-                if (selected) setTime(`${pad2(selected.getHours())}:${pad2(selected.getMinutes())}`);
-              }}
-              onDismiss={() => setTimeOpen(false)}
-            />
-          )}
-        </View>
+        <DateField label="Fecha de salida" value={date} onChange={setDate} />
+        <TimeField label="Hora de salida" value={departureTime} onChange={setDepartureTime} defaultTime="09:00" />
       </View>
+      <View style={[styles.dateRow, { marginTop: 12 }]}>
+        {/* Vacía = llega el mismo día; el selector no deja elegir antes de la salida. */}
+        <DateField
+          label="Fecha de llegada"
+          value={arrivalDate}
+          min={date}
+          emptyLabel="Mismo día"
+          pickerStart={date}
+          onChange={setArrivalDate}
+          onClear={() => setArrivalDate("")}
+        />
+        <TimeField label="Hora de llegada" value={arrivalTime} onChange={setArrivalTime} defaultTime={departureTime || "12:00"} />
+      </View>
+
+      <Pressable
+        style={styles.transferToggle}
+        onPress={() => setNeedsTransfer((v) => !v)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: needsTransfer }}
+      >
+        <View style={[styles.checkbox, needsTransfer && styles.checkboxOn]}>{needsTransfer ? <Text style={styles.checkboxTick}>✓</Text> : null}</View>
+        <Text style={styles.packingText}>Necesita transbordo</Text>
+      </Pressable>
+      {needsTransfer && (
+        <View style={styles.transferBlock}>
+          <TextInput
+            style={styles.input}
+            placeholder="Transbordo en (estación, aeropuerto…)"
+            value={transferPlace}
+            onChangeText={setTransferPlace}
+            maxLength={120}
+          />
+          <Text style={styles.fieldLabel}>Continúa con</Text>
+          <Pressable
+            style={[styles.placeOption, !createNext && nextId === "" && styles.placeOptionSelected]}
+            onPress={() => {
+              setNextId("");
+              setCreateNext(false);
+            }}
+          >
+            <Text style={[styles.placeOptionText, !createNext && nextId === "" && styles.chipTextSelected]}>— Aún sin elegir —</Text>
+          </Pressable>
+          {candidates.map((c) => {
+            const meta = transportMeta(c.type);
+            const selectedLeg = !createNext && nextId === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                style={[styles.placeOption, selectedLeg && styles.placeOptionSelected]}
+                onPress={() => {
+                  setNextId(c.id);
+                  setCreateNext(false);
+                }}
+              >
+                <Text style={[styles.placeOptionText, selectedLeg && styles.chipTextSelected]} numberOfLines={1}>
+                  {`${meta.icon} ${c.title?.trim() || meta.label} · ${shortDay(c.date)}${c.departureTime ? ` ${c.departureTime}` : ""}`}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={[styles.placeOption, createNext && styles.placeOptionSelected]}
+            onPress={() => {
+              setNextId("");
+              setCreateNext(true);
+            }}
+          >
+            <Text style={[styles.placeOptionText, createNext && styles.chipTextSelected]}>+ Crear transporte de conexión</Text>
+          </Pressable>
+          {createNext ? <Text style={styles.mutedSmall}>Al guardar se abrirá un transporte nuevo con la fecha de llegada de este.</Text> : null}
+        </View>
+      )}
 
       <TextInput
         style={[styles.input, styles.inputMultiline]}
@@ -1217,6 +1412,7 @@ function TransportForm({
         <Text style={styles.outlineButtonText}>{picking ? "Leyendo archivo…" : "📎 Adjuntar archivo (tarjeta de embarque, billete…)"}</Text>
       </Pressable>
 
+      {error ? <Text style={[styles.errorText, { marginTop: 8 }]}>{error}</Text> : null}
       <Pressable style={[styles.primaryButton, { marginTop: 14 }]} onPress={submit} disabled={saving || picking}>
         <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : "Guardar"}</Text>
       </Pressable>
@@ -1449,6 +1645,7 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   cardTitle: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, color: colors.mutedForeground },
+  cardSubtitle: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 1 },
   cardTitleSerif: { fontFamily: fonts.serif, fontSize: 20, color: colors.foreground },
   fieldLabel: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, color: colors.mutedForeground, marginBottom: 4 },
   input: {
@@ -1559,6 +1756,13 @@ const styles = StyleSheet.create({
   packingText: { flex: 1, fontFamily: fonts.sans, fontSize: 14, color: colors.foreground },
   packingTextDone: { textDecorationLine: "line-through", opacity: 0.45 },
   transportRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  transportContinuation: { marginLeft: 15, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: withAlpha(colors.primary, 0.35), gap: 8 },
+  transferConnector: { gap: 1 },
+  transferLabel: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.primary },
+  transferWarning: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.destructive },
+  transferHint: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, fontStyle: "italic" },
+  transferToggle: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14, paddingVertical: 4 },
+  transferBlock: { gap: 8, marginTop: 6, paddingLeft: 12, borderLeftWidth: 1, borderLeftColor: colors.border },
   transportIcon: { fontSize: 22, width: 30, textAlign: "center" },
   attachmentRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   attachmentChip: {

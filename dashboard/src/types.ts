@@ -614,16 +614,23 @@ export interface TripAttachment {
   dataUrl: string; // "data:<mime>;base64,..."
 }
 
-// "Detalles del transporte": un trayecto con su fecha, hora, datos (operador, número, asiento, localizador...)
-// y los archivos adjuntos.
+// "Detalles del transporte": un trayecto con su salida y llegada, datos (operador, número, asiento,
+// localizador...) y los archivos adjuntos. Si hace falta un transbordo, este trayecto apunta (`nextId`) a
+// OTRO trayecto del mismo viaje que lo continúa: así una conexión Madrid → Oporto → Lisboa son dos trayectos
+// enlazados, cada uno con sus horarios y archivos.
 export interface TransportDetail {
   id: string;
   type: TransportType;
   title?: string; // p. ej. "Madrid → Lisboa"; sin él se enseña el nombre del tipo
-  date: string; // YYYY-MM-DD (puede caer fuera del viaje: se sale el día antes)
-  time?: string; // HH:MM
+  date: string; // fecha de SALIDA, YYYY-MM-DD (puede caer fuera del viaje: se sale el día antes)
+  departureTime?: string; // hora de salida, HH:MM
+  arrivalDate?: string; // solo si llega otro día distinto al de salida
+  arrivalTime?: string; // hora de llegada, HH:MM
   details?: string;
   attachments?: TripAttachment[];
+  needsTransfer?: boolean; // tras este trayecto hay que hacer un transbordo
+  transferPlace?: string; // dónde (estación, aeropuerto...)
+  nextId?: string; // id del TransportDetail (mismo viaje) que continúa a este
 }
 
 // "Contactos importantes": alojamiento, seguro, embajada... con ubicación, teléfono y/o correo.
