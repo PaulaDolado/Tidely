@@ -1,10 +1,11 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { AppShell, parseCustomPageTab, customPageTab, SearchFocus, Tab } from "../components/AppShell";
 import { api } from "../api/client";
 import { useFetch } from "../hooks/useFetch";
 import { Loading } from "../components/Feedback";
 import { HoyPage } from "./HoyPage";
-import { CustomPageSummary, CustomPageTemplate, SavingsGoal } from "../types";
+import { useAuth } from "../context/AuthContext";
+import { CustomPageSummary, CustomPageTemplate, ENABLED_SECTIONS, SavingsGoal } from "../types";
 
 // "Hoy" (la pestaña por defecto) se importa arriba de forma normal — es lo primero que ve
 // cualquiera al entrar, así que cargarla de forma perezosa solo añadiría una petición de red de
@@ -26,12 +27,52 @@ const CustomPagePage = lazy(() => import("./CustomPagePage").then((m) => ({ defa
 // Tras conectar Google Calendar (ver GoogleCalendarMenu en AgendaPage), Google redirige el
 // navegador completo de vuelta a la raíz con `?google=connected|error` en la URL — como no hay
 // router real (ver App.tsx), sin este chequeo el usuario aterrizaría en "Hoy" sin ver el aviso.
-function initialTab(): Tab {
-  return new URLSearchParams(window.location.search).has("google") ? "agenda" : "hoy";
+// La pestaña activa se guarda en localStorage (por usuario) para que recargar la página — o reabrir la app de
+// escritorio — vuelva a donde estabas en vez de a "Hoy". Sin router real no hay URL por pestaña que lo haga.
+const ACTIVE_TAB_KEY = "tidely.activeTab";
+
+// Apartado de User.enabledSections que activa cada pestaña (ver NAV en AppShell); "hoy" y las páginas
+// personalizadas no dependen de ninguno.
+const TAB_SECTION: Partial<Record<Tab, string>> = {
+  planificador: "planificador",
+  horario: "horario",
+  metas: "objetivos",
+  finanzas: "finanzas",
+  "finanzas-ahorro": "metasAhorro",
+  proyectos: "proyectos",
+};
+const STATIC_TABS = new Set<string>(["hoy", "agenda", "planificador", "horario", "metas", "finanzas", "finanzas-ahorro", "proyectos"]);
+
+function readStoredTab(userId: number | undefined, enabledSections: readonly string[]): Tab | null {
+  try {
+    const stored = localStorage.getItem(`${ACTIVE_TAB_KEY}.${userId ?? "anon"}`);
+    if (!stored) return null;
+    const isCustom = /^custom-\d+$/.test(stored);
+    if (!isCustom && !STATIC_TABS.has(stored)) return null;
+    const section = TAB_SECTION[stored as Tab];
+    if (section && !enabledSections.includes(section)) return null;
+    return stored as Tab;
+  } catch {
+    return null; // localStorage no disponible (modo privado, datos de sitio bloqueados...)
+  }
+}
+
+function initialTab(userId: number | undefined, enabledSections: readonly string[]): Tab {
+  if (new URLSearchParams(window.location.search).has("google")) return "agenda";
+  return readStoredTab(userId, enabledSections) ?? "hoy";
 }
 
 export function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>(() => initialTab(user?.id, user?.enabledSections ?? ENABLED_SECTIONS));
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${ACTIVE_TAB_KEY}.${user?.id ?? "anon"}`, activeTab);
+    } catch {
+      // sin localStorage simplemente no se recuerda la pestaña
+    }
+  }, [activeTab, user?.id]);
 
   // Páginas personalizadas ("+ Nueva página", ver AppShell): una única carga aquí arriba, tanto
   // para pintar el menú lateral como para saber qué plantilla renderizar cuando activeTab
@@ -42,6 +83,14 @@ export function DashboardPage() {
   );
   const customPages = customPagesData?.pages ?? [];
   const activeCustomPageId = parseCustomPageTab(activeTab);
+
+  // Una pestaña recordada que apunta a una página personalizada ya borrada (o de otra cuenta) volvería a
+  // "Hoy" en vez de enseñar un error: se comprueba cuando la lista de páginas ya ha llegado.
+  useEffect(() => {
+    if (customPagesData && activeCustomPageId !== null && !customPagesData.pages.some((p) => p.id === activeCustomPageId)) {
+      setActiveTab("hoy");
+    }
+  }, [customPagesData, activeCustomPageId]);
 
   const createCustomPage = async (title: string, template: CustomPageTemplate) => {
     const created = await api.post<CustomPageSummary>("/custom-pages", { title, template });
