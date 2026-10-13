@@ -21,7 +21,7 @@ import { PackingItem, TransportDetail, TransportType, Trip, TripAttachment, Trip
 
 // Las tres secciones de debajo de los paneles del planificador de viajes (ver TravelPlannerTemplate), todas
 // DEL viaje seleccionado y guardadas dentro de `Trip` (packing / transport / contacts): lo que hay que
-// empacar, los detalles del transporte (con salida, llegada, transbordos y archivos adjuntos como la tarjeta
+// llevar, los detalles del transporte (con salida, llegada, transbordos y archivos adjuntos como la tarjeta
 // de embarque) y los contactos importantes. Puede haber varios contactos y varios trayectos. Componente
 // controlado: lee del viaje y devuelve cambios con `onPatch`.
 
@@ -34,15 +34,13 @@ function formatBytes(bytes: number): string {
   return bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`;
 }
 
-// Título de una sección con el destino del viaje debajo, para que se vea de qué viaje es lo que se enseña.
-function SectionHeading({ title, destination, extra }: { title: string; destination: string; extra?: ReactNode }) {
+// Título de una sección. Sigue siendo DEL viaje seleccionado (se guarda dentro de Trip y cambia al elegir
+// otro viaje), pero ya no repite su nombre debajo: el viaje elegido ya se ve arriba, en el panel del viaje.
+function SectionHeading({ title, extra }: { title: string; extra?: ReactNode }) {
   return (
-    <div className="min-w-0">
-      <div className="flex items-baseline gap-2">
-        <h3 className={sectionTitle}>{title}</h3>
-        {extra}
-      </div>
-      <p className="truncate text-[11px] text-muted-foreground">{destination}</p>
+    <div className="flex min-w-0 items-baseline gap-2">
+      <h3 className={sectionTitle}>{title}</h3>
+      {extra}
     </div>
   );
 }
@@ -102,7 +100,7 @@ export function TravelExtras({ trip, allTrips, onPatch }: { trip: Trip; allTrips
         {/* Detalles del transporte */}
         <section className="card-soft flex flex-col">
           <div className="mb-4 flex items-start justify-between gap-2">
-            <SectionHeading title="Detalles del transporte" destination={trip.destination} />
+            <SectionHeading title="Detalles del transporte" />
             <button type="button" onClick={() => setDialog({ kind: "transport", id: null })} aria-label="Añadir transporte" title="Añadir un trayecto" className={plusButton}>
               +
             </button>
@@ -121,7 +119,7 @@ export function TravelExtras({ trip, allTrips, onPatch }: { trip: Trip; allTrips
         {/* Contactos importantes */}
         <section className="card-soft flex flex-col">
           <div className="mb-4 flex items-start justify-between gap-2">
-            <SectionHeading title="Contactos importantes" destination={trip.destination} />
+            <SectionHeading title="Contactos importantes" />
             <button type="button" onClick={() => setDialog({ kind: "contact", id: null })} aria-label="Añadir contacto" title="Añadir un contacto" className={plusButton}>
               +
             </button>
@@ -166,7 +164,7 @@ export function TravelExtras({ trip, allTrips, onPatch }: { trip: Trip; allTrips
   );
 }
 
-// "Qué empacar": casillas con contador "empacado/total". El "+" abre un campo al principio de la lista que se
+// "Qué llevar": casillas con contador "preparado/total". El "+" abre un campo al principio de la lista que se
 // queda abierto tras cada cosa añadida, para apuntar varias seguidas.
 function PackingSection({ destination, items, onChange }: { destination: string; items: PackingItem[]; onChange: (next: PackingItem[]) => void }) {
   const [adding, setAdding] = useState(false);
@@ -188,11 +186,10 @@ function PackingSection({ destination, items, onChange }: { destination: string;
     <section className="card-soft flex flex-col">
       <div className="mb-4 flex items-start justify-between gap-2">
         <SectionHeading
-          title="Qué empacar"
-          destination={destination}
+          title="Qué llevar"
           extra={
             items.length > 0 ? (
-              <span className="text-xs text-muted-foreground" aria-label={`${packed} de ${items.length} empacadas`}>
+              <span className="text-xs text-muted-foreground" aria-label={`${packed} de ${items.length} preparadas`}>
                 {packed}/{items.length}
               </span>
             ) : undefined

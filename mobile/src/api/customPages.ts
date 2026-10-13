@@ -186,7 +186,7 @@ export interface Trip {
   itinerary: TravelItineraryItem[];
   places?: SavedPlace[]; // lugares guardados DE este viaje
   // Opcionales para que las páginas antiguas sigan funcionando: leer siempre con `?? []`.
-  packing?: PackingItem[]; // "Qué empacar"
+  packing?: PackingItem[]; // "Qué llevar"
   transport?: TransportDetail[]; // "Detalles del transporte"
   contacts?: TripContact[]; // "Contactos importantes"
 }

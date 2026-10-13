@@ -19,7 +19,7 @@ export const CUSTOM_PAGE_TEMPLATES: CustomPageTemplateMeta[] = [
   { key: "objetivos", label: "Objetivos", description: "Metas con barra de progreso.", icon: "🎯" },
   { key: "agenda", label: "Agenda", description: "Notas sueltas con fecha.", icon: "📅" },
   { key: "hoy", label: "Lista", description: "Checklist rápido para el día.", icon: "☀️" },
-  { key: "viajes", label: "Planificador de viajes o rutas", description: "Viajes con itinerario y presupuesto, y lugares guardados.", icon: "✈️" },
+  { key: "viajes", label: "Planificador de viajes o rutas", description: "Itinerario, presupuesto, lugares guardados, etc.", icon: "✈️" },
 ];
 
 export const CUSTOM_PAGE_TEMPLATE_META: Record<CustomPageTemplate, CustomPageTemplateMeta> = Object.fromEntries(

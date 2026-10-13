@@ -222,7 +222,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   const [to, setTo] = useState(today);
   // "new" = entrada nueva del itinerario (el "+" de la cabecera de "Mi itinerario").
   const [editingItemId, setEditingItemId] = useState<string | "new" | null>(null);
-  // "Qué empacar": el campo de texto en línea se abre con el "+" y se queda abierto para ir anotando seguido.
+  // "Qué llevar": el campo de texto en línea se abre con el "+" y se queda abierto para ir anotando seguido.
   const [packingOpen, setPackingOpen] = useState(false);
   const [packingDraft, setPackingDraft] = useState("");
   // "new" = entrada nueva (el "+" de la cabecera de cada bloque).
@@ -304,7 +304,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
     setEditingPlaceId(null);
   };
 
-  // Qué empacar: cada cambio reescribe `packing` del viaje seleccionado.
+  // Qué llevar: cada cambio reescribe `packing` del viaje seleccionado.
   const setPacking = async (next: PackingItem[]) => {
     if (selected) await patchTrip(selected.id, { packing: next });
   };
@@ -628,7 +628,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <CardTitle title="Qué empacar" destination={selected?.destination} />
+          <CardTitle title="Qué llevar" />
           {selected && (
             <View style={styles.headerRight}>
               {packing.length > 0 && <Text style={styles.counterText}>{`${packedCount}/${packing.length}`}</Text>}
@@ -683,7 +683,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <CardTitle title="Detalles del transporte" destination={selected?.destination} />
+          <CardTitle title="Detalles del transporte" />
           {selected && (
             <Pressable style={styles.plusButton} onPress={() => setEditingTransportId("new")} hitSlop={8} accessibilityLabel="Añadir transporte">
               <Text style={styles.plusButtonText}>+</Text>
@@ -751,7 +751,7 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <CardTitle title="Contactos importantes" destination={selected?.destination} />
+          <CardTitle title="Contactos importantes" />
           {selected && (
             <Pressable style={styles.plusButton} onPress={() => setEditingContactId("new")} hitSlop={8} accessibilityLabel="Añadir contacto">
               <Text style={styles.plusButtonText}>+</Text>
@@ -917,17 +917,13 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
   );
 }
 
-// Título de un bloque del viaje seleccionado con el destino debajo, en pequeño y apagado: deja claro que
-// el equipaje, el transporte y los contactos son DE ese viaje y no de la página entera.
-function CardTitle({ title, destination }: { title: string; destination?: string }) {
+// Título de un bloque del viaje seleccionado. El equipaje, el transporte y los contactos siguen siendo DE ese
+// viaje (se guardan dentro de Trip y cambian al elegir otro), pero ya no repiten su nombre debajo: el viaje
+// elegido ya se ve arriba, en su propia tarjeta.
+function CardTitle({ title }: { title: string }) {
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
       <Text style={styles.cardTitle}>{title}</Text>
-      {destination ? (
-        <Text style={styles.cardSubtitle} numberOfLines={1}>
-          {destination}
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -1703,7 +1699,6 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   cardTitle: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, color: colors.mutedForeground },
-  cardSubtitle: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 1 },
   cardTitleSerif: { fontFamily: fonts.serif, fontSize: 20, color: colors.foreground },
   fieldLabel: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, color: colors.mutedForeground, marginBottom: 4 },
   input: {

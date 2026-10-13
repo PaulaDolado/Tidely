@@ -595,7 +595,7 @@ export interface Trip {
   contacts?: TripContact[];
 }
 
-// "Qué empacar": una casilla por cosa que llevar.
+// "Qué llevar": una casilla por cosa que llevar.
 export interface PackingItem {
   id: string;
   text: string;
