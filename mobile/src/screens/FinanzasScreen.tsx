@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -86,6 +87,20 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
   const [txTotal, setTxTotal] = useState(0);
   const [txPaging, setTxPaging] = useState<{ page: number; size: PageSize }>({ page: 1, size: DEFAULT_PAGE_SIZE });
   const txPagingRef = useRef(txPaging);
+  // El tamaño de página recordado (ver readStoredPageSize) se lee de AsyncStorage, que es asíncrono: la
+  // primera carga de movimientos espera a esta promesa para no pintar 10 filas y saltar a 20 al instante,
+  // ni dejar que dos cargas con tamaños distintos se pisen al resolverse fuera de orden. Se crea una sola
+  // vez (ref) y nunca rechaza (readStoredPageSize ya traga sus errores).
+  const pageSizeReadyRef = useRef<Promise<void> | null>(null);
+  if (!pageSizeReadyRef.current) {
+    pageSizeReadyRef.current = readStoredPageSize().then((size) => {
+      if (size !== txPagingRef.current.size) {
+        const next = { page: 1, size };
+        txPagingRef.current = next;
+        setTxPaging(next);
+      }
+    });
+  }
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
   // Mes que enseñan "Resumen del presupuesto", "Resumen del mes" y el top de categorías (selector
   // ‹ mes ›); las tarjetas de arriba (acumulado), la tendencia y la proyección no dependen de él. El
@@ -115,6 +130,7 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
   }, []);
 
   const loadTransactions = useCallback(async () => {
+    await pageSizeReadyRef.current;
     const { page, size } = txPagingRef.current;
     const [rows, count] = await Promise.all([
       listTransactionsPage(size === "all" ? null : size, size === "all" ? 0 : (page - 1) * size),
@@ -132,6 +148,7 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
   }, []);
 
   const changeTxPaging = (next: { page: number; size: PageSize }) => {
+    if (next.size !== txPagingRef.current.size) storePageSize(next.size);
     txPagingRef.current = next;
     setTxPaging(next);
     loadTransactions();
@@ -558,6 +575,28 @@ function SummaryCard({ label, value, color, hint, onPress }: { label: string; va
 
 type PageSize = number | "all";
 const DEFAULT_PAGE_SIZE = 10;
+// Mismo tope y misma clave que la web (dashboard/src/components/TransactionsPager.tsx): el backend admite
+// como máximo 100 por petición.
+const MAX_PAGE_SIZE = 100;
+const PAGE_SIZE_STORAGE_KEY = "tidely.finance.pageSize";
+
+// Tamaño de página recordado entre sesiones (por dispositivo); 10 si no hay nada o el valor guardado no es
+// válido (editado a mano, de otra versión...) — mismas reglas que readStoredPageSize de la web.
+async function readStoredPageSize(): Promise<PageSize> {
+  try {
+    const raw = await AsyncStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+    if (raw === "all") return "all";
+    const n = Number(raw);
+    return raw !== null && Number.isInteger(n) && n >= 10 && n <= MAX_PAGE_SIZE && n % 10 === 0 ? n : DEFAULT_PAGE_SIZE;
+  } catch {
+    return DEFAULT_PAGE_SIZE;
+  }
+}
+
+function storePageSize(size: PageSize): void {
+  // Sin persistencia se sigue usando el tamaño elegido durante esta sesión, solo no sobrevive a reabrir.
+  AsyncStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(size)).catch(() => {});
+}
 
 /** 10, 20, 30… hasta cubrir `total` (con tope en 100), más "Todo". */
 function pageSizeOptions(total: number): number[] {

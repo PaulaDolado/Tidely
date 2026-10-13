@@ -1,6 +1,6 @@
 import * as Crypto from "expo-crypto";
 import { getDb } from "./index";
-import { listExceptionsForEvents } from "./eventExceptionsRepo";
+import { listExceptionsForEvents, deleteExceptionsForEvent, reparentEventExceptions } from "./eventExceptionsRepo";
 import { EventOccurrence, expandRecurringEvent, RecurringEventLike } from "../utils/recurrence";
 import { parseJsonArray, toJsonArray } from "../utils/json";
 import { EventSharing, LocalEvent, RecurringPattern, ServerEvent } from "../types";
@@ -134,6 +134,9 @@ export async function upsertEvents(events: ServerEvent[]): Promise<void> {
 export async function deleteEvent(serverId: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM events WHERE id = ? AND synced = 1", [String(serverId)]);
+  // Sus excepciones ("solo esta vez") dejan de tener sentido — y una pendiente de subir contra un
+  // evento que ya no existe en el servidor haría fallar todo el lote de /sync.
+  await deleteExceptionsForEvent(String(serverId));
 }
 
 function todayKey(): string {
@@ -332,6 +335,7 @@ export async function deleteEventLocal(id: string): Promise<void> {
   if (!event) return;
   if (event.synced === 0) {
     await db.runAsync("DELETE FROM events WHERE id = ?", [id]);
+    await deleteExceptionsForEvent(id);
   } else {
     await db.runAsync("UPDATE events SET pendingOp = 'delete' WHERE id = ?", [id]);
   }
@@ -352,9 +356,12 @@ export async function listEventsPendingDelete(): Promise<LocalEvent[]> {
   return db.getAllAsync<LocalEvent>("SELECT * FROM events WHERE pendingOp = 'delete'");
 }
 
+/** Además de sustituir el id local por el de servidor, reasigna las excepciones ("solo esta vez")
+ * ya hechas contra este evento mientras era solo local — ver eventExceptionsRepo.reparentEventExceptions. */
 export async function markEventSynced(localId: string, serverId: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("UPDATE events SET id = ?, synced = 1 WHERE id = ?", [String(serverId), localId]);
+  await reparentEventExceptions(localId, String(serverId));
 }
 
 export async function clearEventPendingOp(id: string): Promise<void> {
@@ -365,4 +372,5 @@ export async function clearEventPendingOp(id: string): Promise<void> {
 export async function deleteEventRow(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM events WHERE id = ?", [id]);
+  await deleteExceptionsForEvent(id);
 }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import * as googleCalendarController from "../controllers/googleCalendarController";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { validate } from "../middlewares/validation";
-import { oauthCallbackQuerySchema } from "../validators/googleCalendarValidators";
+import { connectQuerySchema, oauthCallbackQuerySchema } from "../validators/googleCalendarValidators";
 
 const router = Router();
 
@@ -30,11 +30,17 @@ router.get("/status", authMiddleware, googleCalendarController.getStatus);
  *     tags: [Integraciones]
  *     summary: URL de consentimiento de Google a la que redirigir el navegador completo (no un fetch)
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: client
+ *         required: false
+ *         schema: { type: string, enum: [web, mobile], default: web }
+ *         description: "mobile: al terminar el consentimiento el callback redirige al deep link de la app (tidely://google?status=connected|error) en vez de al dashboard web"
  *     responses:
  *       200: { description: "{ url }" }
- *       400: { description: Integración no configurada en el servidor }
+ *       400: { description: Integración no configurada en el servidor, o valor de client no permitido }
  */
-router.get("/connect", authMiddleware, googleCalendarController.getConnectUrl);
+router.get("/connect", authMiddleware, validate(connectQuerySchema, "query"), googleCalendarController.getConnectUrl);
 
 /**
  * @openapi
@@ -43,7 +49,7 @@ router.get("/connect", authMiddleware, googleCalendarController.getConnectUrl);
  *     tags: [Integraciones]
  *     summary: Callback OAuth de Google (ruta pública, la abre el propio navegador redirigido por Google)
  *     responses:
- *       302: { description: Redirige de vuelta al dashboard con ?google=connected o ?google=error }
+ *       302: { description: "Redirige de vuelta al dashboard con ?google=connected o ?google=error; si el flujo se inició con client=mobile, al deep link tidely://google?status=connected o ?status=error" }
  */
 router.get("/callback", validate(oauthCallbackQuerySchema, "query"), googleCalendarController.handleCallback);
 

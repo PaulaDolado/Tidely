@@ -18,7 +18,7 @@ import {
   getEventById,
   ParsedEvent,
 } from "../db/eventsRepo";
-import { upsertEventExceptions, deleteEventExceptionByOccurrence } from "../db/eventExceptionsRepo";
+import { setEventExceptionLocal, deleteEventExceptionByOccurrence } from "../db/eventExceptionsRepo";
 import { EventOccurrence } from "../utils/recurrence";
 import {
   listEventCategories,
@@ -38,13 +38,12 @@ import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories
 import { CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
 import { buildIcsFromOccurrences, buildAgendaPdfHtml } from "../utils/agendaExport";
 import { saveAndShareText, exportHtmlToPdf } from "../utils/fileExport";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
 import {
   CalendarColor,
   EventCategory,
   EventInvitation,
   FreeTimeResponse,
-  ServerEventException,
   RECURRING_PATTERNS,
   RECURRING_PATTERN_LABELS,
   RecurringPattern,
@@ -58,6 +57,7 @@ import { HabitsCard } from "../components/HabitsCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
 import { GoalsProgressCard } from "../components/GoalsProgressCard";
 import { QuickNotesCard } from "../components/QuickNotesCard";
+import { GoogleCalendarMenu } from "../components/GoogleCalendarMenu";
 
 type AgendaViewMode = "day" | "week" | "month" | "year" | "agenda";
 
@@ -528,29 +528,13 @@ export function AgendaScreen({
   };
 
   // --- "Solo esta vez" (excepciones de una ocurrencia de un evento recurrente) ---
-  // Online-only: el push offline del móvil aún no sube excepciones, así que se llama directo a
-  // POST/DELETE /agenda/events/:id/exceptions con el id de SERVIDOR del evento y, si responde,
-  // se guarda el resultado en la tabla local de excepciones para que la Agenda se repinte al
-  // instante (sin esperar al siguiente pull).
-  const occurrenceErrorMessage = (err: unknown) =>
-    err instanceof ApiError && err.status === 0
-      ? "Necesitas conexión para cambiar solo esta ocurrencia. Inténtalo de nuevo cuando vuelvas a estar en línea."
-      : err instanceof Error
-        ? err.message
-        : "No se pudo completar la acción.";
-
-  // Con un id que no es numérico el evento solo existe en este dispositivo (uuid, aún sin
-  // sincronizar): el servidor todavía no lo conoce, así que no puede guardar una excepción.
-  const serverIdForOccurrence = (): string | null => {
-    if (form?.id && /^\d+$/.test(form.id)) return form.id;
-    Alert.alert("Evento sin sincronizar", "Este evento todavía no está en el servidor. Espera a que se sincronice e inténtalo de nuevo.");
-    return null;
-  };
-
+  // Offline-first como el resto: la excepción se escribe en SQLite (con su pendingOp) y la Agenda se
+  // repinta al instante; sube por /sync (bloque eventExceptions / deletes, ver sync/push.ts) en
+  // cuanto hay conexión. Contra un evento que aún es solo local (uuid) también se puede: la
+  // excepción queda ligada a ese id y `markEventSynced` la reasigna al id de servidor al sincronizar.
   const setOccurrenceException = async (action: "moved" | "cancelled") => {
-    if (!form?.occurrence) return;
-    const serverId = serverIdForOccurrence();
-    if (!serverId) return;
+    if (!form?.occurrence || !form.id) return;
+    const eventId = form.id;
     const { originalStartTime, moveStart, moveEnd } = form.occurrence;
     if (action === "moved" && moveEnd.getTime() <= moveStart.getTime()) {
       Alert.alert("Hora no válida", "La hora de fin debe ser posterior a la de inicio.");
@@ -558,35 +542,35 @@ export function AgendaScreen({
     }
     setOccurrenceBusy(true);
     try {
-      const saved = await api.post<ServerEventException>(
-        `/agenda/events/${serverId}/exceptions`,
+      await setEventExceptionLocal(
+        eventId,
+        originalStartTime,
         action === "moved"
-          ? { originalStartTime, action, newStartTime: moveStart.toISOString(), newEndTime: moveEnd.toISOString() }
-          : { originalStartTime, action }
+          ? { status: "moved", newStartTime: moveStart.toISOString(), newEndTime: moveEnd.toISOString() }
+          : { status: "cancelled" }
       );
-      await upsertEventExceptions([saved]);
       closeForm();
       await reload();
+      sync();
     } catch (err) {
-      Alert.alert("No se pudo guardar", occurrenceErrorMessage(err));
+      Alert.alert("No se pudo guardar", err instanceof Error ? err.message : "No se pudo completar la acción.");
     } finally {
       setOccurrenceBusy(false);
     }
   };
 
   const restoreOccurrence = async () => {
-    if (!form?.occurrence) return;
-    const serverId = serverIdForOccurrence();
-    if (!serverId) return;
+    if (!form?.occurrence || !form.id) return;
+    const eventId = form.id;
     const { originalStartTime } = form.occurrence;
     setOccurrenceBusy(true);
     try {
-      await api.delete(`/agenda/events/${serverId}/exceptions/${encodeURIComponent(originalStartTime)}`);
-      await deleteEventExceptionByOccurrence(serverId, originalStartTime);
+      await deleteEventExceptionByOccurrence(eventId, originalStartTime);
       closeForm();
       await reload();
+      sync();
     } catch (err) {
-      Alert.alert("No se pudo restaurar", occurrenceErrorMessage(err));
+      Alert.alert("No se pudo restaurar", err instanceof Error ? err.message : "No se pudo completar la acción.");
     } finally {
       setOccurrenceBusy(false);
     }
@@ -625,6 +609,7 @@ export function AgendaScreen({
         <Text style={styles.title}>Agenda</Text>
         <View style={styles.headerRight}>
           <Text style={styles.syncText}>{syncing ? "Sincronizando…" : ""}</Text>
+          <GoogleCalendarMenu onSynced={sync} />
           <Pressable style={styles.exportButton} onPress={() => setShowExportMenu(true)}>
             <Text style={styles.exportButtonText}>⇅</Text>
           </Pressable>
@@ -1357,31 +1342,43 @@ function AgendaExportImportForm({
   const [busy, setBusy] = useState<"ics" | "pdf" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const scopeLabel =
-    viewMode === "week"
-      ? "esta semana"
-      : viewMode === "month" || viewMode === "agenda"
-        ? "este mes"
-        : viewMode === "day"
-          ? "este día"
-          : "este año";
-  const scopeRange = (): [Date, Date] => {
-    if (viewMode === "month" || viewMode === "agenda") return [monthAnchor, addMonthsUTC(monthAnchor, 1)];
-    if (viewMode === "year") return [new Date(Date.UTC(yearAnchor, 0, 1)), new Date(Date.UTC(yearAnchor + 1, 0, 1))];
-    if (viewMode === "day") {
-      const day = new Date(`${selectedDateKey}T00:00:00.000Z`);
-      return [day, addDaysUTC(day, 1)];
-    }
-    return [weekStart, addDaysUTC(weekStart, 7)];
-  };
-  const scopeFilenamePart =
+  // Periodo a exportar: por defecto el de la vista abierta, pero se puede elegir cualquier día, semana, mes
+  // o año (como en la web) con el selector de ámbito + una fecha de referencia, sin tener que navegar antes.
+  type ExportScope = "day" | "week" | "month" | "year";
+  const [scope, setScope] = useState<ExportScope>(viewMode === "agenda" ? "month" : viewMode);
+  const [refKey, setRefKey] = useState(
     viewMode === "week"
       ? dateKeyOf(weekStart)
       : viewMode === "month" || viewMode === "agenda"
-        ? dateKeyOf(monthAnchor).slice(0, 7)
+        ? dateKeyOf(monthAnchor)
         : viewMode === "day"
           ? selectedDateKey
-          : String(yearAnchor);
+          : `${yearAnchor}-01-01`
+  );
+  const [pickingDate, setPickingDate] = useState(false);
+
+  const ref = new Date(`${refKey}T00:00:00.000Z`);
+  const longDay = (d: Date) => d.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const scopeLabel =
+    scope === "day"
+      ? `el ${longDay(ref)}`
+      : scope === "week"
+        ? `la semana del ${longDay(mondayOfWeek(ref))}`
+        : scope === "month"
+          ? ref.toLocaleDateString("es-ES", { month: "long", year: "numeric", timeZone: "UTC" })
+          : `el año ${ref.getUTCFullYear()}`;
+  const scopeRange = (): [Date, Date] => {
+    if (scope === "month") {
+      const start = startOfMonthUTC(ref);
+      return [start, addMonthsUTC(start, 1)];
+    }
+    if (scope === "year") return [new Date(Date.UTC(ref.getUTCFullYear(), 0, 1)), new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1))];
+    if (scope === "day") return [ref, addDaysUTC(ref, 1)];
+    const monday = mondayOfWeek(ref);
+    return [monday, addDaysUTC(monday, 7)];
+  };
+  const scopeFilenamePart =
+    scope === "week" ? dateKeyOf(mondayOfWeek(ref)) : scope === "month" ? refKey.slice(0, 7) : scope === "day" ? refKey : String(ref.getUTCFullYear());
 
   const exportIcs = async () => {
     setBusy("ics");
@@ -1442,7 +1439,38 @@ function AgendaExportImportForm({
       <Text style={styles.modalTitle}>Exportar / Importar</Text>
       {error && <Text style={styles.errorBanner}>{error}</Text>}
 
-      <Text style={styles.fieldLabel}>Exportar {scopeLabel}</Text>
+      <Text style={styles.fieldLabel}>Periodo</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+        {(
+          [
+            ["day", "Día"],
+            ["week", "Semana"],
+            ["month", "Mes"],
+            ["year", "Año"],
+          ] as const
+        ).map(([value, label]) => (
+          <Pressable key={value} style={[styles.exportScopeChip, scope === value && styles.exportScopeChipSelected]} onPress={() => setScope(value)}>
+            <Text style={[styles.exportScopeChipText, scope === value && styles.exportScopeChipTextSelected]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Pressable style={styles.dateButton} onPress={() => setPickingDate(true)}>
+        <Text style={styles.dateButtonText}>📅 {longDay(ref)}</Text>
+      </Pressable>
+      {pickingDate && (
+        <DateTimePicker
+          value={new Date(`${refKey}T12:00:00`)}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          onValueChange={(_event, picked) => {
+            setPickingDate(false);
+            if (picked) setRefKey(`${picked.getFullYear()}-${String(picked.getMonth() + 1).padStart(2, "0")}-${String(picked.getDate()).padStart(2, "0")}`);
+          }}
+          onDismiss={() => setPickingDate(false)}
+        />
+      )}
+
+      <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Exportar {scopeLabel}</Text>
       <Pressable style={styles.saveButton} onPress={exportIcs} disabled={busy !== null}>
         <Text style={styles.saveButtonText}>{busy === "ics" ? "Exportando…" : "Descargar .ics (importar en otro calendario)"}</Text>
       </Pressable>
@@ -2010,6 +2038,10 @@ const managerStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  exportScopeChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
+  exportScopeChipSelected: { backgroundColor: colors.foreground, borderColor: colors.foreground },
+  exportScopeChipText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
+  exportScopeChipTextSelected: { color: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },

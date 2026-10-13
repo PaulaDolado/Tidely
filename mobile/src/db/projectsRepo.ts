@@ -30,6 +30,16 @@ export async function deleteProject(serverId: number): Promise<void> {
   // Cascade local, igual criterio que habitsRepo.deleteHabit con sus habit_logs.
   await db.runAsync("DELETE FROM project_tasks WHERE projectId = ?", [id]);
   await db.runAsync("DELETE FROM project_pages WHERE projectId = ?", [id]);
+  await unlinkTasksFromProject(db, id);
+}
+
+/** El servidor deja `Task.projectId` en NULL al borrar un proyecto (onDelete: SetNull) sin tocar el
+ * `updatedAt` de la tarea, así que el pull no lo trae de vuelta: hay que limpiarlo aquí. Si no, una
+ * tarea que siguiera apuntando al proyecto borrado lo reenviaría en su próximo push y el servidor
+ * rechazaría el lote entero (assertOwnedProject). No marca la tarea como pendiente: ya está así en
+ * el servidor. */
+async function unlinkTasksFromProject(db: Awaited<ReturnType<typeof getDb>>, projectId: string): Promise<void> {
+  await db.runAsync("UPDATE tasks SET projectId = NULL WHERE projectId = ?", [Number(projectId)]);
 }
 
 export async function listProjects(filters: { status?: string; priority?: string } = {}): Promise<LocalProject[]> {
@@ -133,4 +143,5 @@ export async function clearProjectPendingOp(id: string): Promise<void> {
 export async function deleteProjectRow(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM projects WHERE id = ?", [id]);
+  await unlinkTasksFromProject(db, id);
 }

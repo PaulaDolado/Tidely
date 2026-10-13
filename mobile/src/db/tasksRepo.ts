@@ -14,13 +14,13 @@ export async function upsertTasks(tasks: ServerTask[]): Promise<void> {
       const id = String(t.id);
       await db.runAsync(
         `INSERT INTO tasks
-           (id, plannerId, projectId, title, description, image, notes, status, priority, "order",
+           (id, plannerId, projectId, title, description, image, notes, compact, status, priority, "order",
             dueDate, tags, estimatedMinutes, actualMinutes, updatedAt, synced, pendingOp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
          ON CONFLICT(id) DO UPDATE SET
            plannerId = excluded.plannerId, projectId = excluded.projectId, title = excluded.title,
            description = excluded.description, image = excluded.image, notes = excluded.notes,
-           status = excluded.status, priority = excluded.priority,
+           compact = excluded.compact, status = excluded.status, priority = excluded.priority,
            "order" = excluded."order", dueDate = excluded.dueDate, tags = excluded.tags,
            estimatedMinutes = excluded.estimatedMinutes, actualMinutes = excluded.actualMinutes,
            updatedAt = excluded.updatedAt, synced = 1
@@ -33,6 +33,7 @@ export async function upsertTasks(tasks: ServerTask[]): Promise<void> {
           t.description,
           t.image,
           t.notes,
+          t.compact ? 1 : 0,
           t.status,
           t.priority,
           t.order,
@@ -88,15 +89,6 @@ export async function getTaskById(id: string): Promise<LocalTask | null> {
   );
 }
 
-/** Refleja en SQLite el proyecto que acaba de guardarse en el servidor por REST (ver
- * api/plannerProject.ts) — /sync NO transporta `projectId` en el push, así que esto NO marca la
- * fila como pendiente (no tendría nada que subir); solo evita esperar al siguiente pull para ver
- * el cambio en las tarjetas. */
-export async function setTaskProjectLocal(id: string, projectId: number | null): Promise<void> {
-  const db = await getDb();
-  await db.runAsync("UPDATE tasks SET projectId = ? WHERE id = ?", [projectId, id]);
-}
-
 export function parseTaskTags(task: LocalTask): string[] {
   return parseJsonArray<string>(task.tags);
 }
@@ -145,6 +137,11 @@ export async function updateTaskLocal(
     dueDate: string | null;
     estimatedMinutes: number | null;
     tags: string[];
+    // Opcionales: quien no los pasa (p. ej. el cambio rápido de prioridad) no los toca. Ambos suben
+    // por /sync como el resto de campos (projectId y compact los acepta createTaskSchema/
+    // updateTaskSchema del backend) — el proyecto ya NO va por REST.
+    projectId?: number | null;
+    compact?: boolean;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -152,6 +149,8 @@ export async function updateTaskLocal(
   await db.runAsync(
     `UPDATE tasks SET title = ?, description = ?, image = ?, notes = ?, priority = ?, dueDate = ?,
        estimatedMinutes = ?, tags = ?, updatedAt = ?,
+       projectId = CASE WHEN ? = 1 THEN ? ELSE projectId END,
+       compact = CASE WHEN ? = 1 THEN ? ELSE compact END,
        pendingOp = CASE WHEN synced = 1 THEN 'update' ELSE pendingOp END
      WHERE id = ?`,
     [
@@ -164,6 +163,10 @@ export async function updateTaskLocal(
       input.estimatedMinutes,
       toJsonArray(input.tags),
       now,
+      input.projectId !== undefined ? 1 : 0,
+      input.projectId ?? null,
+      input.compact !== undefined ? 1 : 0,
+      input.compact ? 1 : 0,
       id,
     ]
   );

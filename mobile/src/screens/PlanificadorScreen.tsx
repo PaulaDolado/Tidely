@@ -26,10 +26,9 @@ import { ApiError } from "../api/client";
 import {createPlanner,createPlannerField,deletePlanner,deletePlannerField,listPlannerFields,listPlanners,listPlannerTasksLive,logTaskTime,movePlanner,movePlannerField,Planner,PlannerField,renamePlanner,renamePlannerField,updateTaskCustomFields,} from "../api/planner";
 import { CustomFieldType, CustomFieldValue } from "../api/customPages";
 import { runSync } from "../sync";
-import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, toggleTaskDone, deleteTaskLocal, parseTaskTags, addActualMinutesLocal, getTaskById, setTaskProjectLocal } from "../db/tasksRepo";
+import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, toggleTaskDone, deleteTaskLocal, parseTaskTags, addActualMinutesLocal, getTaskById } from "../db/tasksRepo";
 import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal, getSubtaskCounts, SubtaskCount } from "../db/subtasksRepo";
 import { listProjects } from "../db/projectsRepo";
-import { setTaskProject } from "../api/plannerProject";
 import { LocalProject, LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
 import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
@@ -106,6 +105,26 @@ function nextPriority(p: TaskPriority): TaskPriority {
 interface TaskMeta {
   subtaskCounts: Record<string, SubtaskCount>;
   projectTitles: Record<string, string>;
+  // Valores de propiedades personalizadas por tablero (clave: plannerId) — SOLO existen en el
+  // servidor, así que es una caché en memoria rellenada en línea (ver loadBoardCustomData); sin
+  // conexión o si falla simplemente no hay entrada y las tarjetas no pintan esas insignias.
+  customData: Record<number, BoardCustomData>;
+}
+
+interface BoardCustomData {
+  fields: PlannerField[];
+  // id de servidor de la tarea (como texto, igual que `LocalTask.id` de una tarea sincronizada) →
+  // { [fieldId]: valor }.
+  values: Record<string, Record<string, CustomFieldValue>>;
+}
+
+// Mismo formato que formatCustomFieldValue de dashboard/src/components/CustomFieldInput.tsx (la
+// fecha, corta; el resto, tal cual).
+function formatCustomFieldValue(type: CustomFieldType, value: CustomFieldValue): string {
+  if (type === "date" && typeof value === "string") {
+    return new Date(value).toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+  }
+  return String(value);
 }
 
 // Parámetros de navegación para el deep link desde Hoy (id local) / búsqueda global (id de servidor
@@ -154,6 +173,7 @@ interface TaskForm {
   title: string;
   description: string;
   image: string | null;
+  compact: boolean;
   notes: string;
   priority: TaskPriority;
   status: TaskStatus;
@@ -170,6 +190,7 @@ function toForm(task: LocalTask): TaskForm {
     title: task.title,
     description: task.description ?? "",
     image: task.image,
+    compact: task.compact === 1,
     notes: task.notes ?? "",
     priority: task.priority,
     status: task.status,
@@ -217,7 +238,6 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
   // Contexto de las tarjetas (subtareas + proyectos) — se recarga junto con las tareas, ver reload.
   const [subtaskCounts, setSubtaskCounts] = useState<Record<string, SubtaskCount>>({});
   const [projects, setProjects] = useState<LocalProject[]>([]);
-  const [savingProject, setSavingProject] = useState(false);
   const [form, setForm] = useState<TaskForm | null>(null);
   const [subtasks, setSubtasks] = useState<LocalSubtask[]>([]);
   const [subtaskDraft, setSubtaskDraft] = useState("");
@@ -248,6 +268,12 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState<CustomFieldType>("text");
   const [newFieldOptionsText, setNewFieldOptionsText] = useState("");
+  // CACHÉ EN MEMORIA de propiedades (+ sus valores por tarea) de CADA tablero, para pintar la
+  // insignia "Nombre: valor" en las tarjetas/filas sin abrir cada tarea. Los valores no se
+  // sincronizan (solo existen en el servidor): se piden una vez por tablero cuando hay conexión
+  // (ver loadBoardCustomData) y, si no la hay o falla, simplemente no hay insignias.
+  const [boardCustomData, setBoardCustomData] = useState<Record<number, BoardCustomData>>({});
+  const customDataRequestedRef = useRef<Set<number>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [columnViewMode, setColumnViewMode] = useState<ColumnViewMode>("apilado");
   const [activeStatusIndex, setActiveStatusIndex] = useState(0);
@@ -285,6 +311,28 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
       setLoadingPlanners(false);
     }
   }, []);
+
+  // Una petición por tablero (propiedades + tareas con sus valores, las mismas dos llamadas que ya
+  // hace loadCustomFields al abrir una tarea). Fallo silencioso: sin conexión no se muestra nada y
+  // se deja el tablero como "no pedido" para que el siguiente foco de la pantalla lo reintente.
+  const loadBoardCustomData = useCallback(async (plannerId: number) => {
+    if (customDataRequestedRef.current.has(plannerId)) return;
+    customDataRequestedRef.current.add(plannerId);
+    try {
+      const [fields, liveTasks] = await Promise.all([listPlannerFields(plannerId), listPlannerTasksLive(plannerId)]);
+      const values: BoardCustomData["values"] = {};
+      for (const t of liveTasks) values[String(t.id)] = t.customFields ?? {};
+      setBoardCustomData((prev) => ({ ...prev, [plannerId]: { fields, values } }));
+    } catch {
+      customDataRequestedRef.current.delete(plannerId);
+    }
+  }, []);
+
+  useEffect(() => {
+    planners.forEach((p) => {
+      loadBoardCustomData(p.id);
+    });
+  }, [planners, loadBoardCustomData]);
 
   // Si se borra el tablero activo (o cambia el total), el índice no debe quedar fuera de rango —
   // mismo efecto que HorarioScreen.tsx.
@@ -336,6 +384,9 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
 
   useFocusEffect(
     useCallback(() => {
+      // Vuelve a pedir los valores de propiedades al volver a la pantalla (pueden haber cambiado
+      // desde otro dispositivo): reloadPlanners deja una lista nueva, que dispara el efecto de arriba.
+      customDataRequestedRef.current.clear();
       reloadPlanners();
       sync();
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -459,6 +510,25 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
   // estado de la tarea que esté abierta ahora.
   const openTaskIdRef = useRef<string | null>(null);
 
+  // Vuelve a pedir las propiedades del tablero (tras crear/renombrar/mover/borrar una) y mantiene
+  // al día la caché de las tarjetas — lanza si no hay conexión, quien llama ya lo captura.
+  const refreshFields = async (plannerId: number) => {
+    const fields = await listPlannerFields(plannerId);
+    setCustomFields(fields);
+    setBoardCustomData((prev) => (prev[plannerId] ? { ...prev, [plannerId]: { ...prev[plannerId], fields } } : prev));
+  };
+
+  // Mantiene la caché de las tarjetas al día cuando el valor de una propiedad cambia desde el modal.
+  const patchCachedValue = (plannerId: number | null, taskId: string, fieldId: number, value: CustomFieldValue) => {
+    if (plannerId == null) return;
+    setBoardCustomData((prev) => {
+      const board = prev[plannerId];
+      if (!board) return prev;
+      const taskValues = { ...(board.values[taskId] ?? {}), [String(fieldId)]: value };
+      return { ...prev, [plannerId]: { ...board, values: { ...board.values, [taskId]: taskValues } } };
+    });
+  };
+
   const loadCustomFields = useCallback(async (task: LocalTask) => {
     setCustomFields([]);
     setCustomFieldValues({});
@@ -469,6 +539,12 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     const taskServerId = Number(task.id);
     try {
       const [fields, liveTasks] = await Promise.all([listPlannerFields(task.plannerId), listPlannerTasksLive(task.plannerId)]);
+      // Ya se tienen los datos frescos de todo el tablero: se aprovechan también para las tarjetas,
+      // aunque el usuario ya haya cerrado esta tarea (por eso va antes de la comprobación de abajo).
+      const plannerId = task.plannerId;
+      const boardValues: BoardCustomData["values"] = {};
+      for (const t of liveTasks) boardValues[String(t.id)] = t.customFields ?? {};
+      setBoardCustomData((prev) => ({ ...prev, [plannerId]: { fields, values: boardValues } }));
       if (openTaskIdRef.current !== task.id) return;
       setCustomFields(fields);
       const live = Number.isFinite(taskServerId) ? liveTasks.find((t) => t.id === taskServerId) : undefined;
@@ -593,25 +669,6 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     sync();
   };
 
-  // El proyecto va por REST directo (necesita conexión y id de servidor numérico): /sync no lleva
-  // `projectId` al subir cambios, así que no se puede dejar pendiente offline como el resto de
-  // campos. Solo si el servidor confirma se refleja en SQLite y en el modal.
-  const handleSetProject = async (projectId: number | null) => {
-    if (!form || savingProject || !/^\d+$/.test(form.id)) return;
-    const taskId = form.id;
-    setSavingProject(true);
-    try {
-      await setTaskProject(Number(taskId), projectId);
-      await setTaskProjectLocal(taskId, projectId);
-      setForm((prev) => (prev && prev.id === taskId ? { ...prev, projectId } : prev));
-      await reload();
-    } catch (err) {
-      Alert.alert("No se pudo cambiar el proyecto", err instanceof ApiError ? err.message : "Necesitas conexión para cambiar el proyecto de una tarea.");
-    } finally {
-      setSavingProject(false);
-    }
-  };
-
   const handleMoveStatus = async (status: TaskStatus) => {
     if (!form) return;
     await moveTask(form.id, status, null);
@@ -644,6 +701,9 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
       dueDate: form.dueDate ? form.dueDate.toISOString() : null,
       estimatedMinutes,
       tags,
+      // Proyecto y "Compactar" suben por /sync como el resto de campos (también offline).
+      projectId: form.projectId,
+      compact: form.compact,
     });
     // Los campos de texto/número de propiedades personalizadas esperan a "Guardar" (o a perder el
     // foco) para no machacar la API en cada pulsación — si queda algún borrador sin confirmar
@@ -710,6 +770,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     if (!form) return;
     const taskId = Number(form.id);
     if (!Number.isFinite(taskId)) return;
+    patchCachedValue(plannerOfOpenTask, form.id, fieldId, value);
     updateTaskCustomFields(taskId, { [String(fieldId)]: value }).catch(() => {
       // Sin conexión: se queda el valor optimista ya puesto en customFieldValues, sin reintento
       // automático (igual que el resto de acciones fire-and-forget de esta pantalla).
@@ -747,7 +808,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     const options = newFieldType === "select" ? newFieldOptionsText.split(",").map((o) => o.trim()).filter(Boolean) : undefined;
     try {
       await createPlannerField(plannerOfOpenTask, name, newFieldType, options);
-      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+      await refreshFields(plannerOfOpenTask);
       setNewFieldName("");
       setNewFieldOptionsText("");
       setNewFieldType("text");
@@ -773,7 +834,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     if (!trimmed || trimmed === field.name || plannerOfOpenTask == null) return;
     try {
       await renamePlannerField(plannerOfOpenTask, field.id, trimmed);
-      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+      await refreshFields(plannerOfOpenTask);
     } catch {
       // Sin conexión: se descarta el renombrado.
     }
@@ -783,7 +844,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     if (plannerOfOpenTask == null) return;
     try {
       await movePlannerField(plannerOfOpenTask, field.id, direction);
-      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+      await refreshFields(plannerOfOpenTask);
     } catch {
       // Sin conexión: se queda el orden actual.
     }
@@ -796,7 +857,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
     if (plannerOfOpenTask == null) return;
     try {
       await deletePlannerField(plannerOfOpenTask, field.id);
-      setCustomFields(await listPlannerFields(plannerOfOpenTask));
+      await refreshFields(plannerOfOpenTask);
       const key = String(field.id);
       setCustomFieldValues((prev) => {
         const { [key]: _omit, ...rest } = prev;
@@ -850,7 +911,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
   };
 
   const projectTitles = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.title])), [projects]);
-  const meta: TaskMeta = { subtaskCounts, projectTitles };
+  const meta: TaskMeta = { subtaskCounts, projectTitles, customData: boardCustomData };
   // Solo proyectos ya sincronizados (id numérico de servidor): son los únicos que acepta el backend.
   const selectableProjects = projects.filter((p) => /^\d+$/.test(p.id));
   const visibleStatuses = columnViewMode === "flechas" ? [TASK_STATUSES[activeStatusIndex]] : TASK_STATUSES;
@@ -1130,6 +1191,14 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
                     <Text style={[styles.taskImageActionText, styles.taskImageActionRemove]}>Quitar imagen</Text>
                   </Pressable>
                 ) : null}
+                {/* Solo con imagen puesta — en la tarjeta del tablero la deja como miniatura a la
+                    izquierda (Compactar) o a ancho completo encima del texto (Expandir), igual que
+                    en la web (ver TaskDetailDialog en dashboard/src/pages/PlanificadorPage.tsx). */}
+                {form?.image ? (
+                  <Pressable onPress={() => setForm((prev) => (prev ? { ...prev, compact: !prev.compact } : prev))} hitSlop={6}>
+                    <Text style={styles.taskImageActionText}>{form.compact ? "Expandir" : "Compactar"}</Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               <Text style={styles.fieldLabel}>Notas</Text>
@@ -1198,35 +1267,26 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
               />
 
               <Text style={styles.fieldLabel}>Proyecto</Text>
-              {form && /^\d+$/.test(form.id) ? (
-                <>
-                  <View style={styles.chipRow}>
-                    <Pressable
-                      style={[styles.chip, form.projectId === null && styles.chipSelected]}
-                      onPress={() => handleSetProject(null)}
-                      disabled={savingProject}
-                    >
-                      <Text style={[styles.chipText, form.projectId === null && styles.chipTextSelected]}>Sin proyecto</Text>
-                    </Pressable>
-                    {selectableProjects.map((p) => {
-                      const selected = String(form.projectId) === p.id;
-                      return (
-                        <Pressable
-                          key={p.id}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          onPress={() => handleSetProject(Number(p.id))}
-                          disabled={savingProject}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>📁 {p.title}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Text style={styles.customFieldsHint}>Cambiar el proyecto requiere conexión</Text>
-                </>
-              ) : (
-                <Text style={styles.customFieldsHint}>Disponible cuando la tarea se haya sincronizado</Text>
-              )}
+              {/* Se guarda con "Guardar" como el resto de campos (y sube por /sync, también offline).
+                  Solo proyectos ya sincronizados: son los únicos con id numérico que acepta el servidor. */}
+              {form ? (
+                <View style={styles.chipRow}>
+                  <Pressable
+                    style={[styles.chip, form.projectId === null && styles.chipSelected]}
+                    onPress={() => setForm({ ...form, projectId: null })}
+                  >
+                    <Text style={[styles.chipText, form.projectId === null && styles.chipTextSelected]}>Sin proyecto</Text>
+                  </Pressable>
+                  {selectableProjects.map((p) => {
+                    const selected = String(form.projectId) === p.id;
+                    return (
+                      <Pressable key={p.id} style={[styles.chip, selected && styles.chipSelected]} onPress={() => setForm({ ...form, projectId: Number(p.id) })}>
+                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>📁 {p.title}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
 
               <Text style={styles.fieldLabel}>Subtareas</Text>
               {subtasks.map((s) => (
@@ -1737,15 +1797,27 @@ function TaskKanbanColumns({
 
 /** Insignias compactas de una tarea (puerto de las de TaskCard en dashboard/src/pages/PlanificadorPage.tsx):
  * prioridad (solo si se pasa `onCyclePriority` — en la Lista ya hay un punto de color que cumple
- * esa función), fecha, proyecto, progreso de subtareas, tiempo y tags. Las propiedades
- * personalizadas NO se pintan aquí: sus valores solo existen en el servidor (ver types.ts) y
- * pedirlos para cada tarjeta exigiría una llamada por tablero. */
+ * esa función), fecha, proyecto, progreso de subtareas, tiempo, tags y, por cada propiedad
+ * personalizada con valor, una insignia "Nombre: valor". Esos valores solo existen en el servidor
+ * (ver types.ts): salen de la caché en memoria por tablero de PlanificadorScreen (`meta.customData`,
+ * rellenada en línea), así que sin conexión simplemente no hay insignias. */
 function TaskBadges({ task, meta, onCyclePriority }: { task: LocalTask; meta: TaskMeta; onCyclePriority?: () => void }) {
   const due = dueBadge(task.dueDate, task.status === "done");
   const counts = meta.subtaskCounts[task.id];
   const projectTitle = task.projectId != null ? meta.projectTitles[String(task.projectId)] : undefined;
   const tags = parseTaskTags(task);
   const priority = priorityStyle(task.priority);
+  // Una tarea sin sincronizar (id uuid) no está en la caché del servidor — no hay nada que pintar.
+  const board = task.plannerId != null ? meta.customData[task.plannerId] : undefined;
+  const taskValues = board?.values[task.id];
+  const customChips =
+    board && taskValues
+      ? board.fields.flatMap((field) => {
+          const value = taskValues[String(field.id)] ?? null;
+          if (value === null || value === "") return [];
+          return [{ id: field.id, text: `${field.name}: ${formatCustomFieldValue(field.type, value)}` }];
+        })
+      : [];
 
   return (
     <View style={styles.badgeRow}>
@@ -1787,6 +1859,11 @@ function TaskBadges({ task, meta, onCyclePriority }: { task: LocalTask; meta: Ta
       {tags.map((tag) => (
         <View key={tag} style={[styles.badge, styles.tagBadge]}>
           <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>#{tag}</Text>
+        </View>
+      ))}
+      {customChips.map((chip) => (
+        <View key={chip.id} style={[styles.badge, styles.tagBadge]}>
+          <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>{chip.text}</Text>
         </View>
       ))}
     </View>
@@ -1857,8 +1934,11 @@ function DraggableTaskCard({
       style={isDragging ? { transform: [{ translateY: dragY }], zIndex: 50, elevation: 8, opacity: 0.94 } : undefined}
     >
       <Pressable style={styles.taskCard} onPress={onPress}>
-        {task.image ? <Image source={{ uri: task.image }} style={styles.taskCardImage} /> : null}
+        {/* "Compactar" (ver el modal de tarea): miniatura a la izquierda; si no, imagen a ancho
+            completo encima del texto — igual que TaskCard en la web. Sin imagen no cambia nada. */}
+        {task.image && task.compact === 1 ? <Image source={{ uri: task.image }} style={styles.taskCardImage} /> : null}
         <View style={styles.taskCardContent}>
+          {task.image && task.compact !== 1 ? <Image source={{ uri: task.image }} style={styles.taskCardImageFull} /> : null}
           <Text style={[styles.taskTitle, task.status === "done" && styles.taskTitleDone]}>{task.title}</Text>
           {task.description ? (
             <Text style={styles.taskDescription} numberOfLines={2}>
@@ -2226,7 +2306,8 @@ const styles = StyleSheet.create({
     padding: 10,
     ...shadow,
   },
-  taskCardImage: { width: 36, height: 36, borderRadius: radius.input, flexShrink: 0 },
+  taskCardImage: { width: 56, height: 56, borderRadius: radius.input, flexShrink: 0 },
+  taskCardImageFull: { width: "100%", height: 128, borderRadius: radius.input, marginBottom: 4 },
   taskDescription: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
   // Insignias de la tarjeta/fila: varias a la vez (prioridad, fecha, proyecto, subtareas, tiempo,
   // tags) — envuelven en vez de desbordar el ancho de una columna estrecha.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
   Animated,
@@ -23,6 +24,10 @@ import { useSidebar } from "./SidebarContext";
 import { useTheme } from "../context/ThemeContext";
 import { api, ApiError } from "../api/client";
 import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
+import { listEventCategories } from "../api/eventCategories";
+import { listExpandedEvents, ParsedEvent } from "../db/eventsRepo";
+import { EventOccurrence } from "../utils/recurrence";
+import { eventCategoryStyle, findEventCategory } from "../utils/eventCategories";
 import { NewPageForm } from "../components/NewPageForm";
 import { AppearanceSettings } from "../components/AppearanceSettings";
 import { AccountSettings } from "../components/AccountSettings";
@@ -32,7 +37,7 @@ import { AboutTidelySection } from "../components/AboutTidely";
 import { GlobalSearch, SearchPick } from "../components/GlobalSearch";
 import { NotificationsBell, useUnreadNotifications } from "../components/NotificationsPanel";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
-import { EnabledSection, ENABLED_SECTIONS } from "../types";
+import { EnabledSection, ENABLED_SECTIONS, EventCategory } from "../types";
 
 // Sidebar lateral para móvil — reemplaza la barra de pestañas inferior (bottom-tabs) por un menú
 // lateral colapsable, puerto de dashboard/src/components/AppShell.tsx (<aside> de escritorio) en
@@ -203,6 +208,15 @@ function filterNav(nav: NavItem[], enabledSections: Set<string>): NavItem[] {
 // verdad, así que no puede compartir claves con NAV/App.tsx.
 const NEW_PAGE_LABEL = "+ Nueva página";
 const NEW_PAGE_KEY = "__new_page__";
+
+// Tarjeta "Próximo evento" del pie del menú (puerto de la de dashboard/src/components/AppShell.tsx, que
+// recuerda si está plegada en NEXT_EVENT_COLLAPSED_KEY). Aquí se guarda en AsyncStorage: es una
+// preferencia de UI por dispositivo, no un secreto.
+const NEXT_EVENT_COLLAPSED_KEY = "tidely.sidebar.nextEventCollapsed";
+// Ventana en la que se busca el próximo evento: la web mira "esta semana" (GET /agenda/week); aquí son
+// los próximos 7 días para que un domingo por la noche no salga "Nada pendiente" con la semana ya
+// llena de eventos a la vuelta de la esquina.
+const NEXT_EVENT_WINDOW_DAYS = 7;
 
 const DEFAULT_WIDTH = 220;
 // Añadido al ancho de texto medido: paddingHorizontal del botón (2*12) + paddingHorizontal de la
@@ -500,6 +514,60 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
     }
   }, [collapsed, reloadCustomPages, refreshNotifications]);
 
+  // "Próximo evento": se lee de la caché LOCAL (SQLite, ver eventsRepo) con las mismas ocurrencias
+  // expandidas que Hoy/Agenda, no de la API como la web — así funciona también sin conexión. Las
+  // categorías (para el color) sí vienen de la API: sin red simplemente no hay punto de color.
+  const [nextEvent, setNextEvent] = useState<EventOccurrence<ParsedEvent> | null>(null);
+  const [eventCategories, setEventCategories] = useState<EventCategory[]>([]);
+  const [nextEventCollapsed, setNextEventCollapsed] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(NEXT_EVENT_COLLAPSED_KEY)
+      .then((stored) => {
+        if (stored === "true") setNextEventCollapsed(true);
+      })
+      .catch(() => {
+        // Sin persistencia se arranca desplegada, como la primera vez.
+      });
+  }, []);
+
+  const toggleNextEventCollapsed = () => {
+    const next = !nextEventCollapsed;
+    setNextEventCollapsed(next);
+    AsyncStorage.setItem(NEXT_EVENT_COLLAPSED_KEY, String(next)).catch(() => {});
+  };
+
+  const reloadNextEvent = useCallback(async () => {
+    try {
+      const now = new Date();
+      const end = new Date(now.getTime() + NEXT_EVENT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+      const occurrences = await listExpandedEvents(now, end);
+      // listExpandedEvents también devuelve lo que empezó antes y sigue en curso: el "próximo" es el
+      // primero que EMPIEZA a partir de ahora (ya vienen ordenadas por inicio).
+      setNextEvent(occurrences.find((occ) => occ.startTime.getTime() >= now.getTime()) ?? null);
+    } catch {
+      // Caché aún no lista (primer arranque, sincronizando...) — se reintenta al volver a abrir el menú.
+    }
+    listEventCategories()
+      .then(setEventCategories)
+      .catch(() => {
+        // Sin red: el evento se muestra igual, solo sin el punto de color de su categoría.
+      });
+  }, []);
+
+  // Como las páginas y las notificaciones: AppSidebar es el tabBar (siempre montado, sin ciclo de foco),
+  // así que se refresca cada vez que se ABRE el menú — y una vez al montar, por si arranca abierto.
+  useEffect(() => {
+    if (!collapsed) reloadNextEvent();
+  }, [collapsed, reloadNextEvent]);
+
+  // Mismo contrato que Hoy/GlobalSearch con Agenda (focusDate en clave UTC + id del evento) — ver
+  // AgendaScreen, que consume y limpia estos parámetros.
+  const openNextEvent = (occ: EventOccurrence<ParsedEvent>) => {
+    navigation.navigate("Agenda", { focusDate: occ.startTime.toISOString().slice(0, 10), focusEventId: String(occ.event.id) });
+    setCollapsed(true);
+  };
+
   // Navegar SIEMPRE cierra el menú (a diferencia de la web, donde el <aside> se queda fijo) —
   // en una pantalla de móvil, dejarlo desplegado tapando el contenido tras elegir a dónde ir
   // sería un paso extra de más; el usuario ya puede volver a abrirlo con el clip cuando lo
@@ -730,6 +798,41 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+          <View style={styles.nextEventCard}>
+            <Pressable
+              onPress={toggleNextEventCollapsed}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={nextEventCollapsed ? "Mostrar próximo evento" : "Ocultar próximo evento"}
+              style={styles.nextEventHeader}
+            >
+              <Text style={styles.nextEventTitle}>Próximo evento</Text>
+              <Text style={[styles.chevron, nextEventCollapsed && styles.chevronCollapsed]}>▾</Text>
+            </Pressable>
+            {!nextEventCollapsed &&
+              (nextEvent ? (
+                <Pressable onPress={() => openNextEvent(nextEvent)} style={styles.nextEventBody}>
+                  <View style={styles.nextEventTitleRow}>
+                    {findEventCategory(eventCategories, nextEvent.event.categoryId) && (
+                      <View
+                        style={[styles.nextEventDot, { backgroundColor: eventCategoryStyle(eventCategories, nextEvent.event.categoryId).text }]}
+                      />
+                    )}
+                    <Text numberOfLines={1} style={styles.nextEventName}>
+                      {nextEvent.event.title}
+                    </Text>
+                  </View>
+                  <Text numberOfLines={1} style={styles.nextEventWhen}>
+                    {nextEvent.startTime.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })} —{" "}
+                    {nextEvent.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                  </Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.nextEventWhen}>Nada pendiente. Respira.</Text>
+              ))}
+          </View>
+
+          <View style={styles.footerRow}>
           {/* Mismo gesto que la web (AppShell.tsx): tocar el nombre abre Ajustes — 5 pestañas (ver
               SETTINGS_SECTIONS y settingsSection más arriba). Deja fuera "Invitar a un amigo"/
               "Obtener ayuda", que en la propia web tampoco son más que un aviso de "esto llega más
@@ -751,6 +854,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           <Pressable onPress={logout} hitSlop={8}>
             <Text style={styles.logout}>Salir</Text>
           </Pressable>
+          </View>
         </View>
 
         {/* Botón de esconder el menú a caballo del borde derecho del panel — se desliza con él
@@ -1008,14 +1112,53 @@ function createStyles(colors: ColorPalette) {
     maxHeight: "88%",
   },
   footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
+    gap: 12,
     paddingHorizontal: 20,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  // rounded-2xl border border-secondary bg-secondary/30 p-4 de la tarjeta de la web.
+  nextEventCard: {
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.secondary,
+    backgroundColor: withAlpha(colors.secondary, 0.3),
+    padding: 12,
+    gap: 6,
+  },
+  nextEventHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  nextEventTitle: {
+    fontFamily: fonts.sansBold,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: colors.mutedForeground,
+  },
+  nextEventBody: { gap: 2 },
+  nextEventTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  nextEventDot: { width: 8, height: 8, borderRadius: 4 },
+  nextEventName: {
+    flexShrink: 1,
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.foreground,
+  },
+  nextEventWhen: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.mutedForeground,
   },
   footerUser: {
     flex: 1,

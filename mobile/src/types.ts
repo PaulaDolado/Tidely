@@ -240,6 +240,9 @@ export interface ServerTask {
   description: string | null;
   image: string | null;
   notes: string | null;
+  // Imagen como miniatura a la izquierda en la tarjeta (sin efecto sin imagen) — ver `compact` en
+  // prisma/schema.prisma y TaskCard en dashboard/src/pages/PlanificadorPage.tsx.
+  compact: boolean;
   status: TaskStatus;
   priority: TaskPriority;
   order: number;
@@ -522,6 +525,11 @@ export interface LocalEventException {
   newStartTime: string | null;
   newEndTime: string | null;
   updatedAt: string;
+  // "Mover/Cancelar solo esta vez" se hace offline: `pendingOp` 'upsert' = pendiente de subir (se
+  // identifica por (eventId, originalStartTime), no por id), 'delete' = "Restaurar horario
+  // original" pendiente de subir. `synced = 0` = la excepción nunca llegó al servidor.
+  synced: 0 | 1;
+  pendingOp: "upsert" | "delete" | null;
 }
 
 export interface LocalTask {
@@ -532,6 +540,7 @@ export interface LocalTask {
   description: string | null;
   image: string | null;
   notes: string | null;
+  compact: 0 | 1;
   status: TaskStatus;
   priority: TaskPriority;
   order: number;
@@ -554,10 +563,17 @@ export interface LocalSubtask {
   pendingOp: "update" | "delete" | null;
 }
 
+// Un hábito creado offline no tiene todavía id de servidor: usa un id NEGATIVO provisional (para
+// no cambiar `id` de number a string y arrastrar `habit_logs.habitId`/HoyScreen/HabitsCard) más
+// un `localId` uuid que es lo que /sync espera como `localId` (ver db/habitsRepo.ts). Al
+// sincronizar, `markHabitSynced` sustituye el id negativo por el real también en `habit_logs`.
 export interface LocalHabit {
   id: number;
   title: string;
   updatedAt: string;
+  localId: string | null;
+  synced: 0 | 1;
+  pendingOp: "update" | "delete" | null;
 }
 
 export interface LocalHabitLog {

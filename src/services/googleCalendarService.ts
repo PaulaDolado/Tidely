@@ -3,7 +3,7 @@ import { prisma } from "../config/database";
 import { env } from "../config/environment";
 import { logger } from "../utils/logger";
 import { NotFoundError, ValidationError } from "../utils/errorHandler";
-import { signGoogleOAuthState, verifyGoogleOAuthState } from "../utils/jwt";
+import { GoogleOAuthClient, signGoogleOAuthState, verifyGoogleOAuthState } from "../utils/jwt";
 import { decrypt, encrypt } from "../utils/encryption";
 import { getUserTimezone } from "./agendaService";
 import { recordTombstone } from "./tombstoneService";
@@ -36,14 +36,14 @@ function createOAuthClient() {
 }
 
 /** URL de consentimiento de Google a la que redirigir el navegador completo (no un fetch). */
-export function getAuthUrl(userId: number): string {
+export function getAuthUrl(userId: number, target: GoogleOAuthClient = "web"): string {
   assertConfigured();
   const client = createOAuthClient();
   return client.generateAuthUrl({
     access_type: "offline", // imprescindible para recibir refresh_token, no solo access_token
     prompt: "consent", // fuerza a reemitir refresh_token aunque el usuario ya hubiera autorizado antes
     scope: CALENDAR_SCOPES,
-    state: signGoogleOAuthState(userId),
+    state: signGoogleOAuthState(userId, target),
   });
 }
 

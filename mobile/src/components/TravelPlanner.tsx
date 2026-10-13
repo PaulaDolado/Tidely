@@ -4,10 +4,19 @@ import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import DateTimePicker, { DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { PackingItem, SavedPlace, TransportDetail, TransportType, TravelContent, TravelItineraryItem, Trip, TripAttachment, TripContact } from "../api/customPages";
 import { fetchLinkPreview, hostnameOf, normalizePlaceUrl, normalizeTravelContent, pickDefaultTrip } from "../utils/travel";
-import { attachmentChars, openAttachment, pickAttachment, totalAttachmentChars } from "../utils/travelFiles";
+import {
+  attachmentChars,
+  CONTENT_LIMIT_MESSAGE,
+  contentChars,
+  MAX_CONTENT_CHARS,
+  openAttachment,
+  pickAttachment,
+  totalAttachmentChars,
+} from "../utils/travelFiles";
 import { buildTransportChains, formatLayover, formatSchedule, layoverMinutes, linkCandidates, shortDay, validateTransportTimes } from "../utils/travelTransport";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 
@@ -81,28 +90,60 @@ function fmtPrice(n: number): string {
   return n.toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 }
 
-// La web reduce cada foto a 1200 px de lado máximo y JPEG 0.82 antes de embeberla (readResizedImage en
-// TravelPlannerTemplate.tsx) para no pasarse de los 8 MB de `content` por página (ver
-// CONTENT_BYTE_LIMIT en src/validators/customPagesValidators.ts). Aquí no hay forma de reducir las
-// dimensiones sin una dependencia nueva (expo-image-manipulator no está instalado y expo-image-
-// picker no tiene opción de tamaño máximo), así que se compensa con más compresión JPEG que el
-// resto de imágenes de páginas y manteniendo el tope de 3 MB por foto.
-const TRIP_IMAGE_QUALITY = 0.4;
+// Igual que la web (readResizedImage en TravelPlannerTemplate.tsx): cada foto se reduce a 1200 px de lado
+// máximo y se recomprime como JPEG ~0.8 antes de embeberla, para no pasarse de los 8 MB de `content` por
+// página (ver CONTENT_BYTE_LIMIT en src/validators/customPagesValidators.ts). El selector de imágenes no
+// tiene opción de tamaño máximo, así que el redimensionado lo hace expo-image-manipulator (API de
+// contexto: `ImageManipulator.manipulate(uri)` → `.resize()` → `.renderAsync()` → `.saveAsync()`;
+// `manipulateAsync` está deprecada en el SDK 57).
+const TRIP_IMAGE_MAX_SIDE = 1200;
+const TRIP_IMAGE_QUALITY = 0.8;
 
-async function pickImageData(): Promise<string | null> {
+/**
+ * Abre la galería y devuelve la foto como data URL JPEG de ≤1200 px. `getOtherChars` da (solo cuando se
+ * elige una foto, no en cada render) los caracteres que ya ocupa el resto del contenido de la página,
+ * para rechazar con un aviso claro una foto que haría pasar al JSON del límite del backend.
+ */
+async function pickImageData(getOtherChars: () => number): Promise<string | null> {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
     Alert.alert("Permiso necesario", "Activa el acceso a tus fotos para añadir una imagen.");
     return null;
   }
-  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: TRIP_IMAGE_QUALITY });
-  if (result.canceled || !result.assets[0]?.base64) return null;
-  const base64 = result.assets[0].base64;
+  // quality 1: la recompresión a JPEG la hace el manipulador una sola vez, tras reducir las dimensiones
+  // (comprimir dos veces perdería calidad sin ganar tamaño).
+  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 });
+  if (result.canceled || !result.assets[0]) return null;
+  const asset = result.assets[0];
+
+  let base64: string | undefined;
+  try {
+    const context = ImageManipulator.manipulate(asset.uri);
+    // Solo se reduce (nunca se amplía) y por el lado más largo; el otro se calcula solo para mantener la
+    // proporción. Sin dimensiones conocidas se deja el tamaño y solo se recomprime.
+    if (asset.width && asset.height && Math.max(asset.width, asset.height) > TRIP_IMAGE_MAX_SIDE) {
+      context.resize(asset.width >= asset.height ? { width: TRIP_IMAGE_MAX_SIDE } : { height: TRIP_IMAGE_MAX_SIDE });
+    }
+    const image = await context.renderAsync();
+    base64 = (await image.saveAsync({ format: SaveFormat.JPEG, compress: TRIP_IMAGE_QUALITY, base64: true })).base64;
+  } catch {
+    Alert.alert("No se pudo procesar la imagen", "Prueba con otra foto.");
+    return null;
+  }
+  if (!base64) return null;
+
   if (base64.length * 0.75 > MAX_IMAGE_BYTES) {
     Alert.alert("Imagen demasiado grande", "El límite es de 3 MB por imagen. Prueba con una foto más pequeña.");
     return null;
   }
-  return `data:image/jpeg;base64,${base64}`;
+  const dataUrl = `data:image/jpeg;base64,${base64}`;
+  // Total de la página: si no cabe, un aviso ahora en vez de un error al guardar (el backend rechaza el
+  // JSON por encima de 8.000.000 caracteres).
+  if (getOtherChars() + dataUrl.length > MAX_CONTENT_CHARS) {
+    Alert.alert("Página demasiado grande", CONTENT_LIMIT_MESSAGE);
+    return null;
+  }
+  return dataUrl;
 }
 
 /** Botón con la fecha actual que abre el selector nativo al tocarlo. */
@@ -762,6 +803,12 @@ export function TravelPlannerEditor({ content, onChange }: { content: TravelCont
               <TripForm
                 key={editingTrip.id}
                 trip={editingTrip}
+                getOtherChars={() =>
+                  contentChars({
+                    trips: trips.map((t) => (t.id === editingTrip.id ? { ...t, imageData: null } : t)),
+                    places: legacyPlaces,
+                  })
+                }
                 onSave={async (patch) => {
                   await patchTrip(editingTrip.id, patch);
                   setEditingTripId(null);
@@ -885,7 +932,15 @@ function CardTitle({ title, destination }: { title: string; destination?: string
   );
 }
 
-function ImageBlock({ value, onChange }: { value: string | null | undefined; onChange: (imageData: string | null) => void }) {
+function ImageBlock({
+  value,
+  onChange,
+  getOtherChars,
+}: {
+  value: string | null | undefined;
+  onChange: (imageData: string | null) => void;
+  getOtherChars: () => number;
+}) {
   return (
     <View style={{ marginBottom: 12 }}>
       {value ? <Image source={{ uri: value }} style={styles.formImage} /> : null}
@@ -893,7 +948,7 @@ function ImageBlock({ value, onChange }: { value: string | null | undefined; onC
         <Pressable
           style={styles.outlineButton}
           onPress={async () => {
-            const data = await pickImageData();
+            const data = await pickImageData(getOtherChars);
             if (data) onChange(data);
           }}
         >
@@ -911,11 +966,14 @@ function ImageBlock({ value, onChange }: { value: string | null | undefined; onC
 
 function TripForm({
   trip,
+  getOtherChars,
   onSave,
   onDelete,
   onClose,
 }: {
   trip: Trip;
+  // Caracteres del contenido de la página SIN la foto de este viaje (la nueva la sustituye) — ver ImageBlock.
+  getOtherChars: () => number;
   onSave: (patch: Partial<Trip>) => Promise<void>;
   onDelete: () => void;
   onClose: () => void;
@@ -946,7 +1004,7 @@ function TripForm({
   return (
     <ScrollView keyboardShouldPersistTaps="handled">
       <Text style={styles.modalTitle}>Tu viaje</Text>
-      <ImageBlock value={imageData} onChange={setImageData} />
+      <ImageBlock value={imageData} onChange={setImageData} getOtherChars={getOtherChars} />
       <TextInput style={styles.input} placeholder="Destino" value={destination} onChangeText={setDestination} />
       <View style={styles.dateRow}>
         <DateField

@@ -62,8 +62,8 @@ Solo importación (de lectura): trae los eventos del calendario `primary` de Goo
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
 | GET | `/integrations/google/status` | JWT | `{ connected, email?, lastSyncedAt? }` |
-| GET | `/integrations/google/connect` | JWT | `{ url }` — URL de consentimiento de Google a la que redirigir el **navegador completo** (no un fetch) |
-| GET | `/integrations/google/callback` | Público | La abre el propio Google redirigiendo el navegador tras el consentimiento — nunca se llama a mano. Redirige de vuelta al dashboard con `?google=connected` o `?google=error` |
+| GET | `/integrations/google/connect` | JWT | `{ url }` — URL de consentimiento de Google a la que redirigir el **navegador completo** (no un fetch). Query opcional `client=web` o `client=mobile` (por defecto `web`; cualquier otro valor → 400): con `mobile` el callback devuelve al usuario a la app por deep link en vez de al dashboard |
+| GET | `/integrations/google/callback` | Público | La abre el propio Google redirigiendo el navegador tras el consentimiento — nunca se llama a mano. Redirige de vuelta al dashboard con `?google=connected` o `?google=error`; si el flujo se inició con `client=mobile` (va firmado dentro de `state`, nunca como URL), redirige al deep link `tidely://google?status=connected` o `?status=error`. Un `state` ausente, caducado o manipulado cae siempre al redirect web |
 | POST | `/integrations/google/sync` | JWT | Sincroniza ahora. Devuelve `{ imported, updated, removed }` |
 | DELETE | `/integrations/google/disconnect` | JWT | Revoca el token, borra la conexión y todos los eventos que se habían importado de ella |
 

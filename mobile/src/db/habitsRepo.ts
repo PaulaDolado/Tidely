@@ -1,36 +1,127 @@
+import * as Crypto from "expo-crypto";
 import { getDb } from "./index";
 import { LocalHabit, LocalHabitLog, ServerHabit, ServerHabitLog } from "../types";
 
-// --- Habit (caché local del servidor — alta/renombrado/borrado van por REST, ver api/habits.ts, y
-// tras cada llamada correcta se refleja aquí con upsertHabits/deleteHabit; el sync offline solo
-// sube las marcas diarias, los HabitLog) ---
+// --- Habit: offline-first como el resto (alta/renombrado/borrado se escriben en SQLite con su
+// `pendingOp` y suben por /sync, ver sync/push.ts). Un hábito creado offline usa un id NEGATIVO
+// provisional (no cabe un uuid en `id INTEGER`, y habit_logs.habitId/HoyScreen/HabitsCard lo usan
+// como número) más un `localId` uuid para el sobre de /sync; `markHabitSynced` lo sustituye por el
+// id real de servidor, también en sus marcas diarias. ---
 
+/** Un pull nunca pisa un hábito con una operación local pendiente (renombrado/borrado sin subir)
+ * — se resolverá en el próximo push, mismo criterio que tasksRepo.upsertTasks. */
 export async function upsertHabits(habits: ServerHabit[]): Promise<void> {
   const db = await getDb();
   await db.withTransactionAsync(async () => {
     for (const h of habits) {
       if (!h.active) {
-        await db.runAsync("DELETE FROM habits WHERE id = ?", [h.id]);
+        await db.runAsync("DELETE FROM habits WHERE id = ? AND pendingOp IS NULL", [h.id]);
         continue;
       }
-      await db.runAsync("INSERT OR REPLACE INTO habits (id, title, updatedAt) VALUES (?, ?, ?)", [
-        h.id,
-        h.title,
-        h.updatedAt,
-      ]);
+      await db.runAsync(
+        `INSERT INTO habits (id, title, updatedAt, localId, synced, pendingOp) VALUES (?, ?, ?, NULL, 1, NULL)
+         ON CONFLICT(id) DO UPDATE SET title = excluded.title, updatedAt = excluded.updatedAt, synced = 1
+         WHERE habits.pendingOp IS NULL`,
+        [h.id, h.title, h.updatedAt]
+      );
     }
   });
 }
 
+/** Tombstone de un hábito borrado en otro dispositivo (o ya confirmado por nuestro propio push):
+ * se lleva también sus marcas diarias, igual que el cascade del servidor. */
 export async function deleteHabit(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM habits WHERE id = ?", [id]);
   await db.runAsync("DELETE FROM habit_logs WHERE habitId = ?", [id]);
 }
 
+/** Excluye lo marcado para borrar (borrado optimista, igual que `notesRepo.listNotes`). */
 export async function listHabits(): Promise<LocalHabit[]> {
   const db = await getDb();
-  return db.getAllAsync<LocalHabit>("SELECT * FROM habits ORDER BY title ASC");
+  return db.getAllAsync<LocalHabit>(
+    "SELECT * FROM habits WHERE (pendingOp IS NULL OR pendingOp != 'delete') ORDER BY title ASC"
+  );
+}
+
+export async function createHabitLocal(title: string): Promise<number> {
+  const db = await getDb();
+  // Siguiente id negativo libre: nunca choca con un id de servidor (siempre positivo).
+  const row = await db.getFirstAsync<{ minId: number | null }>("SELECT MIN(id) AS minId FROM habits");
+  const id = Math.min(-1, (row?.minId ?? 0) - 1);
+  const now = new Date().toISOString();
+  await db.runAsync("INSERT INTO habits (id, title, updatedAt, localId, synced, pendingOp) VALUES (?, ?, ?, ?, 0, NULL)", [
+    id,
+    title,
+    now,
+    Crypto.randomUUID(),
+  ]);
+  return id;
+}
+
+export async function renameHabitLocal(id: number, title: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `UPDATE habits SET title = ?, updatedAt = ?,
+       pendingOp = CASE WHEN synced = 1 THEN 'update' ELSE pendingOp END
+     WHERE id = ?`,
+    [title, now, id]
+  );
+}
+
+/** Igual criterio que `notesRepo.deleteNoteLocal`: un hábito que nunca llegó al servidor se borra
+ * sin más (con sus marcas) — no hay nada que decirle al servidor. */
+export async function deleteHabitLocal(id: number): Promise<void> {
+  const db = await getDb();
+  const habit = await db.getFirstAsync<LocalHabit>("SELECT * FROM habits WHERE id = ?", [id]);
+  if (!habit) return;
+  if (habit.synced === 0) {
+    await db.runAsync("DELETE FROM habits WHERE id = ?", [id]);
+    await db.runAsync("DELETE FROM habit_logs WHERE habitId = ?", [id]);
+  } else {
+    await db.runAsync("UPDATE habits SET pendingOp = 'delete' WHERE id = ?", [id]);
+  }
+}
+
+export async function listUnsyncedHabits(): Promise<LocalHabit[]> {
+  const db = await getDb();
+  return db.getAllAsync<LocalHabit>("SELECT * FROM habits WHERE synced = 0 AND localId IS NOT NULL");
+}
+
+export async function listHabitsPendingUpdate(): Promise<LocalHabit[]> {
+  const db = await getDb();
+  return db.getAllAsync<LocalHabit>("SELECT * FROM habits WHERE synced = 1 AND pendingOp = 'update'");
+}
+
+export async function listHabitsPendingDelete(): Promise<LocalHabit[]> {
+  const db = await getDb();
+  return db.getAllAsync<LocalHabit>("SELECT * FROM habits WHERE synced = 1 AND pendingOp = 'delete'");
+}
+
+/** Sustituye el id negativo provisional por el de servidor y reasigna las marcas diarias ya
+ * hechas mientras el hábito era solo local — mismo motivo que tasksRepo.markTaskSynced con sus
+ * subtareas (si no, quedarían huérfanas y nunca podrían subirse). */
+export async function markHabitSynced(localId: string, serverId: number): Promise<void> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ id: number }>("SELECT id FROM habits WHERE localId = ?", [localId]);
+  if (!row) return;
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("UPDATE habit_logs SET habitId = ? WHERE habitId = ?", [serverId, row.id]);
+    await db.runAsync("UPDATE habits SET id = ?, localId = NULL, synced = 1 WHERE id = ?", [serverId, row.id]);
+  });
+}
+
+export async function clearHabitPendingOp(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE habits SET pendingOp = NULL WHERE id = ?", [id]);
+}
+
+/** Tras confirmar el borrado en el servidor (que se lleva en cascada sus marcas). */
+export async function deleteHabitRow(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM habits WHERE id = ?", [id]);
+  await db.runAsync("DELETE FROM habit_logs WHERE habitId = ?", [id]);
 }
 
 // --- HabitLog: clave compuesta (habitId, date), igual que en el servidor — ver types.ts ---
@@ -114,9 +205,12 @@ export async function toggleHabitToday(habitId: number): Promise<void> {
   await toggleHabitOnDate(habitId, todayKey());
 }
 
+/** Solo marcas de hábitos que ya tienen id de servidor (positivo): una marca de un hábito creado
+ * offline (habitId negativo provisional) espera a que `markHabitSynced` la reasigne — mismo
+ * criterio que subtasksRepo.listUnsyncedSubtasksReadyToPush con taskId. */
 export async function listPendingHabitLogs(): Promise<LocalHabitLog[]> {
   const db = await getDb();
-  return db.getAllAsync<LocalHabitLog>("SELECT * FROM habit_logs WHERE pending IS NOT NULL");
+  return db.getAllAsync<LocalHabitLog>("SELECT * FROM habit_logs WHERE pending IS NOT NULL AND habitId > 0");
 }
 
 export async function confirmHabitLogCreated(habitId: number, date: string): Promise<void> {

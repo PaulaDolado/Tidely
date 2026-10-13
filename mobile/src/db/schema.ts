@@ -4,7 +4,8 @@ import { type SQLiteDatabase } from "expo-sqlite";
 // de cada tabla en types.ts para el porqué de cada columna — en resumen:
 // - events/tasks/subtasks: el móvil puede CREAR filas nuevas → mismo patrón que `notes` ya usaba
 //   en Fase 1 (id TEXT = uuid hasta sincronizar, luego id de servidor; `synced` + `pendingOp`).
-// - event_exceptions/habits: solo caché de lectura, se sobrescriben en cada pull, sin `dirty`.
+// - event_exceptions/habits: antes solo caché de lectura; ahora se escriben offline (mover/cancelar
+//   una ocurrencia, alta/renombrado/borrado de hábitos) y llevan su propio `synced`/`pendingOp`.
 // - habit_logs: clave compuesta (habitId, date) — igual que en el propio servidor, así que ni
 //   siquiera hace falta un id local generado por el cliente (ver sync/push.ts).
 export async function initSchema(db: SQLiteDatabase): Promise<void> {
@@ -51,6 +52,8 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       newStartTime TEXT,
       newEndTime TEXT,
       updatedAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 1,
+      pendingOp TEXT,
       PRIMARY KEY (eventId, originalStartTime)
     );
 
@@ -62,6 +65,7 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       description TEXT,
       image TEXT,
       notes TEXT,
+      compact INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'todo',
       priority TEXT NOT NULL DEFAULT 'medium',
       "order" REAL NOT NULL DEFAULT 0,
@@ -84,10 +88,16 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
       pendingOp TEXT
     );
 
+    -- id INTEGER aunque el hábito se cree offline: un hábito sin sincronizar usa un id NEGATIVO
+    -- provisional + localId (uuid para /sync) — ver db/habitsRepo.ts. synced por defecto 1: todo
+    -- hábito que ya estuviera en una instalación existente vino del servidor.
     CREATE TABLE IF NOT EXISTS habits (
       id INTEGER PRIMARY KEY,
       title TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
+      updatedAt TEXT NOT NULL,
+      localId TEXT,
+      synced INTEGER NOT NULL DEFAULT 1,
+      pendingOp TEXT
     );
 
     CREATE TABLE IF NOT EXISTS habit_logs (
@@ -301,6 +311,32 @@ export async function initSchema(db: SQLiteDatabase): Promise<void> {
   for (const column of ["image TEXT", "notes TEXT"]) {
     try {
       await db.execAsync(`ALTER TABLE tasks ADD COLUMN ${column};`);
+    } catch {
+      // Ya existía — nada que hacer.
+    }
+  }
+
+  // Mismo criterio que arriba: `compact` en `tasks` (miniatura de la imagen en la tarjeta, paridad
+  // con Task.compact del backend/web). Instalaciones existentes: todas las tareas no compactas.
+  try {
+    await db.execAsync(`ALTER TABLE tasks ADD COLUMN compact INTEGER NOT NULL DEFAULT 0;`);
+  } catch {
+    // Ya existía — nada que hacer.
+  }
+
+  // Mismo criterio que arriba: los hábitos y las excepciones de evento pasan de ser solo caché de
+  // lectura a poder escribirse offline. `DEFAULT 1` en `synced` para las filas que ya existían:
+  // todas vinieron del servidor, así que no tienen nada pendiente de subir.
+  for (const column of ["localId TEXT", "synced INTEGER NOT NULL DEFAULT 1", "pendingOp TEXT"]) {
+    try {
+      await db.execAsync(`ALTER TABLE habits ADD COLUMN ${column};`);
+    } catch {
+      // Ya existía — nada que hacer.
+    }
+  }
+  for (const column of ["synced INTEGER NOT NULL DEFAULT 1", "pendingOp TEXT"]) {
+    try {
+      await db.execAsync(`ALTER TABLE event_exceptions ADD COLUMN ${column};`);
     } catch {
       // Ya existía — nada que hacer.
     }

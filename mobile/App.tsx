@@ -1,4 +1,5 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -70,9 +71,67 @@ export type RootTabParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
+// Última pestaña abierta, recordada por usuario (puerto de ACTIVE_TAB_KEY en dashboard/src/pages/
+// DashboardPage.tsx): al reabrir la app se vuelve a donde se estaba en vez de a "Hoy". Solo la pestaña de
+// primer nivel — nada de pantallas anidadas (Páginas > Detalle, Proyectos > Detalle): para "Páginas" y
+// "Proyectos" se restaura su pila desde la lista, que es lo que monta el navegador por defecto.
+// AsyncStorage y no SecureStore: es una preferencia de UI, no un secreto (igual que el tema y el tamaño
+// de letra, ver ThemeContext.tsx/FontSizeContext.tsx).
+const LAST_TAB_KEY = "tidely.activeTab";
+const lastTabKey = (userId: number) => `${LAST_TAB_KEY}.${userId}`;
+
+// Pestañas que existen para este usuario: Hoy, Agenda y Páginas son fijas; el resto depende de los
+// apartados activados (mismo criterio que los <Tab.Screen> condicionales de Root).
+function validTabs(enabledSections: Set<string>): Set<string> {
+  const tabs = new Set<string>(["Hoy", "Agenda", "Páginas"]);
+  if (enabledSections.has("planificador")) tabs.add("Planificador");
+  if (enabledSections.has("horario")) tabs.add("Horario");
+  if (enabledSections.has("objetivos")) tabs.add("Objetivos");
+  if (enabledSections.has("finanzas")) tabs.add("Finanzas");
+  if (enabledSections.has("metasAhorro")) tabs.add("Ahorro");
+  if (enabledSections.has("proyectos")) tabs.add("Proyectos");
+  return tabs;
+}
+
+// Nunca rechaza: sin almacenamiento (o con un valor raro) simplemente no se recuerda y se arranca en "Hoy".
+async function readStoredTab(userId: number): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(lastTabKey(userId));
+  } catch {
+    return null;
+  }
+}
+
+function storeTab(userId: number, route: string): void {
+  AsyncStorage.setItem(lastTabKey(userId), route).catch(() => {
+    // Sin persistencia la app funciona igual, solo no recuerda la pestaña al reabrir.
+  });
+}
+
 function Root() {
   const { user, ready } = useAuth();
   const { colors } = useTheme();
+  // Pestaña guardada de ESTE usuario ya leída (`route` null = no había o no se pudo leer). Hasta que no
+  // está lista no se monta el navegador: `initialRouteName` solo cuenta en el primer montaje, y leer el
+  // almacenamiento tarda un instante. Los hooks van antes de los `return` tempranos de abajo.
+  const userId = user?.id;
+  const [restoredTab, setRestoredTab] = useState<{ userId: number; route: string | null } | null>(null);
+  const lastStoredRoute = useRef<string | null>(null);
+  useEffect(() => {
+    if (userId === undefined) {
+      setRestoredTab(null);
+      return;
+    }
+    let cancelled = false;
+    readStoredTab(userId).then((route) => {
+      if (cancelled) return;
+      lastStoredRoute.current = route;
+      setRestoredTab({ userId, route });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   if (!ready) {
     // Comprobando si había sesión guardada en SecureStore — instantáneo en la práctica, pero
@@ -96,13 +155,33 @@ function Root() {
   // en la práctica. Mismo criterio que dashboard/src/components/AppShell.tsx.
   const enabledSections = new Set(user.enabledSections ?? ENABLED_SECTIONS);
 
+  if (restoredTab?.userId !== user.id) {
+    return (
+      <View style={[styles.loading, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+  // Una pestaña cuyo apartado se desactivó (o un nombre desconocido) no existe como <Tab.Screen>: se
+  // cae a "Hoy" en vez de pasarle al navegador una ruta inexistente.
+  const initialRouteName = restoredTab.route && validTabs(enabledSections).has(restoredTab.route) ? restoredTab.route : "Hoy";
+
   return (
     // SidebarProvider por fuera del Navigator: AppSidebar (el tabBar) y todas las pantallas
     // (hermanas suyas dentro del Navigator, no hijas) necesitan leer/escribir el mismo "¿está
     // colapsado el menú?" — ver SidebarContext.tsx para el porqué.
     <SidebarProvider>
-      <NavigationContainer>
+      <NavigationContainer
+        onStateChange={(state) => {
+          // Pestaña de primer nivel con foco — `state.index` apunta a la ruta activa del navegador raíz.
+          const route = state?.routes[state.index]?.name;
+          if (!route || route === lastStoredRoute.current) return;
+          lastStoredRoute.current = route;
+          storeTab(user.id, route);
+        }}
+      >
         <Tab.Navigator
+          initialRouteName={initialRouteName as keyof RootTabParamList}
           tabBar={(props) => <AppSidebar {...props} />}
           screenOptions={{
             headerShown: false,

@@ -214,6 +214,108 @@ describe("Sync Endpoints", () => {
       expect(logs).toHaveLength(0);
     });
 
+    it("renombra y borra un hábito offline (habits.update + deletes habit), y el borrado deja tombstone", async () => {
+      const habit = await request(app).post("/habits").set(authed()).send({ title: "Leer" });
+
+      const renamed = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ habits: { update: [{ id: habit.body.id, clientUpdatedAt: new Date(Date.now() + 60_000).toISOString(), title: "Leer 20 min" }] } });
+      expect(renamed.body.conflicts).toEqual([]);
+      expect((await prisma.habit.findUnique({ where: { id: habit.body.id } }))?.title).toBe("Leer 20 min");
+
+      const removed = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ deletes: [{ entityType: "habit", id: habit.body.id }] });
+      expect(removed.status).toBe(200);
+      expect(await prisma.habit.findUnique({ where: { id: habit.body.id } })).toBeNull();
+      const tombstone = await prisma.syncTombstone.findFirst({ where: { entityType: "habit", entityId: habit.body.id } });
+      expect(tombstone).not.toBeNull();
+    });
+
+    it("sube una excepción de evento como upsert (moved -> cancelled) y la borra por (eventId, originalStartTime)", async () => {
+      const event = await request(app)
+        .post("/agenda/events")
+        .set(authed())
+        .send({
+          title: "Standup",
+          categoryId: categoryIds["Trabajo"],
+          startTime: "2026-09-07T09:00:00.000Z",
+          endTime: "2026-09-07T09:30:00.000Z",
+          isRecurring: true,
+          recurringPattern: "daily",
+        });
+      const originalStartTime = "2026-09-08T09:00:00.000Z";
+
+      const moved = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          eventExceptions: {
+            upsert: [{ eventId: event.body.id, originalStartTime, action: "moved", newStartTime: "2026-09-08T11:00:00.000Z", newEndTime: "2026-09-08T11:30:00.000Z" }],
+          },
+        });
+      expect(moved.status).toBe(200);
+      let exception = await prisma.eventException.findFirst({ where: { eventId: event.body.id } });
+      expect(exception?.status).toBe("moved");
+      expect(exception?.newStartTime?.toISOString()).toBe("2026-09-08T11:00:00.000Z");
+
+      // Mismo (eventId, originalStartTime) con otra acción sustituye, no duplica; "cancelled" no lleva newStartTime/newEndTime.
+      const cancelled = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ eventExceptions: { upsert: [{ eventId: event.body.id, originalStartTime, action: "cancelled" }] } });
+      expect(cancelled.status).toBe(200);
+      const all = await prisma.eventException.findMany({ where: { eventId: event.body.id } });
+      expect(all).toHaveLength(1);
+      expect(all[0].status).toBe("cancelled");
+      expect(all[0].newStartTime).toBeNull();
+
+      const restored = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ deletes: [{ entityType: "eventException", eventId: event.body.id, originalStartTime }] });
+      expect(restored.status).toBe(200);
+      exception = await prisma.eventException.findFirst({ where: { eventId: event.body.id } });
+      expect(exception).toBeNull();
+      const tombstone = await prisma.syncTombstone.findFirst({ where: { entityType: "eventException" } });
+      expect(tombstone).not.toBeNull();
+    });
+
+    it("admite projectId y compact al crear/editar una tarea por sync, y los devuelve en el pull", async () => {
+      const project = await request(app).post("/projects").set(authed()).send({ title: "Proyecto vinculado" });
+
+      const created = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          tasks: {
+            create: [
+              { localId: "55555555-5555-5555-5555-555555555555", title: "Con proyecto", projectId: project.body.id, compact: true, image: "data:image/png;base64,AAAA" },
+            ],
+          },
+        });
+      expect(created.status).toBe(200);
+      const taskId = created.body.idMappings[0].id;
+      const task = await prisma.task.findUnique({ where: { id: taskId } });
+      expect(task?.projectId).toBe(project.body.id);
+      expect(task?.compact).toBe(true);
+
+      // "Sin proyecto" (null explícito) y "Expandir" (compact: false) también suben en un update.
+      const updated = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({ tasks: { update: [{ id: taskId, clientUpdatedAt: new Date(Date.now() + 60_000).toISOString(), projectId: null, compact: false }] } });
+      expect(updated.body.conflicts).toEqual([]);
+      const after = await prisma.task.findUnique({ where: { id: taskId } });
+      expect(after?.projectId).toBeNull();
+      expect(after?.compact).toBe(false);
+
+      const pull = await request(app).get("/sync/pull").set(authed());
+      expect(pull.body.tasks[0]).toMatchObject({ id: taskId, projectId: null, compact: false });
+    });
+
     it("rechaza un push mal formado (falta un campo requerido)", async () => {
       const response = await request(app)
         .post("/sync/push")

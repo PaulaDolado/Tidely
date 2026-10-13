@@ -25,7 +25,23 @@ import {
   clearSubtaskPendingOp,
   deleteSubtaskRow,
 } from "../db/subtasksRepo";
-import { listPendingHabitLogs, confirmHabitLogCreated, confirmHabitLogDeleted } from "../db/habitsRepo";
+import {
+  listPendingHabitLogs,
+  confirmHabitLogCreated,
+  confirmHabitLogDeleted,
+  listUnsyncedHabits,
+  listHabitsPendingUpdate,
+  listHabitsPendingDelete,
+  markHabitSynced,
+  clearHabitPendingOp,
+  deleteHabitRow,
+} from "../db/habitsRepo";
+import {
+  listExceptionsPendingUpsert,
+  listExceptionsPendingDelete,
+  confirmExceptionUpserted,
+  confirmExceptionDeleted,
+} from "../db/eventExceptionsRepo";
 import {
   listUnsyncedNotes,
   listNotesPendingUpdate,
@@ -124,7 +140,7 @@ import { PushResult } from "../types";
 /** Sube todo lo pendiente en un único lote (mismo contrato que `syncService.push` en el backend
  * — ver API.md). Eventos/tareas/subtareas siguen el mismo patrón que las notas: creadas offline
  * (`localId` uuid) o editadas (`id` de servidor + `clientUpdatedAt` para el last-write-wins). */
-export async function pushToServer(): Promise<void> {
+export async function pushToServer(allowFollowUp = true): Promise<void> {
   const [
     newEvents,
     updatedEvents,
@@ -136,6 +152,11 @@ export async function pushToServer(): Promise<void> {
     updatedSubtasks,
     deletedSubtasks,
     pendingLogs,
+    newHabits,
+    updatedHabits,
+    deletedHabits,
+    pendingExceptionUpserts,
+    pendingExceptionDeletes,
     newNotes,
     updatedNotes,
     deletedNotes,
@@ -185,6 +206,11 @@ export async function pushToServer(): Promise<void> {
     listSubtasksPendingUpdate(),
     listSubtasksPendingDelete(),
     listPendingHabitLogs(),
+    listUnsyncedHabits(),
+    listHabitsPendingUpdate(),
+    listHabitsPendingDelete(),
+    listExceptionsPendingUpsert(),
+    listExceptionsPendingDelete(),
     listUnsyncedNotes(),
     listNotesPendingUpdate(),
     listNotesPendingDelete(),
@@ -236,6 +262,11 @@ export async function pushToServer(): Promise<void> {
     updatedSubtasks.length ||
     deletedSubtasks.length ||
     pendingLogs.length ||
+    newHabits.length ||
+    updatedHabits.length ||
+    deletedHabits.length ||
+    pendingExceptionUpserts.length ||
+    pendingExceptionDeletes.length ||
     newNotes.length ||
     updatedNotes.length ||
     deletedNotes.length ||
@@ -336,6 +367,10 @@ export async function pushToServer(): Promise<void> {
         description: t.description,
         image: t.image,
         notes: t.notes,
+        compact: t.compact === 1,
+        // projectId solo si hay uno (createTaskSchema lo acepta opcional y nullable) — el proyecto
+        // siempre tiene id numérico de servidor aquí: la UI solo ofrece proyectos ya sincronizados.
+        ...(t.projectId != null ? { projectId: t.projectId } : {}),
         status: t.status,
         priority: t.priority,
         order: t.order,
@@ -350,6 +385,9 @@ export async function pushToServer(): Promise<void> {
         description: t.description,
         image: t.image,
         notes: t.notes,
+        compact: t.compact === 1,
+        // null explícito = "Sin proyecto" (updateTaskSchema lo admite y plannerService.updateTask lo guarda).
+        projectId: t.projectId,
         status: t.status,
         priority: t.priority,
         order: t.order,
@@ -372,7 +410,24 @@ export async function pushToServer(): Promise<void> {
       create: newNotes.map((n) => ({ localId: n.id, content: n.content, checked: n.checked === 1 })),
       update: updatedNotes.map((n) => ({ id: Number(n.id), clientUpdatedAt: n.updatedAt, content: n.content, checked: n.checked === 1 })),
     },
+    // Hábitos creados/renombrados offline (el borrado va por `deletes`). Las marcas diarias de un
+    // hábito que aún no tiene id de servidor esperan a la siguiente ronda (ver listPendingHabitLogs).
+    habits: {
+      create: newHabits.map((h) => ({ localId: h.localId as string, title: h.title })),
+      update: updatedHabits.map((h) => ({ id: h.id, clientUpdatedAt: h.updatedAt, title: h.title })),
+    },
     habitLogs: { create: habitLogCreates },
+    // "Mover/Cancelar solo esta vez": siempre upsert por (eventId, originalStartTime). Solo las de
+    // eventos ya sincronizados (ver listExceptionsPendingUpsert); `newStartTime/newEndTime` solo con
+    // "moved" — setExceptionSchema los prohíbe en "cancelled".
+    eventExceptions: {
+      upsert: pendingExceptionUpserts.map((x) => ({
+        eventId: Number(x.eventId),
+        originalStartTime: x.originalStartTime,
+        action: x.status,
+        ...(x.status === "moved" ? { newStartTime: x.newStartTime, newEndTime: x.newEndTime } : {}),
+      })),
+    },
     transactions: {
       create: newTransactions.map((t) => ({
         localId: t.id,
@@ -554,6 +609,13 @@ export async function pushToServer(): Promise<void> {
         .map((s) => ({ entityType: "subtask" as const, id: Number(s.id), taskId: Number(s.taskId) })),
       ...deletedNotes.filter((n) => n.synced === 1).map((n) => ({ entityType: "note" as const, id: Number(n.id) })),
       ...habitLogDeletes,
+      ...deletedHabits.map((h) => ({ entityType: "habit" as const, id: h.id })),
+      // "Restaurar horario original" — se identifica por (eventId, originalStartTime).
+      ...pendingExceptionDeletes.map((x) => ({
+        entityType: "eventException" as const,
+        eventId: Number(x.eventId),
+        originalStartTime: x.originalStartTime,
+      })),
       ...deletedTransactions.filter((t) => t.synced === 1).map((t) => ({ entityType: "transaction" as const, id: Number(t.id) })),
       ...deletedSavingsGoals.filter((g) => g.synced === 1).map((g) => ({ entityType: "savingsGoal" as const, id: Number(g.id) })),
       ...deletedGoals.filter((g) => g.synced === 1).map((g) => ({ entityType: "goal" as const, id: Number(g.id) })),
@@ -591,6 +653,10 @@ export async function pushToServer(): Promise<void> {
   await Promise.all(deletedSubtasks.filter((s) => s.synced === 1).map((s) => deleteSubtaskRow(s.id)));
   await Promise.all(habitLogCreates.map((l) => confirmHabitLogCreated(l.habitId, l.date)));
   await Promise.all(habitLogDeletes.map((l) => confirmHabitLogDeleted(l.habitId, l.date)));
+  await Promise.all(updatedHabits.map((h) => clearHabitPendingOp(h.id)));
+  await Promise.all(deletedHabits.map((h) => deleteHabitRow(h.id)));
+  await Promise.all(pendingExceptionUpserts.map((x) => confirmExceptionUpserted(x.eventId, x.originalStartTime)));
+  await Promise.all(pendingExceptionDeletes.map((x) => confirmExceptionDeleted(x.eventId, x.originalStartTime)));
   await Promise.all(updatedNotes.map((n) => clearNotePendingOp(n.id)));
   await Promise.all(deletedNotes.filter((n) => n.synced === 1).map((n) => deleteNoteRow(n.id)));
   await Promise.all(updatedTransactions.map((t) => clearTransactionPendingOp(t.id)));
@@ -634,5 +700,12 @@ export async function pushToServer(): Promise<void> {
     else if (mapping.entityType === "scheduleRow") await markRowSynced(mapping.localId, mapping.id);
     else if (mapping.entityType === "calendarLegendCategory") await markCategorySynced(mapping.localId, mapping.id);
     else if (mapping.entityType === "customPage") await markCustomPageSynced(mapping.localId, mapping.id);
+    else if (mapping.entityType === "habit") await markHabitSynced(mapping.localId, mapping.id);
   }
+
+  // Lo que cuelga de algo recién creado (subtareas de una tarea, marcas de un hábito, excepciones
+  // de un evento…) esperaba a conocer el id de servidor de su padre: ahora que `markXSynced` lo ha
+  // reasignado, se sube en una segunda pasada del mismo ciclo en vez de esperar al siguiente sync.
+  // Solo una vez (`allowFollowUp`): si esa segunda pasada ya no crea nada, no vuelve a repetirse.
+  if (allowFollowUp && result.idMappings.length > 0) await pushToServer(false);
 }

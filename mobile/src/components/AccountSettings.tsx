@@ -16,7 +16,9 @@ function formatDate(iso: string): string {
 // email sin verificar) y el mismo formulario de cambiar contraseña, ambos contra los mismos
 // endpoints (PUT /auth/me, PUT /auth/me/password). La verificación de email en sí (clicar el
 // enlace del correo) sigue pasando por la web — ver el comentario de resendVerification en
-// AuthContext.tsx — así que aquí solo hace falta el botón de reenviar, no una pantalla propia.
+// AuthContext.tsx — así que aquí solo hace falta el botón de reenviar, no una pantalla propia. El
+// distintivo "✓ Verificado" se actualiza solo: AuthContext relee el perfil cuando la app vuelve a
+// primer plano mientras el email sigue sin verificar.
 export function AccountSettings() {
   const { user, updateUser, resendVerification } = useAuth();
   const { colors } = useTheme();

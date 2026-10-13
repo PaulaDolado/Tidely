@@ -56,20 +56,48 @@ export function verifyRefreshToken(token: string): RefreshTokenPayload {
 // completar el consentimiento) sirve de "carnet" firmado: si alguien lo manipulara, la firma no
 // cuadraría. `purpose` evita que un access/refresh token cualquiera (firmados con el mismo
 // secreto) se pudiera colar aquí como `state` válido.
+//
+// `client` dice a qué cliente devolver al usuario al terminar el consentimiento: la web (redirect
+// al dashboard) o la app móvil (deep link `tidely://google`). Solo se firma cuando es "mobile":
+// un state SIN el campo (los emitidos antes de existir este campo, o los de la web) significa web,
+// así que ningún state antiguo cambia de comportamiento ni deja de verificarse.
+export type GoogleOAuthClient = "web" | "mobile";
+
 interface GoogleOAuthStatePayload {
   userId: number;
   purpose: "google-calendar-connect";
+  client?: "mobile";
 }
 
-export function signGoogleOAuthState(userId: number): string {
+export function signGoogleOAuthState(userId: number, client: GoogleOAuthClient = "web"): string {
   const payload: GoogleOAuthStatePayload = { userId, purpose: "google-calendar-connect" };
+  if (client === "mobile") payload.client = "mobile";
   return jwt.sign(payload, env.jwt.secret, { expiresIn: "10m" });
 }
 
-export function verifyGoogleOAuthState(token: string): number {
+function verifyGoogleOAuthStatePayload(token: string): GoogleOAuthStatePayload {
   const payload = jwt.verify(token, env.jwt.secret) as GoogleOAuthStatePayload;
   if (payload.purpose !== "google-calendar-connect") {
     throw new Error("Token de estado inválido");
   }
-  return payload.userId;
+  return payload;
+}
+
+export function verifyGoogleOAuthState(token: string): number {
+  return verifyGoogleOAuthStatePayload(token).userId;
+}
+
+/**
+ * A qué cliente devolver al usuario tras el callback. Lista de permitidos cerrada: solo el literal
+ * "mobile" cuenta como móvil; cualquier otro valor del payload, un state ausente o un state que no
+ * verifica (caducado, manipulado, de otro propósito) se trata como web — el redirect por defecto y
+ * el único que ya existía. Nunca lanza.
+ */
+export function getGoogleOAuthStateClient(token: string | undefined): GoogleOAuthClient {
+  if (!token) return "web";
+  try {
+    return verifyGoogleOAuthStatePayload(token).client === "mobile" ? "mobile" : "web";
+  } catch {
+    return "web";
+  }
 }

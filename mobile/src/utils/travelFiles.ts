@@ -2,7 +2,7 @@ import { File, Paths } from "expo-file-system";
 import * as DocumentPicker from "expo-document-picker";
 import * as Sharing from "expo-sharing";
 import * as Crypto from "expo-crypto";
-import { Trip, TripAttachment } from "../api/customPages";
+import { TravelContent, Trip, TripAttachment } from "../api/customPages";
 
 // Archivos adjuntos de "Detalles del transporte" (tarjetas de embarque, billetes…). Igual que en la
 // web viven DENTRO del JSON de `content` como data URL, así que el backend (límite de 8.000.000
@@ -11,6 +11,19 @@ import { Trip, TripAttachment } from "../api/customPages";
 
 export const MAX_ATTACHMENT_BYTES = 1.5 * 1024 * 1024; // 1,5 MB por archivo (bytes reales)
 export const MAX_ATTACHMENTS_CHARS = 4_000_000; // suma de dataUrl.length de TODOS los viajes
+
+// Techo del JSON COMPLETO de la página de viajes (fotos + adjuntos + todo el texto): el backend rechaza
+// el guardado por encima de 8.000.000 caracteres, así que se deja un margen para el texto que se
+// añada después. Las fotos de portada no tienen presupuesto propio (como en la web), pero antes de
+// meter una nueva se comprueba contra este total en vez de dejar que falle al guardar.
+export const MAX_CONTENT_CHARS = 7_500_000;
+export const CONTENT_LIMIT_MESSAGE =
+  "Esta página de viajes ya ocupa casi todo el espacio disponible. Quita alguna foto o archivo adjunto para poder añadir más.";
+
+/** Caracteres que ocupa el contenido de la página de viajes tal cual lo valida el backend (JSON.stringify). */
+export function contentChars(content: TravelContent): number {
+  return JSON.stringify(content).length;
+}
 
 export const FILE_TOO_BIG_MESSAGE = "El archivo supera 1,5 MB. Prueba con uno más pequeño.";
 export const ATTACHMENTS_LIMIT_MESSAGE = "Has llegado al límite de archivos adjuntos de esta página. Elimina alguno para poder añadir más.";

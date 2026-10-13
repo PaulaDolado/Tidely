@@ -3,8 +3,14 @@ import { View, Pressable, ScrollView, StyleSheet, Alert, LayoutChangeEvent } fro
 import { Text, TextInput } from "./AppText";
 import Svg, { Circle, G, Line, Path, Text as SvgText } from "react-native-svg";
 import { runSync } from "../sync";
-import { listHabits, listHabitLogsForHabit, toggleHabitOnDate, upsertHabits, deleteHabit } from "../db/habitsRepo";
-import { createHabit, renameHabit, removeHabit, habitErrorMessage } from "../api/habits";
+import {
+  listHabits,
+  listHabitLogsForHabit,
+  toggleHabitOnDate,
+  createHabitLocal,
+  renameHabitLocal,
+  deleteHabitLocal,
+} from "../db/habitsRepo";
 import { LocalHabit } from "../types";
 import { colors, fonts, radius, withAlpha } from "../theme";
 
@@ -69,9 +75,10 @@ interface HabitWithLogs extends LocalHabit {
  * cualquier día de la semana en curso (los futuros quedan deshabilitados), crear, renombrar (tocar
  * el nombre) y borrar hábitos, y el panel de progreso con vista semanal/mensual.
  *
- * Las marcas diarias son offline-first (SQLite + sync, ver habitsRepo.ts). Crear/renombrar/borrar
- * no forman parte del sync del móvil: van directos por REST (api/habits.ts, necesitan conexión) y
- * después se reflejan en la caché local para que la tarjeta se refresque al instante.
+ * Todo es offline-first (SQLite + sync, ver habitsRepo.ts): marcas diarias y también crear/renombrar/
+ * borrar hábitos se escriben primero en local (la tarjeta se refresca al instante) y suben por /sync
+ * en cuanto hay conexión. Un hábito creado offline usa un id provisional hasta sincronizar, así que
+ * tras cada sync se recarga la tarjeta para coger el id real.
  */
 export function HabitsCard() {
   const [habits, setHabits] = useState<HabitWithLogs[]>([]);
@@ -80,7 +87,6 @@ export function HabitsCard() {
   const [showProgress, setShowProgress] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -95,9 +101,17 @@ export function HabitsCard() {
     setLoaded(true);
   }, []);
 
+  // Tras cada sync se recarga: puede haber cambiado el id de un hábito recién creado (provisional ->
+  // de servidor) o haber bajado hábitos/marcas de otro dispositivo. `runSync` nunca rechaza (devuelve
+  // un resultado) y comparte la promesa si ya hay un sync en curso, así que es barato llamarlo aquí.
+  const syncThenReload = useCallback(() => {
+    runSync().then(reload);
+  }, [reload]);
+
   useEffect(() => {
     reload();
-  }, [reload]);
+    syncThenReload();
+  }, [reload, syncThenReload]);
 
   const handleToggleDay = async (habitId: number, date: string) => {
     // Los días que aún no han llegado no se pueden marcar (en la web tampoco tiene sentido
@@ -105,35 +119,33 @@ export function HabitsCard() {
     if (date > todayKey()) return;
     await toggleHabitOnDate(habitId, date);
     await reload();
-    runSync();
+    syncThenReload();
   };
 
   const handleAdd = async () => {
     const title = newTitle.trim();
-    if (!title || busy) return;
-    setBusy(true);
+    if (!title) return;
     setMessage(null);
+    // Se vacía el campo antes de esperar a SQLite: un segundo "intro" no debe crear el hábito dos veces.
+    setNewTitle("");
+    setAdding(false);
     try {
-      const created = await createHabit(title);
-      await upsertHabits([created]);
-      setNewTitle("");
-      setAdding(false);
+      await createHabitLocal(title);
       await reload();
-    } catch (e) {
-      setMessage(habitErrorMessage(e));
-    } finally {
-      setBusy(false);
+      syncThenReload();
+    } catch {
+      setMessage("No se pudo guardar el hábito.");
     }
   };
 
   const handleRename = async (id: number, title: string) => {
     setMessage(null);
     try {
-      const updated = await renameHabit(id, title);
-      await upsertHabits([updated]);
+      await renameHabitLocal(id, title);
       await reload();
-    } catch (e) {
-      setMessage(habitErrorMessage(e));
+      syncThenReload();
+    } catch {
+      setMessage("No se pudo renombrar el hábito.");
     }
   };
 
@@ -148,11 +160,11 @@ export function HabitsCard() {
         onPress: async () => {
           setMessage(null);
           try {
-            await removeHabit(habit.id);
-            await deleteHabit(habit.id);
+            await deleteHabitLocal(habit.id);
             await reload();
-          } catch (e) {
-            setMessage(habitErrorMessage(e));
+            syncThenReload();
+          } catch {
+            setMessage("No se pudo eliminar el hábito.");
           }
         },
       },
@@ -195,7 +207,6 @@ export function HabitsCard() {
           onChangeText={setNewTitle}
           placeholder="Nombre del hábito"
           placeholderTextColor={colors.mutedForeground}
-          editable={!busy}
           returnKeyType="done"
           onSubmitEditing={handleAdd}
         />

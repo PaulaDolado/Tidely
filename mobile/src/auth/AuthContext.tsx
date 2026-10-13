@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
+import { AppState } from "react-native";
 import { api, setTokens, setAuthCallbacks } from "../api/client";
 import { loadStoredAuth, persistAuth, persistTokens, persistUser, clearAuth } from "./storage";
 import { AuthResponse, User } from "../types";
@@ -115,11 +116,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Verificar el email pasa FUERA de la app (el enlace del correo abre la web en el navegador del
+  // teléfono), así que la app no se entera por sí sola: al volver a primer plano con el email aún sin
+  // verificar se relee el perfil y, si ya consta como verificado, se refleja en el distintivo de
+  // Ajustes > Cuenta sin que haya que reabrir la app. Con el email ya verificado (o sin sesión) no
+  // hay listener ni peticiones. Se parchea SOLO `emailVerified` (como el resto de updateUser: no se
+  // pisa el usuario entero con lo que devuelva /auth/me).
+  const emailPending = !!user && !user.emailVerified;
+  useEffect(() => {
+    if (!emailPending) return;
+    let checking = false;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || checking) return;
+      checking = true;
+      api
+        .get<User>("/auth/me")
+        .then((profile) => {
+          if (profile.emailVerified && mounted.current) updateUser({ emailVerified: true });
+        })
+        .catch(() => {
+          // Sin red / sesión caducada (el cliente ya gestiona el refresh y onAuthExpired): se vuelve a
+          // intentar la próxima vez que la app pase a primer plano.
+        })
+        .finally(() => {
+          checking = false;
+        });
+    });
+    return () => subscription.remove();
+  }, [emailPending, updateUser]);
+
   // El propio email de verificación siempre apunta a la página web (dashboard/src/pages/
   // VerifyEmailPage.tsx) sin importar desde qué cliente se pidió reenviarlo — confirmar un email
   // es una acción sin estado que no necesita una pantalla propia en el móvil, solo este botón de
-  // "reenviar" (ver AccountSettings.tsx). El siguiente /auth/me (o login) ya recoge
-  // `emailVerified: true` una vez confirmado desde el navegador.
+  // "reenviar" (ver AccountSettings.tsx). El `emailVerified: true` se recoge solo al volver a la app
+  // desde el navegador (ver el efecto de AppState de arriba).
   const resendVerification = useCallback(async () => {
     await api.post("/auth/resend-verification", {});
   }, []);
