@@ -21,6 +21,10 @@ import { LocalTransaction } from "../types";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { api } from "../api/client";
+import { BudgetSummary, getBudgetSummary } from "../api/finance";
+import { BudgetSummaryCard } from "../components/BudgetSummaryCard";
+import { useAuth } from "../auth/AuthContext";
+import { ENABLED_SECTIONS } from "../types";
 import { transactionsToCsv } from "../utils/financeExport";
 import { saveAndShareText } from "../utils/fileExport";
 
@@ -48,11 +52,22 @@ function formatMoney(amount: number): string {
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
-export function FinanzasScreen() {
+// `navigation` opcional y tipado a mano (como `route` en AgendaScreen) para no importar el param list
+// desde App.tsx, que a su vez importa esta pantalla — solo hace falta `navigate`.
+export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route: string, params?: object) => void } } = {}) {
   const { collapsed } = useSidebar();
+  const { user } = useAuth();
+  // Ahorro e Inversión llevan a "Metas de ahorro" (como en la web); si esa sección está desactivada
+  // para el usuario, no hay a dónde ir y las tarjetas quedan informativas.
+  const savingsEnabled = (user?.enabledSections ?? ENABLED_SECTIONS).includes("metasAhorro");
+  const openSavings = (type: "ahorro" | "inversion") => navigation?.navigate("Ahorro", { type });
   const insets = useSafeAreaInsets();
   const [balance, setBalance] = useState<MonthlyBalance | null>(null);
   // Acumulado de todo el histórico (tarjetas de arriba); lo del mes va en "Resumen del mes".
+  // Resumen del presupuesto del mes en curso (REST, necesita conexión): `budgetFailed` distingue
+  // "aún cargando" de "no se pudo cargar".
+  const [budget, setBudget] = useState<BudgetSummary | null>(null);
+  const [budgetFailed, setBudgetFailed] = useState(false);
   const [total, setTotal] = useState<{ income: number; expense: number; balance: number } | null>(null);
   const [transactions, setTransactions] = useState<LocalTransaction[]>([]);
   const [analytics, setAnalytics] = useState<FinanceAnalytics | null>(null);
@@ -67,9 +82,20 @@ export function FinanzasScreen() {
   const [formTx, setFormTx] = useState<LocalTransaction | "new" | null>(null);
   const [showExport, setShowExport] = useState(false);
 
+  const reloadBudget = useCallback(async () => {
+    const now = new Date();
+    try {
+      setBudget(await getBudgetSummary(now.getMonth() + 1, now.getFullYear()));
+      setBudgetFailed(false);
+    } catch {
+      setBudgetFailed(true);
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     setLoading(true);
     const now = new Date();
+    reloadBudget();
     const [bal, tot, txs, stats, savingsGoals] = await Promise.all([
       getMonthlyBalanceLocal(now.getMonth() + 1, now.getFullYear()),
       getTotalBalanceLocal(),
@@ -84,7 +110,7 @@ export function FinanzasScreen() {
     setSavingsTotal(savingsGoals.filter((g) => g.type === "ahorro").reduce((sum, g) => sum + g.currentAmount, 0));
     setInvestmentTotal(savingsGoals.filter((g) => g.type === "inversion").reduce((sum, g) => sum + g.currentAmount, 0));
     setLoading(false);
-  }, []);
+  }, [reloadBudget]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -163,8 +189,8 @@ export function FinanzasScreen() {
               />
               {/* Ahorro e Inversión usan el mismo verde que Ingresos en la web (tone="positive" en
                   las cinco, ver FinanzasPage.tsx) — no un color por categoría propio. */}
-              <SummaryCard label="Ahorro" value={formatMoney(savingsTotal)} color={colors.positive} />
-              <SummaryCard label="Inversión" value={formatMoney(investmentTotal)} color={colors.positive} />
+              <SummaryCard label="Ahorro" value={formatMoney(savingsTotal)} color={colors.positive} onPress={savingsEnabled ? () => openSavings("ahorro") : undefined} />
+              <SummaryCard label="Inversión" value={formatMoney(investmentTotal)} color={colors.positive} onPress={savingsEnabled ? () => openSavings("inversion") : undefined} />
             </View>
 
             {analytics && analytics.monthlyTrend.length > 0 && (
@@ -196,6 +222,9 @@ export function FinanzasScreen() {
                 — antes se omitía a propósito por duplicar las tarjetas de arriba en una pantalla
                 de una sola columna (ver el comentario de cabecera), pero el usuario lo quiere de
                 vuelta con el mismo estilo que en la web, justo antes de "Top categorías". */}
+            {/* Como en la web, "Resumen del presupuesto" va justo encima de "Resumen del mes". */}
+            <BudgetSummaryCard summary={budget} failed={budgetFailed} onChanged={reloadBudget} />
+
             {balance && (
               <View style={styles.cardPrimary}>
                 <Text style={[styles.cardTitle, styles.cardTitlePrimary]}>Resumen del mes</Text>
@@ -296,6 +325,7 @@ export function FinanzasScreen() {
             {formTx !== null && (
               <MovementForm
                 initial={formTx === "new" ? undefined : formTx}
+                categoryOptions={budget?.categories.map((c) => c.name) ?? []}
                 onCancel={() => setFormTx(null)}
                 onSubmit={async (input) => {
                   if (formTx === "new") await handleCreate(input);
@@ -435,15 +465,23 @@ function FinanceExportForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SummaryCard({ label, value, color, hint }: { label: string; value: string; color: string; hint?: string }) {
-  return (
-    <View style={styles.summaryCard}>
+// Con `onPress` la tarjeta es un botón (Ahorro/Inversión llevan a "Metas de ahorro" filtrada por su
+// tipo); sin él, una tarjeta informativa normal.
+function SummaryCard({ label, value, color, hint, onPress }: { label: string; value: string; color: string; hint?: string; onPress?: () => void }) {
+  const content = (
+    <>
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={[styles.summaryValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       {hint ? <Text style={styles.summaryHint}>{hint}</Text> : null}
-    </View>
+    </>
+  );
+  if (!onPress) return <View style={styles.summaryCard}>{content}</View>;
+  return (
+    <Pressable style={styles.summaryCard} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Ver ${label.toLowerCase()} en Metas de ahorro`}>
+      {content}
+    </Pressable>
   );
 }
 
@@ -452,11 +490,15 @@ function SummaryCard({ label, value, color, hint }: { label: string; value: stri
 // la fecha de un movimiento que se olvidó registrar el mes pasado sin borrarlo y crearlo de nuevo.
 function MovementForm({
   initial,
+  categoryOptions,
   onSubmit,
   onCancel,
   onDelete,
 }: {
   initial?: LocalTransaction;
+  // Nombres de las categorías del presupuesto: se ofrecen como atajos bajo "Categoría", porque un
+  // gasto apuntado con ese nombre suma a su porción del presupuesto (se enlazan por nombre).
+  categoryOptions: string[];
   onSubmit: (input: NewTransactionInput) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
@@ -518,6 +560,18 @@ function MovementForm({
       <TextInput style={styles.input} placeholder="Concepto" value={concept} onChangeText={setConcept} />
       <TextInput style={styles.input} placeholder="Importe" value={amount} onChangeText={setAmount} keyboardType="numeric" />
       <TextInput style={styles.input} placeholder="Categoría" value={category} onChangeText={setCategory} />
+      {categoryOptions.length > 0 && (
+        <View style={styles.chipRow}>
+          {categoryOptions.map((name) => {
+            const selected = category.trim().toLowerCase() === name.toLowerCase();
+            return (
+              <Pressable key={name} style={[styles.chip, selected && styles.chipSelected]} onPress={() => setCategory(name)}>
+                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <Text style={styles.fieldLabel}>Fecha</Text>
       <Pressable style={styles.dateButton} onPress={() => setShowPicker(true)}>

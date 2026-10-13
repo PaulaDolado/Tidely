@@ -40,7 +40,45 @@ export interface FinanceAnalytics {
   projectedAnnual: { basedOnMonths: number; avgMonthlyBalance: number; projectedYearEnd: number };
 }
 
-export const getMonthlyBalance = (month: number, year: number) => api.get<MonthlyBalance>(`/finance/balance/${month}/${year}`);
+// "Resumen del presupuesto" — mismos tipos que BudgetSummary en dashboard/src/types.ts. Las
+// categorías de presupuesto no forman parte del sync offline (como el resto de este fichero): se
+// piden y se editan por REST, así que esa tarjeta necesita conexión.
+export type BudgetColor = "primary" | "secondary" | "habit" | "hobby" | "positive" | "negative" | "warning" | "muted";
+export const BUDGET_COLORS: BudgetColor[] = ["primary", "habit", "positive", "hobby", "warning", "negative", "secondary", "muted"];
+
+export interface BudgetSummaryCategory {
+  id: number;
+  name: string;
+  color: BudgetColor;
+  percent: number;
+  order: number;
+  budget: number; // lo que le toca este mes: percent % de los ingresos
+  spent: number; // lo gastado este mes en movimientos de esta categoría
+}
+
+export interface BudgetSummary {
+  month: number;
+  year: number;
+  income: number;
+  totalSpent: number;
+  assignedPercent: number;
+  unassignedPercent: number;
+  categories: BudgetSummaryCategory[];
+  uncategorizedSpent: number;
+}
+
+export interface BudgetCategoryInput {
+  name: string;
+  color: BudgetColor;
+  percent: number;
+}
+
+export const getBudgetSummary = (month: number, year: number) => api.get<BudgetSummary>(`/finance/budget/${month}/${year}`);
+export const createBudgetCategory = (input: BudgetCategoryInput) => api.post("/finance/budget-categories", input);
+export const updateBudgetCategory = (id: number, input: BudgetCategoryInput) => api.put(`/finance/budget-categories/${id}`, input);
+export const deleteBudgetCategory = (id: number) => api.delete(`/finance/budget-categories/${id}`);
+
+export const getMonthlyBalance =(month: number, year: number) => api.get<MonthlyBalance>(`/finance/balance/${month}/${year}`);
 
 export async function listTransactions(limit = 15): Promise<Transaction[]> {
   const res = await api.get<{ transactions: Transaction[] }>(`/finance/transactions?limit=${limit}`);

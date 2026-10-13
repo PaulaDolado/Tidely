@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -72,10 +72,27 @@ const TABS: { value: SavingsGoalType | "all"; label: string }[] = [
   { value: "inversion", label: "Inversión" },
 ];
 
-export function MetasAhorroScreen() {
+// `route`/`navigation` opcionales y tipados a mano (como en AgendaScreen) para no importar el param
+// list desde App.tsx. `type`: pestaña con la que se abre — "Ahorro"/"Inversión" al llegar desde las
+// tarjetas de Finanzas (ver FinanzasScreen.openSavings).
+export function MetasAhorroScreen({
+  route,
+  navigation,
+}: {
+  route?: { params?: { type?: SavingsGoalType } };
+  navigation?: { setParams: (params: { type?: SavingsGoalType }) => void };
+} = {}) {
   const { collapsed } = useSidebar();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<SavingsGoalType | "all">("all");
+  // Esta pantalla sigue montada entre visitas (es una pestaña): al recibir un tipo se aplica y se
+  // borra del parámetro, para que volver a tocar la misma tarjeta lo aplique otra vez.
+  const requestedType = route?.params?.type;
+  useEffect(() => {
+    if (!requestedType) return;
+    setTab(requestedType);
+    navigation?.setParams({ type: undefined });
+  }, [requestedType, navigation]);
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [allGoals, setAllGoals] = useState<SavingsGoal[]>([]);
   const [loading, setLoading] = useState(false);
