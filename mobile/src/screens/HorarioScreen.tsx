@@ -431,6 +431,8 @@ function ScheduleTableGrid({
           </View>
         ))}
 
+        {rows.length === 0 && <Text style={styles.emptyRowsText}>Todavía no tienes ninguna franja horaria. Añade la primera abajo.</Text>}
+
         <Pressable style={styles.addRowButton} onPress={onAddRow}>
           <Text style={styles.addRowButtonText}>+ Añadir franja horaria</Text>
         </Pressable>
@@ -572,6 +574,7 @@ const DAY_COL_WIDTH = 128;
 const ACTIONS_COL_WIDTH = 60;
 
 const styles = StyleSheet.create({
+  emptyRowsText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground, fontStyle: "italic", textAlign: "center", paddingVertical: 12 },
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },

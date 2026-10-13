@@ -11,6 +11,7 @@ import {
   LocalSavingsGoalWithProgress,
 } from "../db/savingsGoalsRepo";
 import { createTransactionLocal } from "../db/transactionsRepo";
+import { AvailableSurplus, getAvailableSurplus } from "../api/finance";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
@@ -100,6 +101,17 @@ export function MetasAhorroScreen({
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [boxesModalGoal, setBoxesModalGoal] = useState<SavingsGoal | null>(null);
+  // Sobrante disponible (REST): `null` sin conexión o sin sobrante que enseñar.
+  const [surplus, setSurplus] = useState<AvailableSurplus | null>(null);
+
+  const reloadSurplus = useCallback(async () => {
+    const now = new Date();
+    try {
+      setSurplus(await getAvailableSurplus(now.getMonth() + 1, now.getFullYear()));
+    } catch {
+      setSurplus(null);
+    }
+  }, []);
 
   const reload = useCallback(async (currentTab: SavingsGoalType | "all") => {
     setLoading(true);
@@ -110,7 +122,8 @@ export function MetasAhorroScreen({
     setGoals(list);
     setAllGoals(currentTab === "all" ? list : (all ?? []));
     setLoading(false);
-  }, []);
+    reloadSurplus();
+  }, [reloadSurplus]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -180,6 +193,23 @@ export function MetasAhorroScreen({
       )}
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Como en la web, solo si queda algo libre de meses anteriores: un "0 €" no aporta nada. */}
+        {surplus && surplus.availableSurplus > 0 && (
+          <View style={styles.surplusCard}>
+            <Text style={styles.surplusTitle}>Sobrante disponible</Text>
+            <Text style={styles.surplusAmount}>{formatMoney(surplus.availableSurplus)}</Text>
+            <Text style={styles.surplusText}>
+              Ingresos de meses anteriores que quedaron libres tras sus propios gastos y que todavía no has asignado a ninguna meta — asígnalos
+              tocando las casillas de la meta que quieras reforzar.
+            </Text>
+            {surplus.committedToGoals > 0 && (
+              <Text style={styles.surplusHint}>
+                (de un total acumulado de {formatMoney(surplus.totalBalance)}; {formatMoney(surplus.committedToGoals)} ya están en tus metas)
+              </Text>
+            )}
+          </View>
+        )}
+
         <ProgressOverview goals={allGoals} />
 
         <View style={styles.tabRow}>
@@ -411,6 +441,19 @@ function NewSavingsGoalForm({
 }
 
 const styles = StyleSheet.create({
+  surplusCard: {
+    backgroundColor: withAlpha(colors.primary, 0.06),
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: withAlpha(colors.primary, 0.3),
+    padding: 20,
+    gap: 4,
+    ...shadow,
+  },
+  surplusTitle: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, color: colors.mutedForeground },
+  surplusAmount: { fontFamily: fonts.serif, fontSize: 28, color: colors.primary },
+  surplusText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
+  surplusHint: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 26, color: colors.foreground, flexShrink: 1 },

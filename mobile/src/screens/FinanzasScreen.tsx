@@ -51,6 +51,14 @@ function formatMoney(amount: number): string {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(amount);
 }
 
+// "+580", "−1,2k": importes cortos para que quepan encima de cada barra (hay 6 en una fila).
+function compactMoney(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "−" : n > 0 ? "+" : "";
+  if (abs >= 1000) return `${sign}${(Math.round(abs / 100) / 10).toString().replace(".", ",")}k`;
+  return `${sign}${Math.round(abs)}`;
+}
+
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 // `navigation` opcional y tipado a mano (como `route` en AgendaScreen) para no importar el param list
@@ -166,7 +174,9 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
     await sync();
   };
 
-  const maxTrend = Math.max(1, ...(analytics?.monthlyTrend.map((m) => Math.max(Math.abs(m.income), Math.abs(m.expense))) ?? [1]));
+  // Las barras son el BALANCE de cada mes, así que se escalan al balance más grande (antes al mayor
+  // ingreso/gasto, y con balances pequeños las barras casi no se distinguían).
+  const maxTrend = Math.max(1, ...(analytics?.monthlyTrend.map((m) => Math.abs(m.balance)) ?? [1]));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -219,6 +229,11 @@ export function FinanzasScreen({ navigation }: { navigation?: { navigate: (route
                     const height = Math.max(4, (Math.abs(m.balance) / maxTrend) * 60);
                     return (
                       <View key={`${m.year}-${m.month}`} style={styles.trendBarWrap}>
+                        {/* El importe de cada mes (la web lo da en el tooltip): sin él, las barras solo dicen
+                            si fue positivo o negativo, no cuánto. */}
+                        <Text style={[styles.trendValue, { color: positive ? colors.positive : colors.destructive }]} numberOfLines={1}>
+                          {compactMoney(m.balance)}
+                        </Text>
                         <View style={styles.trendBarTrack}>
                           <View
                             style={[
@@ -711,7 +726,8 @@ const styles = StyleSheet.create({
   summaryMonthDivider: { height: 1, backgroundColor: withAlpha(colors.solidCardForeground, 0.2) },
   summaryMonthNetLabel: { fontFamily: fonts.sansSemiBold, fontSize: 14, color: colors.solidCardForeground },
   summaryMonthNetValue: { fontFamily: fonts.serif, fontSize: 20, color: colors.solidCardForeground },
-  trendRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 90 },
+  trendRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 108 },
+  trendValue: { fontFamily: fonts.sansMedium, fontSize: 10 },
   trendBarWrap: { alignItems: "center", gap: 6, flex: 1 },
   trendBarTrack: { height: 64, justifyContent: "flex-end" },
   trendBar: { width: 18, borderRadius: 4 },

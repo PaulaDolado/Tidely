@@ -81,7 +81,20 @@ export const createBudgetCategory = (input: BudgetCategoryInput) => api.post("/f
 export const updateBudgetCategory = (id: number, input: BudgetCategoryInput) => api.put(`/finance/budget-categories/${id}`, input);
 export const deleteBudgetCategory = (id: number) => api.delete(`/finance/budget-categories/${id}`);
 
-export const getMonthlyBalance =(month: number, year: number) => api.get<MonthlyBalance>(`/finance/balance/${month}/${year}`);
+// "Sobrante disponible" de Metas de ahorro (GET /finance/surplus/:mes/:año): ingresos de meses
+// anteriores que quedaron libres y aún no están en ninguna meta. El mes en curso queda fuera del
+// cálculo (ver financeService.getAvailableSurplus). REST como el resto: necesita conexión.
+export interface AvailableSurplus {
+  month: number;
+  year: number;
+  availableSurplus: number;
+  totalBalance: number;
+  committedToGoals: number;
+}
+
+export const getAvailableSurplus = (month: number, year: number) => api.get<AvailableSurplus>(`/finance/surplus/${month}/${year}`);
+
+export const getMonthlyBalance = (month: number, year: number) => api.get<MonthlyBalance>(`/finance/balance/${month}/${year}`);
 
 export async function listTransactions(limit = 15): Promise<Transaction[]> {
   const res = await api.get<{ transactions: Transaction[] }>(`/finance/transactions?limit=${limit}`);
