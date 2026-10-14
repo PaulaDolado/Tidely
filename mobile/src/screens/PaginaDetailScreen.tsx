@@ -45,11 +45,13 @@ import {
   KanbanContent,
   NotaContent,
   SimpleGoal,
+  StudyContent,
   TEMPLATE_LABELS,
   TravelContent,
 } from "../api/customPages";
 import { RichTextEditor } from "../components/RichTextEditor";
 import { TravelPlannerEditor } from "../components/TravelPlanner";
+import { StudyPlannerEditor } from "../components/StudyPlanner";
 import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
 import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
@@ -217,6 +219,13 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     await persist({ content });
   };
 
+  // "Estudio" guarda el contenido entero en cada acción (plan, exámenes, temario y el tiempo del
+  // temporizador al pausarlo), como "viajes".
+  const saveStudy = async (content: StudyContent) => {
+    if (!page) return;
+    await persist({ content });
+  };
+
   const handleAddEntry = async () => {
     const entry: GalleryEntry = { id: Crypto.randomUUID() };
     await saveGalleryItems([entry, ...galleryItems]);
@@ -348,6 +357,8 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
             }}
             onChange={saveTravel}
           />
+        ) : page?.template === "estudio" ? (
+          <StudyPlannerEditor pageId={page.id} content={page.content} onChange={saveStudy} />
         ) : page ? (
           <View style={styles.fallbackCard}>
             <Text style={styles.fallbackText}>

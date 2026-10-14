@@ -5,8 +5,8 @@ import Joi from "joi";
 // simplificadas de una sección existente (Finanzas/Proyectos/Objetivos/Agenda/Hoy), con sus
 // propios datos — no leen ni escriben en Transaction/Project/Goal/Event/etc. "viajes" es un
 // planificador de viajes (itinerario, presupuesto, lugares guardados, equipaje, transporte y contactos), también con
-// datos propios dentro de `content`.
-export const TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes"] as const;
+// datos propios dentro de `content`. "estudio" es un plan de estudio (asignaturas con sus temas, plan con tiempo asignado y real, exámenes), también con datos propios.
+export const TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes", "estudio"] as const;
 
 export const idParamSchema = Joi.object({
   id: Joi.number().integer().positive().required(),

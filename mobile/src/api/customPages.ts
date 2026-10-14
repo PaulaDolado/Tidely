@@ -8,7 +8,7 @@ import { api } from "./client";
 // Las 8 plantillas de `CUSTOM_PAGE_TEMPLATES` en dashboard/src/utils/customPageTemplates.ts ya
 // tienen todas editor propio en el móvil (ver PaginaDetailScreen.tsx) — "hoy" reutiliza el mismo
 // componente que "proyectos" (mismo tipo ChecklistContent, igual que en la propia web).
-export const CUSTOM_PAGE_TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes"] as const;
+export const CUSTOM_PAGE_TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes", "estudio"] as const;
 export type CustomPageTemplate = (typeof CUSTOM_PAGE_TEMPLATES)[number];
 
 export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
@@ -21,6 +21,7 @@ export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
   agenda: "Agenda",
   hoy: "Lista",
   viajes: "Planificador de viajes o rutas",
+  estudio: "Estudio",
 };
 
 // Icono por defecto de cada plantilla (se muestra mientras el usuario no elija uno propio, ver
@@ -36,6 +37,7 @@ export const TEMPLATE_ICONS: Record<CustomPageTemplate, string> = {
   agenda: "📅",
   hoy: "☀️",
   viajes: "✈️",
+  estudio: "📚",
 };
 
 // Paleta rápida del selector de icono de la página (ver "Cambiar icono" en PaginaDetailScreen.tsx)
@@ -241,7 +243,45 @@ export interface TravelContent {
   places?: SavedPlace[];
 }
 
+// Plantilla "estudio" — mismos tipos que en dashboard/src/types.ts (todo vive dentro del JSON de
+// `content`, ids = uuid del cliente). El tiempo real se guarda en SEGUNDOS (spentSeconds) aunque la
+// tabla lo muestre como H:MM; el asignado va en minutos (0 = sin tiempo asignado).
+export interface StudyTopic {
+  id: string;
+  name: string;
+  done?: boolean;
+}
+export interface StudySubject {
+  id: string;
+  name: string;
+  topics: StudyTopic[];
+}
+export type StudyKind = "study" | "exercises";
+export interface StudyPlanRow {
+  id: string;
+  subjectId: string;
+  topicId?: string;
+  topicName: string; // texto del tema (si hay topicId, el nombre vivo del tema manda)
+  kind: StudyKind;
+  plannedMinutes: number;
+  spentSeconds: number;
+}
+export interface StudyExam {
+  id: string;
+  title: string;
+  subjectId?: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:MM
+  done?: boolean;
+}
+export interface StudyContent {
+  subjects: StudySubject[];
+  plan: StudyPlanRow[];
+  exams: StudyExam[];
+}
+
 export type CustomPageContent =
+  | StudyContent
   | GalleryContent
   | NotaContent
   | KanbanContent

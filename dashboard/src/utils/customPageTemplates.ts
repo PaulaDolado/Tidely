@@ -20,6 +20,7 @@ export const CUSTOM_PAGE_TEMPLATES: CustomPageTemplateMeta[] = [
   { key: "agenda", label: "Agenda", description: "Notas sueltas con fecha.", icon: "📅" },
   { key: "hoy", label: "Lista", description: "Checklist rápido para el día.", icon: "☀️" },
   { key: "viajes", label: "Planificador de viajes o rutas", description: "Itinerario, presupuesto, lugares guardados, etc.", icon: "✈️" },
+  { key: "estudio", label: "Estudio", description: "Asignaturas y temas con tiempo de estudio, cronómetro y exámenes.", icon: "📚" },
 ];
 
 export const CUSTOM_PAGE_TEMPLATE_META: Record<CustomPageTemplate, CustomPageTemplateMeta> = Object.fromEntries(

@@ -35,6 +35,9 @@ function defaultContent(template: string): Prisma.InputJsonValue {
       return { items: [] };
     case "viajes":
       return { trips: [], places: [] };
+    case "estudio":
+      // asignaturas (con su temario), filas del plan (tiempo asignado/real por tema) y exámenes próximos
+      return { subjects: [], plan: [], exams: [] };
     case "nota":
     default:
       return { html: "" };

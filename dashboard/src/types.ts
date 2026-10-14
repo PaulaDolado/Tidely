@@ -468,7 +468,7 @@ export interface IcsImportResult {
 // Páginas personalizadas ("+ Nueva página" en el menú lateral, ver AppShell/CreatePageModal).
 // Cada `template` determina la forma de `content` — el dashboard interpreta cada una con su
 // propio componente (ver CustomPageView).
-export type CustomPageTemplate = "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy" | "viajes";
+export type CustomPageTemplate = "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy" | "viajes" | "estudio";
 
 // Fila devuelta por GET /custom-pages (lista para el menú) — sin `content`, que solo llega en el
 // detalle (GET /custom-pages/:id) para no cargar el JSON completo de cada página solo para pintar
@@ -671,6 +671,48 @@ export interface CustomPageContentMap {
   hoy: { items: ChecklistItem[] };
   // `places` suelto = LEGADO (ver SavedPlace/Trip.places): los lugares ahora viven dentro de cada viaje.
   viajes: { trips: Trip[]; places?: SavedPlace[] };
+  estudio: StudyContent;
+}
+
+// Plantilla "estudio" (ver StudyPlannerTemplate): todo vive dentro del JSON de CustomPage.content. Un temario por
+// asignatura, un plan (tema + tiempo asignado y real) y los exámenes próximos.
+export interface StudyTopic {
+  id: string;
+  name: string;
+  done?: boolean;
+}
+
+export interface StudySubject {
+  id: string;
+  name: string;
+  topics: StudyTopic[];
+}
+
+export type StudyKind = "study" | "exercises"; // Estudio | Ejercicios
+
+export interface StudyPlanRow {
+  id: string;
+  subjectId: string;
+  topicId?: string; // tema del temario; si existe, su nombre vivo manda sobre `topicName`
+  topicName: string;
+  kind: StudyKind;
+  plannedMinutes: number; // tiempo asignado; 0 = sin tiempo asignado
+  spentSeconds: number; // tiempo real acumulado (lo suma el temporizador o se corrige a mano)
+}
+
+export interface StudyExam {
+  id: string;
+  title: string;
+  subjectId?: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:MM
+  done?: boolean; // tachado en la lista
+}
+
+export interface StudyContent {
+  subjects: StudySubject[];
+  plan: StudyPlanRow[];
+  exams: StudyExam[];
 }
 
 export interface CustomPage extends CustomPageSummary {

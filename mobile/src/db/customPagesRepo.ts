@@ -56,6 +56,8 @@ export function defaultContentFor(template: string): unknown {
       return { items: [] };
     case "viajes":
       return { trips: [], places: [] };
+    case "estudio":
+      return { subjects: [], plan: [], exams: [] };
     case "nota":
     default:
       return { html: "" };
