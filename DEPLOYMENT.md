@@ -83,6 +83,25 @@ Railway/Render crean por defecto.
 3. El resto del flujo no cambia: migraciones, seed, `/health` — todo sigue igual, solo cambia
    dónde vive la base de datos.
 
+### Seguridad: cerrar la Data API de Supabase
+
+La API de Tidely es lo único que habla con la base (Prisma, con el rol propietario), pero Supabase
+expone por defecto el esquema `public` por su **Data API** (PostgREST): con RLS desactivado,
+cualquiera con la URL del proyecto y la clave `anon` puede leer, editar y borrar todas las tablas
+(correos, hashes de contraseña, tokens...). Supabase lo avisa como `rls_disabled_in_public` y
+`sensitive_columns_exposed`.
+
+- La migración `20261014090000_enable_rls_all_tables` activa RLS en todas las tablas de `public` y
+  quita a `anon`/`authenticated` sus privilegios. Sin políticas, esos roles no ven ninguna fila; la
+  API no se ve afectada porque el rol con el que conecta Prisma es el propietario de las tablas y
+  se salta RLS (por eso NO se usa `FORCE ROW LEVEL SECURITY`). Se aplica sola en el siguiente
+  arranque del contenedor (`prisma migrate deploy`, ver `Dockerfile`).
+- **Cada tabla nueva** debe llevar `ALTER TABLE "x" ENABLE ROW LEVEL SECURITY;` en la migración que
+  la crea. `tests/integration/rls.test.ts` lo comprueba y rompe el CI si se olvida.
+- Opcional y recomendable: como la app no usa `supabase-js`, desactiva la Data API en Supabase
+  (**Project Settings → API → Data API**) o quita `public` de los esquemas expuestos. Y revisa
+  **Advisors → Security** tras desplegar: los dos avisos críticos deben desaparecer.
+
 ## Después de desplegar
 
 - **Swagger**: `https://<tu-url>/api-docs`
