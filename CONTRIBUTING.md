@@ -84,6 +84,6 @@ Una PR debe, además:
 
 - Cada lunes (07:00, Madrid) abre PRs con actualizaciones de dependencias, agrupadas por ecosistema (servidor, web, móvil, acciones de GitHub y Dockerfile), con la etiqueta `dependencias`. Pasan por el mismo CI que cualquier cambio.
 - Las **alertas de vulnerabilidades** abren su PR aparte y al momento, sin esperar al lunes.
-- Se dejan fuera a propósito: las versiones de **Expo, React Native y módulos nativos** (las fija el SDK de Expo: se suben con `npx expo install --fix`), las versiones **mayores** de la imagen `node` del Dockerfile y la v6 de `gradle/actions` (cambia la licencia). Las dependencias de Rust del instalador de escritorio tampoco están cubiertas.
+- Se dejan fuera a propósito: las versiones **mayores** de los paquetes npm (suelen pedir cambios de código: se suben a mano, en su propia PR), las versiones de **Expo, React Native y módulos nativos** (las fija el SDK de Expo: se suben con `npx expo install --fix`), las versiones **mayores** de la imagen `node` del Dockerfile y la v6 de `gradle/actions` (cambia la licencia). Las dependencias de Rust del instalador de escritorio tampoco están cubiertas.
 - Antes de fusionar una PR de Dependabot que toque `prisma`, comprueba que `npx prisma migrate diff` no muestra diferencias.
 

@@ -3,7 +3,8 @@
 # vulnerabilidades) se abren aparte y al momento, con independencia de este calendario.
 #
 # Para no ahogarte en PRs: una sola PR agrupada por ecosistema para lo que es seguro (menores/parches y dependencias de
-# desarrollo), y las versiones MAYORES de lo delicado se dejan fuera a propósito (ver cada bloque).
+# desarrollo). Las versiones MAYORES de los paquetes npm no se proponen: suelen exigir cambios de código o de
+# configuración (p. ej. ESLint 9, Vite 7) y se suben a mano, en una PR propia. Ver también cada bloque.
 version: 2
 
 updates:
@@ -19,6 +20,9 @@ updates:
     labels: [dependencias]
     commit-message:
       prefix: "deps"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       # prisma y @prisma/client tienen que ir siempre a la misma versión: nunca en PRs separadas.
       prisma:
@@ -39,6 +43,9 @@ updates:
     labels: [dependencias]
     commit-message:
       prefix: "deps(web)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       menores-y-parches:
         update-types: [minor, patch]
@@ -58,6 +65,8 @@ updates:
     commit-message:
       prefix: "deps(móvil)"
     ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "expo"
       - dependency-name: "expo-*"
       - dependency-name: "@expo/*"
@@ -68,6 +77,7 @@ updates:
       - dependency-name: "react-native-*"
       - dependency-name: "@react-native/*"
       - dependency-name: "@react-native-community/*"
+      - dependency-name: "@react-native-async-storage/*"
       - dependency-name: "@react-navigation/*"
       - dependency-name: "@types/react"
       - dependency-name: "typescript"
