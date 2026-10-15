@@ -5,7 +5,7 @@ import { CUSTOM_PAGE_TEMPLATES, CustomPageTemplate, TEMPLATE_LABELS } from "../a
 import { colors, fonts, radius } from "../theme";
 
 // "galeria" no se ofrece aquí: desde que tiene su propio apartado "Galería" en el menú principal
-// (con una sola por cuenta, ver AppSidebar.openGallery), permitir crearla también desde este
+// (con una sola por cuenta, ver AppSidebar.openSectionPage), permitir crearla también desde este
 // diálogo genérico rompería ese "siempre hay una sola" — mismo criterio que CreatePageModal en
 // dashboard/src/components/AppShell.tsx. El resto de plantillas ya tienen todas editor propio en
 // el móvil (ver PaginaDetailScreen.tsx), así que ya no hace falta ningún aviso de "solo se edita

@@ -199,7 +199,7 @@ describe("authValidators", () => {
   describe("completeOnboardingSchema", () => {
     it("acepta la lista completa de apartados", () => {
       const { error } = completeOnboardingSchema.validate({
-        enabledSections: ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"],
+        enabledSections: ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos", "viajes", "estudio"],
       });
       expect(error).toBeUndefined();
     });

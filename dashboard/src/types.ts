@@ -33,16 +33,16 @@ export interface User {
   // enabledSections (parches parciales de updateUser); /auth/me siempre lo manda.
   menuLayout?: MenuLayout;
   // Orden manual de los apartados del menú (arrastrar manteniendo pulsado, ver AppShell.tsx) —
-  // array de claves de apartado ("hoy", "agenda", "galeria", ids "custom-N"...). Los apartados
+  // array de claves de apartado ("hoy", "agenda", "galeria", "viajes", "estudio", ids "custom-N"...). Los apartados
   // que faltan aquí se colocan al final en su orden implícito habitual.
   menuOrder?: string[];
 }
 
 export type MenuLayout = "default" | "compact";
 
-// Mismos 7 valores que ENABLED_SECTIONS en src/validators/authValidators.ts (backend) — "Hoy" y
-// "Agenda" no son opcionales, así que no están aquí.
-export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"] as const;
+// Mismos 9 valores (y en el mismo orden) que ENABLED_SECTIONS en src/validators/authValidators.ts
+// (backend) — "Hoy" y "Agenda" no son opcionales, así que no están aquí.
+export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos", "viajes", "estudio"] as const;
 export type EnabledSection = (typeof ENABLED_SECTIONS)[number];
 
 // Compartidas entre OnboardingWizard (elegirlos la primera vez, tras registrarse) y SettingsDialog
@@ -58,6 +58,8 @@ export const SECTION_LABELS: Record<EnabledSection, string> = {
   finanzas: "Finanzas",
   metasAhorro: "Metas de ahorro",
   proyectos: "Libreta",
+  viajes: "Viajes",
+  estudio: "Estudio",
 };
 export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   planificador: "Tableros de tareas kanban, con propiedades personalizadas.",
@@ -67,6 +69,8 @@ export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   finanzas: "Ingresos, gastos y balance del mes.",
   metasAhorro: "Ahorro e inversión como casillas de progreso.",
   proyectos: "Cuaderno con notas enriquecidas por libreta.",
+  viajes: "Itinerario, presupuesto, lugares guardados, etc.",
+  estudio: "Asignaturas con tiempo de estudio, cronómetro y exámenes.",
 };
 
 export interface AuthResponse {

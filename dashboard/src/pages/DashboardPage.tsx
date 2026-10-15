@@ -6,6 +6,7 @@ import { Loading } from "../components/Feedback";
 import { HoyPage } from "./HoyPage";
 import { useAuth } from "../context/AuthContext";
 import { CustomPageSummary, CustomPageTemplate, ENABLED_SECTIONS, SavingsGoal } from "../types";
+import { primarySectionPage, SECTION_PAGE_LABELS, SectionPageTemplate } from "../utils/customPageTemplates";
 
 // "Hoy" (la pestaña por defecto) se importa arriba de forma normal — es lo primero que ve
 // cualquiera al entrar, así que cargarla de forma perezosa solo añadiría una petición de red de
@@ -101,16 +102,18 @@ export function DashboardPage() {
     setActiveTab(customPageTab(created.id));
   };
 
-  // "Galería" del menú principal (ver AppShell): busca la página "galeria" del usuario (nunca hay
-  // más de una — CreatePageModal ya no la ofrece como opción, ver AppShell) o la crea la primera
-  // vez, y navega a ella. Mismo patrón que createCustomPage, sin pedir título/plantilla.
-  const openGallery = async () => {
-    const existing = customPages.find((p) => p.template === "galeria");
+  // "Galería", "Viajes" y "Estudio" del menú principal (ver AppShell): busca la página de esa
+  // plantilla del usuario o la crea la primera vez (con la etiqueta del apartado como título), y
+  // navega a ella. Mismo patrón que createCustomPage, sin pedir título/plantilla. De Galería nunca
+  // hay más de una (CreatePageModal no la ofrece); de Viajes/Estudio puede haber más creadas desde
+  // "+ Nueva página" — el apartado abre siempre la primera (ver primarySectionPage).
+  const openSectionPage = async (template: SectionPageTemplate) => {
+    const existing = primarySectionPage(customPages, template);
     if (existing) {
       setActiveTab(customPageTab(existing.id));
       return;
     }
-    const created = await api.post<CustomPageSummary>("/custom-pages", { title: "Galería", template: "galeria" });
+    const created = await api.post<CustomPageSummary>("/custom-pages", { title: SECTION_PAGE_LABELS[template], template });
     await reloadCustomPages();
     setActiveTab(customPageTab(created.id));
   };
@@ -171,7 +174,7 @@ export function DashboardPage() {
       onCreateCustomPage={createCustomPage}
       onRenameCustomPage={renameCustomPage}
       onDeleteCustomPage={deleteCustomPage}
-      onOpenGallery={openGallery}
+      onOpenSectionPage={openSectionPage}
     >
       {activeTab === "hoy" && <HoyPage onNavigate={navigate} />}
 

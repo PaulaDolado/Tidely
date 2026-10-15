@@ -3,9 +3,21 @@
 // en un teléfono (ver mobile/README.md para el alcance exacto de cada fase), no todos los campos
 // que expone la API (p.ej. no hay `image`/`notes`/`customFields` en Task, ni multi-tablero).
 
-// Mismos 7 valores que ENABLED_SECTIONS en dashboard/src/types.ts (backend: src/validators/
-// authValidators.ts) — "Hoy" y "Agenda" no son opcionales, así que no están aquí.
-export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"] as const;
+// Mismos 9 valores (y en el mismo orden) que ENABLED_SECTIONS en dashboard/src/types.ts (backend:
+// src/validators/authValidators.ts) — "Hoy" y "Agenda" no son opcionales, así que no están aquí.
+// "galeria", "viajes" y "estudio" son apartados respaldados por una página personalizada (ver
+// SECTION_PAGE_TEMPLATES en api/customPages.ts), no una pantalla propia.
+export const ENABLED_SECTIONS = [
+  "planificador",
+  "horario",
+  "objetivos",
+  "galeria",
+  "finanzas",
+  "metasAhorro",
+  "proyectos",
+  "viajes",
+  "estudio",
+] as const;
 export type EnabledSection = (typeof ENABLED_SECTIONS)[number];
 
 // Mismos textos que SECTION_LABELS/SECTION_DESCRIPTIONS en dashboard/src/types.ts — compartidos
@@ -18,6 +30,8 @@ export const SECTION_LABELS: Record<EnabledSection, string> = {
   finanzas: "Finanzas",
   metasAhorro: "Metas de ahorro",
   proyectos: "Libreta",
+  viajes: "Viajes",
+  estudio: "Estudio",
 };
 export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   planificador: "Tableros de tareas kanban, con propiedades personalizadas.",
@@ -27,6 +41,8 @@ export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   finanzas: "Ingresos, gastos y balance del mes.",
   metasAhorro: "Ahorro e inversión como casillas de progreso.",
   proyectos: "Cuaderno con notas enriquecidas por libreta.",
+  viajes: "Itinerario, presupuesto, lugares guardados, etc.",
+  estudio: "Asignaturas con tiempo de estudio, cronómetro y exámenes.",
 };
 
 export type MenuLayout = "default" | "compact";

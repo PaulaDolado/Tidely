@@ -4,7 +4,7 @@ import { useFetch } from "../hooks/useFetch";
 import { api, ApiError } from "../api/client";
 import { SettingsDialog } from "./SettingsDialog";
 import { AgendaResponse, CustomPageSummary, CustomPageTemplate, EnabledSection, ENABLED_SECTIONS, Notification, SearchResults } from "../types";
-import { CUSTOM_PAGE_TEMPLATES } from "../utils/customPageTemplates";
+import { CUSTOM_PAGE_TEMPLATES, primarySectionPage, SECTION_PAGE_LABELS, SECTION_PAGE_TEMPLATES, SectionPageTemplate } from "../utils/customPageTemplates";
 import clipClosedUrl from "../assets/clipClosed.png";
 import clipOpenUrl from "../assets/clipOpen.png";
 import QRCode from "qrcode";
@@ -55,14 +55,15 @@ interface NavItem {
 
 // Un elemento reordenable/agrupable del menú: un apartado fijo (NAV, con sus posibles `children`
 // intactos — el orden manual solo reordena el nivel superior, no desarma Agenda/Finanzas), la
-// "Galería" (apartado fijo pero técnicamente una página personalizada de plantilla "galeria", ver
-// el comentario junto a `galleryPage` más abajo) o una página propia de "Tus páginas". `key` es lo
-// que se guarda en User.menuOrder (ver SettingsDialog/AppShell → useAuth().updateUser) — "galeria"
-// es una clave fija a propósito, para que el orden elegido no se pierda si la página de galería
-// aún no existe (se crea sola la primera vez que se abre, ver onOpenGallery).
+// "Galería"/"Viajes"/"Estudio" (apartados fijos pero técnicamente una página personalizada de la
+// plantilla homónima, ver el comentario junto a `sectionPages` más abajo) o una página propia de
+// "Tus páginas". `key` es lo que se guarda en User.menuOrder (ver SettingsDialog/AppShell →
+// useAuth().updateUser) — "galeria"/"viajes"/"estudio" son claves fijas a propósito, para que el
+// orden elegido no se pierda si la página aún no existe (se crea sola la primera vez que se abre,
+// ver onOpenSectionPage).
 type MenuEntry =
   | { key: string; kind: "nav"; navItem: NavItem }
-  | { key: "galeria"; kind: "gallery" }
+  | { key: SectionPageTemplate; kind: "section"; template: SectionPageTemplate }
   | { key: CustomTabId; kind: "page"; page: CustomPageSummary };
 
 const NAV: NavItem[] = [
@@ -115,11 +116,11 @@ interface AppShellProps {
   onCreateCustomPage: (title: string, template: CustomPageTemplate) => Promise<void>;
   onRenameCustomPage: (id: number, title: string) => Promise<void>;
   onDeleteCustomPage: (id: number) => Promise<void>;
-  // "Galería" es un apartado del menú principal (como Hoy/Agenda/...), pero por debajo sigue
-  // siendo una página personalizada de plantilla "galeria" — este callback busca la del usuario
-  // (o la crea si es la primera vez) y navega a ella; nunca hay más de una, así que a diferencia
-  // de onCreateCustomPage no hace falta pedir título/plantilla (ver DashboardPage.openGallery).
-  onOpenGallery: () => Promise<void>;
+  // "Galería", "Viajes" y "Estudio" son apartados del menú principal (como Hoy/Agenda/...), pero
+  // por debajo siguen siendo una página personalizada de la plantilla homónima — este callback
+  // busca la del usuario (o la crea si es la primera vez) y navega a ella; a diferencia de
+  // onCreateCustomPage no hace falta pedir título/plantilla (ver DashboardPage.openSectionPage).
+  onOpenSectionPage: (template: SectionPageTemplate) => Promise<void>;
   children: ReactNode;
 }
 
@@ -154,18 +155,18 @@ export function AppShell({
   onCreateCustomPage,
   onRenameCustomPage,
   onDeleteCustomPage,
-  onOpenGallery,
+  onOpenSectionPage,
   children,
 }: AppShellProps) {
   const { user, logout, updateUser } = useAuth();
   // Antes de completar el asistente de bienvenida (o para cuentas creadas antes de que existiera,
-  // ver default en schema.prisma) `user.enabledSections` siempre viene relleno con los 7 — este
+  // ver default en schema.prisma) `user.enabledSections` siempre viene relleno con los 9 — este
   // `?? ENABLED_SECTIONS` es solo para el instante inicial en el que `user` puede no haber
   // llegado todavía de /auth/me (ver AuthContext), no para un caso de negocio real.
   const enabledSections = new Set<string>(user?.enabledSections ?? ENABLED_SECTIONS);
   const visibleNav = filterNav(NAV, enabledSections);
   const visibleFlatNav = visibleNav.flatMap((item) => [item, ...(item.children ?? [])]);
-  const showGallery = enabledSections.has("galeria");
+  const visibleSections = SECTION_PAGE_TEMPLATES.filter((t) => enabledSections.has(t));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [renamingPageId, setRenamingPageId] = useState<number | null>(null);
@@ -271,13 +272,28 @@ export function AppShell({
     .filter((e) => new Date(e.startTime).getTime() >= now)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0];
 
-  // La galería del usuario nunca son varias — si ya existe una página "galeria" es siempre ESTA
-  // (ver DashboardPage.openGallery, que reutiliza la primera que encuentra en vez de crear otra).
-  // El resto de `customPages` ("Tus páginas" más abajo) la excluye explícitamente: ya tiene su
-  // propio hueco en el menú principal, listarla también ahí sería un duplicado.
-  const galleryPage = customPages.find((p) => p.template === "galeria") ?? null;
-  const galleryTab = galleryPage ? customPageTab(galleryPage.id) : null;
-  const otherPages = customPages.filter((p) => p.template !== "galeria");
+  // Cada apartado Galería/Viajes/Estudio abre SIEMPRE la misma página: la primera de su plantilla
+  // (ver primarySectionPage y DashboardPage.openSectionPage, que reutiliza esa en vez de crear otra).
+  // `otherPages` ("Tus páginas" más abajo) la excluye para no listarla dos veces:
+  //  - galería: todas las de plantilla "galeria" se ocultan siempre (nunca hay más de una, y
+  //    CreatePageModal no la ofrece).
+  //  - viajes/estudio: SOLO la principal y SOLO mientras el apartado esté activado — si el usuario lo
+  //    desactiva en Ajustes, esa página vuelve a "Tus páginas" para seguir siendo alcanzable; las
+  //    demás de esa plantilla (creadas con "+ Nueva página") se listan siempre con normalidad.
+  const sectionPages = Object.fromEntries(
+    SECTION_PAGE_TEMPLATES.map((t) => [t, primarySectionPage(customPages, t)])
+  ) as Record<SectionPageTemplate, CustomPageSummary | null>;
+  const otherPages = customPages.filter((p) => {
+    if (p.template === "galeria") return false;
+    if (p.template === "viajes" || p.template === "estudio") {
+      return !(enabledSections.has(p.template) && sectionPages[p.template]?.id === p.id);
+    }
+    return true;
+  });
+  const isSectionActive = (template: SectionPageTemplate) => {
+    const page = sectionPages[template];
+    return page !== null && activeTab === customPageTab(page.id);
+  };
 
   // "default" separa apartados fijos y "Tus páginas" en dos grupos (como siempre); "compact" los
   // junta en una sola lista sin la cabecera "Tus páginas" — ver Ajustes → General → Apariencia.
@@ -285,14 +301,15 @@ export function AppShell({
   const menuOrder = user?.menuOrder ?? [];
 
   const navEntries: MenuEntry[] = visibleNav.map((item) => ({ key: item.key, kind: "nav", navItem: item }));
-  const galleryEntries: MenuEntry[] = showGallery ? [{ key: "galeria", kind: "gallery" }] : [];
+  const sectionEntries: MenuEntry[] = visibleSections.map((template) => ({ key: template, kind: "section", template }));
   const pageEntries: MenuEntry[] = otherPages.map((page) => ({ key: customPageTab(page.id), kind: "page", page }));
-  const allEntries = [...navEntries, ...galleryEntries, ...pageEntries];
+  const allEntries = [...navEntries, ...sectionEntries, ...pageEntries];
 
   // Coloca antes los que el usuario ya ordenó manualmente (por posición en menuOrder), y el resto
-  // detrás en su orden habitual (NAV primero, Galería, páginas propias) — así un apartado nuevo
-  // (recién activado en "Apartados del menú", o una página recién creada) aparece al final en vez
-  // de saltar a una posición arbitraria solo por no estar todavía en menuOrder.
+  // detrás en su orden habitual (NAV primero, Galería/Viajes/Estudio, páginas propias) — así un
+  // apartado nuevo (recién activado en "Apartados del menú", una página recién creada, o las claves
+  // "viajes"/"estudio" que un menuOrder guardado antes de existir no contiene) aparece al final en
+  // vez de saltar a una posición arbitraria solo por no estar todavía en menuOrder.
   function sortByMenuOrder(entries: MenuEntry[]): MenuEntry[] {
     const indexOf = (key: string) => {
       const i = menuOrder.indexOf(key);
@@ -304,7 +321,7 @@ export function AppShell({
       .map(({ entry }) => entry);
   }
 
-  const mainGroup = sortByMenuOrder([...navEntries, ...galleryEntries]);
+  const mainGroup = sortByMenuOrder([...navEntries, ...sectionEntries]);
   const pagesGroup = sortByMenuOrder(pageEntries);
   const compactGroup = sortByMenuOrder(allEntries);
 
@@ -455,40 +472,38 @@ export function AppShell({
     );
   }
 
-  // "Galería" es un apartado del menú principal (como Hoy/Agenda/...), pero por debajo sigue
-  // siendo una página personalizada de plantilla "galeria" — este callback busca la del usuario
-  // (o la crea si es la primera vez) y navega a ella.
-  function renderGalleryEntry(scope: MenuEntry[]) {
+  // "Galería", "Viajes" y "Estudio" son apartados del menú principal (como Hoy/Agenda/...), pero
+  // por debajo siguen siendo una página personalizada de la plantilla homónima — al pulsarlos
+  // onOpenSectionPage busca la del usuario (o la crea si es la primera vez) y navega a ella.
+  function renderSectionEntry(template: SectionPageTemplate, scope: MenuEntry[]) {
     return (
       <button
-        key="galeria"
+        key={template}
         draggable
         onDragStart={(e) => {
-          e.dataTransfer.setData("text/plain", "galeria");
+          e.dataTransfer.setData("text/plain", template);
           e.dataTransfer.effectAllowed = "move";
-          setDraggedKey("galeria");
+          setDraggedKey(template);
         }}
         onDragOver={(e) => {
           e.preventDefault();
           const edge = dragOverEdge(e);
-          setDropIndicator((prev) => (prev?.key === "galeria" && prev.edge === edge ? prev : { key: "galeria", edge }));
+          setDropIndicator((prev) => (prev?.key === template && prev.edge === edge ? prev : { key: template, edge }));
         }}
         onDrop={(e) => {
           e.preventDefault();
-          dropReorder(scope, "galeria", dragOverEdge(e), e.dataTransfer.getData("text/plain"));
+          dropReorder(scope, template, dragOverEdge(e), e.dataTransfer.getData("text/plain"));
         }}
         onDragEnd={() => {
           setDraggedKey(null);
           setDropIndicator(null);
         }}
-        onClick={onOpenGallery}
+        onClick={() => onOpenSectionPage(template)}
         className={`w-full min-w-0 cursor-grab truncate rounded-lg px-3 py-2 text-left transition-colors ${
-          galleryTab && activeTab === galleryTab
-            ? "bg-primary/10 font-medium text-primary"
-            : "text-muted-foreground hover:bg-foreground/5"
-        } ${draggedKey === "galeria" ? "opacity-40" : ""} ${dropIndicatorClass("galeria")}`}
+          isSectionActive(template) ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-foreground/5"
+        } ${draggedKey === template ? "opacity-40" : ""} ${dropIndicatorClass(template)}`}
       >
-        Galería
+        {SECTION_PAGE_LABELS[template]}
       </button>
     );
   }
@@ -586,7 +601,7 @@ export function AppShell({
   }
 
   function renderEntry(entry: MenuEntry, scope: MenuEntry[]) {
-    if (entry.kind === "gallery") return renderGalleryEntry(scope);
+    if (entry.kind === "section") return renderSectionEntry(entry.template, scope);
     if (entry.kind === "page") return renderPageEntry(entry.page, scope);
     return renderNavEntry(entry, scope);
   }
@@ -818,16 +833,17 @@ export function AppShell({
               {item.label}
             </button>
           ))}
-          {showGallery && (
+          {visibleSections.map((template) => (
             <button
-              onClick={onOpenGallery}
+              key={template}
+              onClick={() => onOpenSectionPage(template)}
               className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm ${
-                galleryTab && activeTab === galleryTab ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground"
+                isSectionActive(template) ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground"
               }`}
             >
-              Galería
+              {SECTION_PAGE_LABELS[template]}
             </button>
-          )}
+          ))}
           {otherPages.map((page) => {
             const tab = customPageTab(page.id);
             return (

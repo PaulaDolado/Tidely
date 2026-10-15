@@ -26,3 +26,25 @@ export const CUSTOM_PAGE_TEMPLATES: CustomPageTemplateMeta[] = [
 export const CUSTOM_PAGE_TEMPLATE_META: Record<CustomPageTemplate, CustomPageTemplateMeta> = Object.fromEntries(
   CUSTOM_PAGE_TEMPLATES.map((t) => [t.key, t])
 ) as Record<CustomPageTemplate, CustomPageTemplateMeta>;
+
+// Apartados del menú principal que por debajo son una página personalizada (ver AppShell y
+// DashboardPage.openSectionPage): la clave es la plantilla Y el apartado de User.enabledSections
+// a la vez (coinciden a propósito), y el valor la etiqueta del menú / título de la página que se
+// crea la primera vez. El orden es el de aparición por defecto en el menú.
+export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio"] as const;
+export type SectionPageTemplate = (typeof SECTION_PAGE_TEMPLATES)[number];
+export const SECTION_PAGE_LABELS: Record<SectionPageTemplate, string> = {
+  galeria: "Galería",
+  viajes: "Viajes",
+  estudio: "Estudio",
+};
+
+// La página que abre el apartado de esa plantilla: la primera por `order` (y por id si empatan).
+// Es la misma regla en AppShell (qué página ocultar de "Tus páginas") y en DashboardPage (a cuál
+// navegar), para que nunca se desincronicen — si no, el menú podría esconder una página y abrir otra.
+export function primarySectionPage<T extends { id: number; order: number; template: CustomPageTemplate }>(
+  pages: T[],
+  template: SectionPageTemplate
+): T | null {
+  return pages.filter((p) => p.template === template).sort((a, b) => a.order - b.order || a.id - b.id)[0] ?? null;
+}

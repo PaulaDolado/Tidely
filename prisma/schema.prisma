@@ -42,11 +42,11 @@ model User {
   // Apartados que el usuario eligió activar en el asistente de bienvenida tras registrarse (ver
   // PUT /auth/me/onboarding) — controla qué aparece en el menú lateral (ver AppShell.tsx en el
   // dashboard). Valores posibles: "planificador", "horario", "objetivos", "galeria", "finanzas",
-  // "metasAhorro", "proyectos" — "Hoy" y "Agenda" no son opcionales, así que no aparecen aquí.
+  // "metasAhorro", "proyectos", "viajes", "estudio" — "Hoy" y "Agenda" no son opcionales, así que no aparecen aquí.
   // Default con todos activados: así una cuenta que nunca pase por el asistente (o que ya
   // existiera antes de que existiera este campo) se ve exactamente como se veía la app hasta
   // ahora, sin apartados escondidos de golpe.
-  enabledSections String[] @default(["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos"])
+  enabledSections String[] @default(["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos", "viajes", "estudio"])
   // Si ya completó el asistente de bienvenida (apartados + apariencia) — default `true` a nivel
   // de columna a propósito, para que cuentas YA EXISTENTES (creadas antes de este campo) no vean
   // el asistente de sopetón; `register()` en authService.ts lo pone a `false` explícitamente solo

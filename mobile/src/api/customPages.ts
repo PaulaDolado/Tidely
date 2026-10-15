@@ -296,6 +296,50 @@ export interface CustomPage extends CustomPageSummary {
   content: CustomPageContent;
 }
 
+// Plantillas que tienen su propio apartado opcional en el menú principal (la clave de
+// user.enabledSections es la misma que la de la plantilla): por debajo siguen siendo páginas
+// personalizadas, pero el menú abre siempre "la principal" en vez de listarlas como "Tus páginas".
+export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio"] as const;
+export type SectionPageTemplate = (typeof SECTION_PAGE_TEMPLATES)[number];
+
+// Orden estable para decidir cuál es "la principal": por `order` y, a igualdad, por id. Los ids son
+// numéricos (servidor) o uuid (páginas creadas offline, aún sin sincronizar), de ahí la comparación mixta.
+function comparePrimary(a: { order: number; id: number | string }, b: { order: number; id: number | string }): number {
+  if (a.order !== b.order) return a.order - b.order;
+  const na = Number(a.id);
+  const nb = Number(b.id);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  return String(a.id).localeCompare(String(b.id));
+}
+
+/** La página que abre el apartado de esa plantilla: la primera por `order` y, si empatan, por id. */
+export function primaryPageOf<P extends { template: string; order: number; id: number | string }>(
+  pages: P[],
+  template: string
+): P | null {
+  const candidates = pages.filter((p) => p.template === template);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, p) => (comparePrimary(p, best) < 0 ? p : best));
+}
+
+/** Páginas que NO deben salir en "Tus páginas"/la lista porque ya tienen su apartado en el menú: todas
+ * las de galería (siempre, como hasta ahora) y solo la principal de viajes/estudio, y solo mientras
+ * su apartado esté activo — si el usuario lo desactiva, esa página reaparece en la lista para seguir
+ * siendo alcanzable. Las demás páginas de viajes/estudio se quedan listadas. */
+export function hiddenSectionPageIds<P extends { template: string; order: number; id: number | string }>(
+  pages: P[],
+  enabledSections: { has(section: string): boolean }
+): Set<P["id"]> {
+  const hidden = new Set<P["id"]>();
+  for (const p of pages) if (p.template === "galeria") hidden.add(p.id);
+  for (const template of ["viajes", "estudio"] as const) {
+    if (!enabledSections.has(template)) continue;
+    const primary = primaryPageOf(pages, template);
+    if (primary) hidden.add(primary.id);
+  }
+  return hidden;
+}
+
 export async function listCustomPages(): Promise<CustomPageSummary[]> {
   const res = await api.get<{ pages: CustomPageSummary[] }>("/custom-pages");
   return res.pages;

@@ -23,7 +23,16 @@ import { useAuth } from "../auth/AuthContext";
 import { useSidebar } from "./SidebarContext";
 import { useTheme } from "../context/ThemeContext";
 import { api, ApiError } from "../api/client";
-import { createCustomPage, CustomPageSummary, CustomPageTemplate, listCustomPages } from "../api/customPages";
+import {
+  createCustomPage,
+  CustomPageSummary,
+  CustomPageTemplate,
+  hiddenSectionPageIds,
+  listCustomPages,
+  primaryPageOf,
+  SECTION_PAGE_TEMPLATES,
+  SectionPageTemplate,
+} from "../api/customPages";
 import { listEventCategories } from "../api/eventCategories";
 import { listExpandedEvents, ParsedEvent } from "../db/eventsRepo";
 import { EventOccurrence } from "../utils/recurrence";
@@ -37,7 +46,7 @@ import { AboutTidelySection } from "../components/AboutTidely";
 import { GlobalSearch, SearchPick } from "../components/GlobalSearch";
 import { NotificationsBell, useUnreadNotifications } from "../components/NotificationsPanel";
 import { ColorPalette, fonts, radius, withAlpha } from "../theme";
-import { EnabledSection, ENABLED_SECTIONS, EventCategory } from "../types";
+import { EnabledSection, ENABLED_SECTIONS, EventCategory, SECTION_LABELS } from "../types";
 
 // Sidebar lateral para móvil — reemplaza la barra de pestañas inferior (bottom-tabs) por un menú
 // lateral colapsable, puerto de dashboard/src/components/AppShell.tsx (<aside> de escritorio) en
@@ -130,18 +139,18 @@ const NAV: NavItem[] = [
 
 // Versiones anteriores del móvil guardaban en menuOrder el nombre de la ruta ("Hoy", "Objetivos"...)
 // en vez de la clave de la web — se traducen al leer para no perder el orden que el usuario ya
-// había puesto. Cualquier otra clave ("galeria", "custom-12", o algo que este build no conozca)
-// pasa tal cual.
+// había puesto. Cualquier otra clave ("galeria", "viajes", "estudio", "custom-12", o algo que este
+// build no conozca) pasa tal cual.
 const LEGACY_ROUTE_KEYS: Record<string, string> = Object.fromEntries(
   NAV.flatMap((item) => [item, ...(item.children ?? [])]).map((item) => [item.route, item.key])
 );
 
-const GALLERY_KEY = "galeria";
 const customPageKey = (id: number) => `custom-${id}`;
 
 // Lo guardado en user.menuOrder, ya con las claves heredadas traducidas y sin repetidos — se
-// conservan las claves desconocidas (p. ej. "custom-N" de una página que aún no ha cargado, o la
-// galería con el apartado desactivado) para no borrarlas del orden compartido con la web al guardar.
+// conservan las claves desconocidas (p. ej. "custom-N" de una página que aún no ha cargado, o
+// Galería/Viajes/Estudio con el apartado desactivado) para no borrarlas del orden compartido con la
+// web al guardar.
 function normalizeOrder(order: string[] | undefined): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -155,11 +164,12 @@ function normalizeOrder(order: string[] | undefined): string[] {
   return result;
 }
 
-// Un apartado del menú principal (fijo, galería o página propia) — misma forma de unirlos que
-// MenuEntry en AppShell.tsx.
+// Un apartado del menú principal (fijo, apartado respaldado por una página —Galería, Viajes,
+// Estudio— o página propia) — misma forma de unirlos que MenuEntry en AppShell.tsx. La clave de un
+// "section" es la propia plantilla ("galeria", "viajes", "estudio"), igual que en la web.
 type MenuEntry =
   | { key: string; kind: "nav"; item: NavItem }
-  | { key: string; kind: "gallery" }
+  | { key: string; kind: "section"; template: SectionPageTemplate }
   | { key: string; kind: "page"; page: CustomPageSummary };
 
 // Mismo criterio que sortByMenuOrder en AppShell.tsx: los que el usuario ya ordenó van primero (por
@@ -367,8 +377,14 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
 
   const activeRoute = state.routes[state.index].name;
   const maxWidth = Math.round(screenWidth * 0.74);
-  // "Tus páginas" no repite la galería: ya tiene su propio botón (ver openGallery/render).
-  const otherPages = customPages.filter((p) => p.template !== "galeria");
+
+  // Página abierta ahora mismo en la pila anidada de "Páginas" (ver PaginasScreen) — solo para
+  // resaltar el apartado Galería/Viajes/Estudio cuyo botón abrió esa página. El estado anidado no
+  // existe hasta que la pestaña se ha visitado, y `index` puede faltar en un estado parcial.
+  const currentRoute = state.routes[state.index];
+  const nestedState = activeRoute === "Páginas" ? currentRoute.state : undefined;
+  const nestedRoute = nestedState?.routes[nestedState.index ?? nestedState.routes.length - 1];
+  const openPageId = nestedRoute?.name === "Detalle" ? (nestedRoute.params as { id?: string | number } | undefined)?.id : undefined;
 
   const measuredMax = Math.max(0, ...Object.values(labelWidths));
   const sidebarWidth = Math.min(Math.max(DEFAULT_WIDTH, measuredMax + WIDTH_PADDING), maxWidth);
@@ -384,21 +400,32 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   // el que manda sobre lo guardado para dar feedback visual instantáneo sin esperar al PUT.
   const enabledSections = useMemo(() => new Set(user?.enabledSections ?? ENABLED_SECTIONS), [user?.enabledSections]);
   const visibleNav = useMemo(() => filterNav(NAV, enabledSections), [enabledSections]);
-  const showGallery = enabledSections.has("galeria");
   const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
   const savedOrder = useMemo(() => normalizeOrder(user?.menuOrder), [user?.menuOrder]);
   const effectiveOrder = liveOrder ?? savedOrder;
 
-  const navEntries: MenuEntry[] = visibleNav.map((item) => ({ key: item.key, kind: "nav", item }));
-  const galleryEntries: MenuEntry[] = showGallery ? [{ key: GALLERY_KEY, kind: "gallery" }] : [];
-  const pageEntries: MenuEntry[] = otherPages.map((page) => ({ key: customPageKey(page.id), kind: "page", page }));
-  const allEntries = [...navEntries, ...galleryEntries, ...pageEntries];
+  // "Tus páginas" no repite lo que ya tiene su propio botón en el menú (ver openSectionPage/render):
+  // las de galería siempre, y de viajes/estudio solo la principal mientras su apartado esté activo —
+  // si se desactiva, esa página vuelve a listarse para no quedar inalcanzable.
+  const hiddenPageIds = hiddenSectionPageIds(customPages, enabledSections);
+  const otherPages = customPages.filter((p) => !hiddenPageIds.has(p.id));
 
-  // Mismos grupos que la web: en "default", apartados fijos + galería por un lado y "Tus páginas"
-  // por otro (se reordena DENTRO de cada grupo); en "compact", una única lista con todo.
+  const navEntries: MenuEntry[] = visibleNav.map((item) => ({ key: item.key, kind: "nav", item }));
+  // Los apartados nuevos (viajes/estudio) no están en menuOrder de quien guardó el orden antes de que
+  // existieran: sortByMenuOrder los deja detrás de lo ya ordenado, en este orden por defecto.
+  const sectionEntries: MenuEntry[] = SECTION_PAGE_TEMPLATES.filter((template) => enabledSections.has(template)).map((template) => ({
+    key: template,
+    kind: "section",
+    template,
+  }));
+  const pageEntries: MenuEntry[] = otherPages.map((page) => ({ key: customPageKey(page.id), kind: "page", page }));
+  const allEntries = [...navEntries, ...sectionEntries, ...pageEntries];
+
+  // Mismos grupos que la web: en "default", apartados fijos + Galería/Viajes/Estudio por un lado y
+  // "Tus páginas" por otro (se reordena DENTRO de cada grupo); en "compact", una única lista con todo.
   const groups: MenuEntry[][] = compact
     ? [sortByMenuOrder(allEntries, effectiveOrder)]
-    : [sortByMenuOrder([...navEntries, ...galleryEntries], effectiveOrder), sortByMenuOrder(pageEntries, effectiveOrder)];
+    : [sortByMenuOrder([...navEntries, ...sectionEntries], effectiveOrder), sortByMenuOrder(pageEntries, effectiveOrder)];
 
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   // Grupo, índice de partida y orden "base" del gesto (capturados una vez al empezar a arrastrar,
@@ -422,7 +449,8 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
     dragStartIndexRef.current = dragScopeRef.current.indexOf(key);
     // Mismo criterio que dropReorder en AppShell.tsx, con una diferencia a propósito: las claves
     // que este build no conoce NO se descartan (la web sí las filtra), así un "custom-N" cuya página
-    // aún no ha cargado, o la galería con el apartado desactivado, no se borra del orden compartido.
+    // aún no ha cargado, o Galería/Viajes/Estudio con el apartado desactivado, no se borra del orden
+    // compartido.
     const remembered = [...savedOrder];
     for (const entry of allEntries) if (!remembered.includes(entry.key)) remembered.push(entry.key);
     dragRememberedRef.current = remembered;
@@ -604,26 +632,29 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
     setCollapsed(true);
   };
 
-  // "Galería" es un apartado del menú principal (como Hoy/Agenda/...), igual que en
-  // dashboard/src/components/AppShell.tsx: por debajo sigue siendo una página personalizada de
-  // plantilla "galeria", pero nunca hay más de una — busca la del usuario (consulta fresca, no
-  // el `customPages` ya en estado, para no crear una segunda por una lista todavía sin cargar la
-  // primera vez) o la crea, y navega a su detalle igual que openPage/handleCreatePage.
+  // "Galería", "Viajes" y "Estudio" son apartados del menú principal (como Hoy/Agenda/...), igual que
+  // en dashboard/src/components/AppShell.tsx: por debajo siguen siendo páginas personalizadas de su
+  // plantilla, pero el menú abre siempre UNA (la principal: primera por `order`, luego por id) — la
+  // busca con una consulta fresca (no el `customPages` ya en estado, para no crear una segunda por
+  // una lista todavía sin cargar la primera vez) o la crea con el nombre del apartado, y navega a su
+  // detalle igual que openPage/handleCreatePage. Viajes/Estudio pueden tener más páginas, que
+  // siguen saliendo en "Tus páginas" (ver hiddenSectionPageIds).
   //
   // Con try/catch a propósito, a diferencia de antes: si listCustomPages/createCustomPage fallaba
   // (sesión caducada, sin red…), el error se quedaba sin capturar y no pasaba nada visible al
-  // tocar "Galería" — ni se navegaba ni se cerraba el menú, así que parecía que el botón no hacía
+  // tocar el apartado — ni se navegaba ni se cerraba el menú, así que parecía que el botón no hacía
   // nada. Mismo mensaje que el resto de pantallas (ApiError.message si lo hay).
-  const openGallery = async () => {
+  const openSectionPage = async (template: SectionPageTemplate) => {
+    const label = SECTION_LABELS[template];
     try {
       const pages = await listCustomPages();
-      let galleryPage = pages.find((p) => p.template === "galeria") ?? null;
-      if (!galleryPage) galleryPage = await createCustomPage("Galería", "galeria");
+      let page = primaryPageOf(pages, template);
+      if (!page) page = await createCustomPage(label, template);
       await reloadCustomPages();
-      navigation.navigate("Páginas", { screen: "Detalle", params: { id: galleryPage.id, title: galleryPage.title } });
+      navigation.navigate("Páginas", { screen: "Detalle", params: { id: page.id, title: page.title } });
       setCollapsed(true);
     } catch (err) {
-      Alert.alert("No se pudo abrir la galería", err instanceof ApiError ? err.message : "Inténtalo de nuevo.");
+      Alert.alert(`No se pudo abrir ${label}`, err instanceof ApiError ? err.message : "Inténtalo de nuevo.");
     }
   };
 
@@ -666,17 +697,36 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
         />
       );
     }
-    // Galería y páginas propias no tienen hijos ni "activo" propio (como antes de poder arrastrarlas).
+    if (entry.kind === "section") {
+      // Resaltado solo si la página abierta es la que abre este botón (la principal de su plantilla);
+      // los ids de ruta pueden ser número (menú) o string (lista local), de ahí el String().
+      const primary = primaryPageOf(customPages, entry.template);
+      const isOpen = primary !== null && openPageId !== undefined && String(openPageId) === String(primary.id);
+      return (
+        <DraggableNavRow
+          key={entry.key}
+          {...common}
+          label={SECTION_LABELS[entry.template]}
+          isActive={isOpen}
+          activeRoute={activeRoute}
+          sectionCollapsed={false}
+          onToggleSection={() => {}}
+          onPress={() => openSectionPage(entry.template)}
+          onChildPress={goTo}
+        />
+      );
+    }
+    // Las páginas propias no tienen hijos ni "activo" propio (como antes de poder arrastrarlas).
     return (
       <DraggableNavRow
         key={entry.key}
         {...common}
-        label={entry.kind === "gallery" ? "Galería" : entry.page.title}
+        label={entry.page.title}
         isActive={false}
         activeRoute={activeRoute}
         sectionCollapsed={false}
         onToggleSection={() => {}}
-        onPress={entry.kind === "gallery" ? openGallery : () => openPage(entry.page)}
+        onPress={() => openPage(entry.page)}
         onChildPress={goTo}
       />
     );
@@ -769,13 +819,13 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
           <GlobalSearch onPick={handleSearchPick} />
 
           <View style={styles.nav}>
-            {/* Apartados fijos, Galería y "Tus páginas" comparten el mismo tipo de fila arrastrable
-                (ver renderEntry) y el mismo esquema de claves de menuOrder que la web. "Galería" es
-                un apartado del menú principal, no una página personalizada más — mismo criterio que
-                el botón de dashboard/src/components/AppShell.tsx: por debajo sigue siendo una página
-                de plantilla "galeria", pero openGallery busca la existente o crea la primera, así
-                que el usuario no ve ese paso intermedio. El título "Tus páginas" se oculta en modo
-                "compact" (ver menuLayout), donde solo hay un grupo. */}
+            {/* Apartados fijos, Galería/Viajes/Estudio y "Tus páginas" comparten el mismo tipo de fila
+                arrastrable (ver renderEntry) y el mismo esquema de claves de menuOrder que la web.
+                Galería/Viajes/Estudio son apartados del menú principal, no páginas personalizadas
+                más — mismo criterio que los botones de dashboard/src/components/AppShell.tsx: por
+                debajo siguen siendo páginas de su plantilla, pero openSectionPage busca la principal
+                o crea la primera, así que el usuario no ve ese paso intermedio. El título "Tus
+                páginas" se oculta en modo "compact" (ver menuLayout), donde solo hay un grupo. */}
             {groups[0].map(renderEntry)}
             {groups[1] && groups[1].length > 0 && (
               <>

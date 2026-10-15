@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,8 +6,9 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { runSync } from "../sync";
 import { listCustomPages, createCustomPageLocal, deleteCustomPageLocal, movePageLocal, defaultContentFor } from "../db/customPagesRepo";
-import { CustomPageTemplate, TEMPLATE_ICONS, TEMPLATE_LABELS } from "../api/customPages";
-import { LocalCustomPage } from "../types";
+import { CustomPageTemplate, hiddenSectionPageIds, TEMPLATE_ICONS, TEMPLATE_LABELS } from "../api/customPages";
+import { useAuth } from "../auth/AuthContext";
+import { ENABLED_SECTIONS, LocalCustomPage } from "../types";
 import { colors, fonts, radius, shadow } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { NewPageForm } from "../components/NewPageForm";
@@ -27,10 +28,20 @@ type Props = NativeStackScreenProps<PaginasStackParamList, "Lista">;
 export function PaginasListScreen({ navigation }: Props) {
   const { collapsed } = useSidebar();
   const insets = useSafeAreaInsets();
-  const [pages, setPages] = useState<LocalCustomPage[]>([]);
+  const [allPages, setPages] = useState<LocalCustomPage[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const { user } = useAuth();
+  // Se filtra al pintar (no al cargar de SQLite) para que reaccione a activar/desactivar apartados en
+  // Ajustes sin recargar. Galería (todas), y la página principal de Viajes/Estudio mientras su
+  // apartado esté activo, ya tienen su propio botón en el menú principal (ver
+  // AppSidebar.openSectionPage) — listarlas aquí duplicaría la entrada. Con el apartado desactivado,
+  // la principal vuelve a salir para seguir siendo alcanzable.
+  const pages = useMemo(() => {
+    const hidden = hiddenSectionPageIds(allPages, new Set(user?.enabledSections ?? ENABLED_SECTIONS));
+    return allPages.filter((p) => !hidden.has(p.id));
+  }, [allPages, user?.enabledSections]);
   // Mismo patrón que el "✕" de "Tus páginas" en dashboard/src/components/AppShell.tsx
   // (`confirmingDeletePageId`) — el propio botón "Borrar" pide confirmar cambiando su texto en
   // vez de un diálogo aparte; sin hover/mouseleave en táctil para cancelarlo solo, así que se
@@ -45,10 +56,7 @@ export function PaginasListScreen({ navigation }: Props) {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    // "galeria" no aparece aquí: ya tiene su propio apartado "Galería" en el menú principal
-    // (con una sola por cuenta, ver AppSidebar.openGallery) — listarla también en esta pantalla
-    // duplicaría la entrada.
-    setPages((await listCustomPages()).filter((p) => p.template !== "galeria"));
+    setPages(await listCustomPages());
     setLoading(false);
   }, []);
 
