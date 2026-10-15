@@ -195,7 +195,9 @@ export function buildTransportChains(items: TransportDetail[]): TransportDetail[
       chain.push(current);
       current = current.nextId ? byId.get(current.nextId) : undefined;
     }
-    chains.push(chain);
+    // La segunda pasada filtra los no visitados ANTES de recorrer: en un ciclo, el segundo trayecto ya se ha
+    // visitado al seguir el primero y daría una cadena vacía (y `chain[0]` revienta en TravelExtras).
+    if (chain.length > 0) chains.push(chain);
   };
 
   [...items].filter((t) => !referenced.has(t.id)).sort(order).forEach(follow);

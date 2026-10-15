@@ -128,6 +128,11 @@ jobs:
         working-directory: dashboard
         run: npm run lint
 
+      # Vitest sobre la lógica pura (utils de viajes, estudio, semanas ISO...): lo que se rompe sin que el build lo note.
+      - name: Test dashboard
+        working-directory: dashboard
+        run: npm test
+
       - name: Build dashboard
         working-directory: dashboard
         env:
@@ -154,3 +159,8 @@ jobs:
       - name: Typecheck mobile
         working-directory: mobile
         run: npx tsc --noEmit
+
+      # Vitest en Node (sin Expo ni React Native): utils puras y el contrato de sync/push.ts con SQLite y la API simulados.
+      - name: Test mobile
+        working-directory: mobile
+        run: npm test
