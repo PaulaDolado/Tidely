@@ -1,0 +1,113 @@
+# Dependabot abre PRs semanales con las actualizaciones de dependencias; pasan por el mismo flujo que cualquier cambio
+# (CI en verde y fusión por pull request, ver CONTRIBUTING.md). Las ACTUALIZACIONES DE SEGURIDAD (alertas de
+# vulnerabilidades) se abren aparte y al momento, con independencia de este calendario.
+#
+# Para no ahogarte en PRs: una sola PR agrupada por ecosistema para lo que es seguro (menores/parches y dependencias de
+# desarrollo), y las versiones MAYORES de lo delicado se dejan fuera a propósito (ver cada bloque).
+version: 2
+
+updates:
+  # Servidor (API)
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+    labels: [dependencias]
+    commit-message:
+      prefix: "deps"
+    groups:
+      # prisma y @prisma/client tienen que ir siempre a la misma versión: nunca en PRs separadas.
+      prisma:
+        patterns: ["prisma", "@prisma/*"]
+      menores-y-parches:
+        update-types: [minor, patch]
+        exclude-patterns: ["prisma", "@prisma/*"]
+
+  # Web (dashboard)
+  - package-ecosystem: npm
+    directory: "/dashboard"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+    labels: [dependencias]
+    commit-message:
+      prefix: "deps(web)"
+    groups:
+      menores-y-parches:
+        update-types: [minor, patch]
+
+  # App móvil. Las versiones de Expo, React Native y de los módulos nativos las fija cada SDK de Expo
+  # (`npx expo install --check`): subirlas por separado rompe la compatibilidad, así que se ignoran aquí y se
+  # actualizan con el SDK. El resto (utilidades JS) sí entra, solo menores y parches.
+  - package-ecosystem: npm
+    directory: "/mobile"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+    labels: [dependencias]
+    commit-message:
+      prefix: "deps(móvil)"
+    ignore:
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "@expo-google-fonts/*"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-community/*"
+      - dependency-name: "@react-navigation/*"
+      - dependency-name: "@types/react"
+      - dependency-name: "typescript"
+    groups:
+      menores-y-parches:
+        update-types: [minor, patch]
+
+  # Acciones de GitHub de los flujos (.github/workflows)
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+    labels: [dependencias]
+    commit-message:
+      prefix: "ci"
+    groups:
+      acciones:
+        patterns: ["*"]
+    ignore:
+      # La v6 de gradle/actions cambia las condiciones de licencia: se queda en la v5 hasta decidirlo a mano.
+      - dependency-name: "gradle/actions"
+        update-types: ["version-update:semver-major"]
+
+  # Imagen base del Dockerfile (producción en Render). Las versiones mayores de Node se suben a mano, probándolas
+  # antes: cambian el runtime de producción.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 2
+    labels: [dependencias]
+    commit-message:
+      prefix: "deps(docker)"
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
