@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -34,6 +35,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.5.4",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "vitest": "4.1.11"
   }
 }

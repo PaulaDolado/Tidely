@@ -12,8 +12,8 @@ Ver [README.md](README.md#setup) para instalar dependencias, levantar Postgres y
 npm run lint          # ESLint sin errores
 npx tsc --noEmit        # typecheck sin errores
 npm test                 # unit + integration en verde (requiere Postgres levantado)
-(cd dashboard && npm run lint && npm run build)   # si tocas la web
-(cd mobile && npx tsc --noEmit)                   # si tocas la app móvil
+(cd dashboard && npm run lint && npm test && npm run build)   # si tocas la web
+(cd mobile && npx tsc --noEmit && npm test)                   # si tocas la app móvil
 ```
 
 El CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) corre estos mismos pasos — si pasan en local, deberían pasar ahí.
@@ -57,8 +57,8 @@ Los cambios entran en `main` **solo por pull request**: la rama está protegida 
    |---|---|
    | `test` | Lint y tipos del servidor, migraciones y la suite completa de tests |
    | `build` | Compila la API |
-   | `build-dashboard` | ESLint, tipos y build de la web |
-   | `mobile` | Tipos de la app móvil |
+   | `build-dashboard` | ESLint, tests unitarios (Vitest), tipos y build de la web |
+   | `mobile` | Tipos y tests unitarios (Vitest) de la app móvil |
 
 5. Fusiona con **Squash and merge** (un commit por PR en `main`); la rama se borra sola al fusionar.
 

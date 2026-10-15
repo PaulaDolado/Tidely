@@ -30,6 +30,20 @@ npm test
 | `middlewares/` | `validate()` (saneo con `stripUnknown`, propagación de error), `authMiddleware` (token ausente/inválido/válido) |
 | `services/` | Lógica de negocio de cada módulo con Prisma mockeado — incluye `computeGoalRisk`, `expandRecurringEvent` vs `nextOccurrenceStartingIn`, dedup de `notificationService`, idempotencia de `goalExpiryService` |
 
+## Web y app móvil (Vitest)
+
+El dashboard y la app móvil tienen su propia suite con [Vitest](https://vitest.dev/), en entorno Node (sin navegador ni React Native): solo lógica pura, que es lo que se rompe sin que `tsc` ni el build lo noten. Los tests viven junto al código, en carpetas `__tests__/` (`*.test.ts`).
+
+```bash
+(cd dashboard && npm test)
+(cd mobile && npm test)
+```
+
+| App | Qué prueba |
+|---|---|
+| `dashboard/` | `utils/study` (parseo y formato de duraciones, cuentas del plan), `utils/travel` (migración de lugares legados, viaje por defecto, URLs, horarios y escalas, cadenas de transbordos con guarda de ciclos, candidatos a continuación, validaciones), `utils/agendaExport` (semanas ISO), `utils/customPageTemplates` y los helpers de `MonthSwitcher` (con la fecha fijada con `vi.setSystemTime`) |
+| `mobile/` | `utils/study` (incluida la normalización del JSON y los arcos del temporizador), `utils/travelTransport`, `utils/recurrence` (patrones, excepciones movidas/canceladas, meses cortos, límite de ocurrencias) y el contrato de `sync/push.ts` con éxito parcial (`partialFailures`, `failures` por índice, altas por `idMappings`, segunda pasada) con la API y los repos de SQLite sustituidos por `vi.mock` |
+
 ## Bugs reales que atraparon los tests
 
 Vale la pena documentarlos porque son la prueba de que la suite de tests hace algo más que inflar un número de cobertura — encontraron comportamiento roto **antes** de que llegara a `main`.
@@ -46,6 +60,10 @@ El scheduler de notificaciones reutilizaba `expandRecurringEvent` (pensada para 
 
 La primera versión de la expansión de recurrencia encadenaba `addMonths` desde la ocurrencia anterior (`cursor = addMonths(cursor, 1)`). Para un evento anclado el día 31, esto hace que en febrero se "clampe" a 28 — y como el siguiente `addMonths` parte de ese 28 (no del 31 original), marzo se queda en 28 también, para siempre, en vez de volver a 31. Un test que verificaba tres meses seguidos (enero 31 → febrero 28 → marzo 31) lo hizo evidente de inmediato. Se corrigió calculando cada ocurrencia siempre desde la fecha original (`addMonths(originalStart, n)`).
 
+### 4. Cadena de transporte vacía con trayectos en ciclo (web)
+
+`buildTransportChains` (en `dashboard/src/utils/travel.ts`) tiene una guarda para que dos trayectos que se apuntan entre sí con `nextId` no cuelguen la página: los que quedan sin visitar se recorren en una segunda pasada. Pero esa lista se filtraba **antes** de recorrerla, así que en un ciclo A → B → A el segundo trayecto ya estaba visitado al llegar su turno y salía una cadena vacía — y `TravelExtras` pinta cada cadena con `key={chain[0].id}`, que revienta con una cadena vacía. Lo detectó el test de la guarda de ciclos. Se corrigió descartando las cadenas vacías, igual que ya hacía la versión del móvil (`mobile/src/utils/travelTransport.ts`).
+
 ## CI
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) corre en cada push/PR a `main`/`master`: lint (ESLint) → typecheck (`tsc --noEmit`) → migraciones contra un Postgres real (servicio de GitHub Actions) → suite completa con cobertura → build de la API → build del dashboard (job separado). El reporte de cobertura se sube como artifact de la ejecución.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) corre en cada push/PR a `main`/`master`: lint (ESLint) → typecheck (`tsc --noEmit`) → migraciones contra un Postgres real (servicio de GitHub Actions) → suite completa con cobertura → build de la API → lint, tests y build del dashboard (job separado) → tipos y tests de la app móvil (job separado). El reporte de cobertura se sube como artifact de la ejecución.
