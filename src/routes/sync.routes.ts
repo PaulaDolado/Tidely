@@ -3,6 +3,7 @@ import * as syncController from "../controllers/syncController";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { validate } from "../middlewares/validation";
 import { syncPullQuerySchema, syncPushSchema, validateSyncPushItems } from "../validators/syncValidators";
+import { ValidationError } from "../utils/errorHandler";
 
 const router = Router();
 
@@ -10,8 +11,13 @@ router.use(authMiddleware);
 
 // Tras comprobar la forma del sobre, valida cada elemento por separado: los que no pasan quedan como
 // `null` en el cuerpo y su fallo se le pasa al servicio (ver syncValidators.validateSyncPushItems).
+// Un cliente que no pide `partialFailures` recibe un 400 como antes en cuanto uno no es válido.
 function validatePushItems(req: Request, res: Response, next: NextFunction): void {
   const { body, failures } = validateSyncPushItems(req.body);
+  if (!body.partialFailures && failures.length > 0) {
+    next(new ValidationError(failures.map((f) => f.message).join("; ")));
+    return;
+  }
   req.body = body;
   res.locals.syncRejected = failures;
   next();

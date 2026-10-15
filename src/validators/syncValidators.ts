@@ -300,6 +300,10 @@ export const syncPushSchema = Joi.object({
     })
   ),
   deletes: anyItems,
+  // El cliente sabe leer `failures` y dejar pendiente lo que falló (ver syncService.push). Un móvil
+  // de antes de este cambio no lo manda: si se le devolviera un éxito parcial daría por subido
+  // también lo que falló y lo perdería, así que para él cualquier fallo sigue tumbando la petición.
+  partialFailures: Joi.boolean().default(false),
 }).options({ stripUnknown: true });
 
 /** Un elemento del push que el servidor no ha aplicado. `index` es su posición en `body[section][op]` (o en `body.deletes`). */
@@ -346,5 +350,6 @@ export function validateSyncPushItems(body: Record<string, unknown>): { body: Re
     return check(deleteSchema, item, { section: "deletes", op: "delete", index, entityType: typeof entityType === "string" ? entityType : "desconocido" });
   });
 
+  result.partialFailures = body.partialFailures === true;
   return { body: result, failures };
 }

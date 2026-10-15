@@ -178,6 +178,11 @@ function emptyBody() {
   };
 }
 
+// Como lo manda el móvil actual: sabe recibir un éxito parcial (ver syncService.push).
+function partialBody() {
+  return { ...emptyBody(), partialFailures: true };
+}
+
 const ALL_MODELS = [
   "event",
   "eventException",
@@ -345,7 +350,7 @@ describe("syncService", () => {
       (plannerService.createTask as jest.Mock).mockResolvedValue({ id: 30 });
 
       const result = await syncService.push(1, {
-        ...emptyBody(),
+        ...partialBody(),
         notes: {
           create: [
             { localId: "nota-mala", content: "x" },
@@ -369,7 +374,7 @@ describe("syncService", () => {
       prismaMock.task.findUnique.mockRejectedValue(new Error("connection terminated"));
 
       const result = await syncService.push(1, {
-        ...emptyBody(),
+        ...partialBody(),
         tasks: { create: [], update: [{ id: 10, clientUpdatedAt: "2026-08-02T00:00:00.000Z", title: "X" }] },
       });
 
@@ -382,11 +387,19 @@ describe("syncService", () => {
       (notesService.createNote as jest.Mock).mockResolvedValue({ id: 5 });
       const rejected = [{ section: "notes", op: "create", index: 0, entityType: "note", status: 400, message: "inválida", retryable: false }];
 
-      const result = await syncService.push(1, { ...emptyBody(), notes: { create: [null, { localId: "ok", content: "z" }], update: [] } }, rejected);
+      const result = await syncService.push(1, { ...partialBody(), notes: { create: [null, { localId: "ok", content: "z" }], update: [] } }, rejected);
 
       expect(notesService.createNote).toHaveBeenCalledTimes(1);
       expect(result.idMappings).toEqual([{ entityType: "note", localId: "ok", id: 5 }]);
       expect(result.failures).toEqual(rejected);
+    });
+
+    it("un cliente que no pide partialFailures (móvil anterior) sigue recibiendo el error del primer fallo, como antes", async () => {
+      (notesService.createNote as jest.Mock).mockRejectedValueOnce(new ValidationError("Nota demasiado larga"));
+
+      await expect(
+        syncService.push(1, { ...emptyBody(), notes: { create: [{ localId: "nota-mala", content: "x" }], update: [] } })
+      ).rejects.toThrow(ValidationError);
     });
 
     it("si falla el segundo paso de un alta (completar la subtarea), el elemento cuenta como creado: reenviarlo lo duplicaría", async () => {
@@ -394,7 +407,7 @@ describe("syncService", () => {
       (plannerService.updateSubtask as jest.Mock).mockRejectedValue(new Error("timeout"));
 
       const result = await syncService.push(1, {
-        ...emptyBody(),
+        ...partialBody(),
         subtasks: { create: [{ localId: "sub", taskId: 3, title: "Sub", completed: true }], update: [] },
       });
 
@@ -460,6 +473,7 @@ describe("syncService", () => {
 
       const result = await syncService.push(1, {
         ...emptyBody(),
+        partialFailures: true,
         deletes: [
           { entityType: "task", id: 1 },
           { entityType: "note", id: 2 },

@@ -380,6 +380,9 @@ export async function pushToServer(allowFollowUp = true): Promise<number> {
   ];
 
   const body = {
+    // Este cliente sabe recibir un éxito parcial: lo que falle vuelve en `failures` y se queda
+    // pendiente (ver más abajo). Sin esto, el servidor rechaza todo el lote al primer fallo.
+    partialFailures: true,
     events: {
       create: newEvents.map((e) => {
         const p = parseEvent(e);
