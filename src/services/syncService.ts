@@ -198,6 +198,10 @@ function describeError(error: unknown): { status: number; message: string } {
  *
  * No hay una transacción que envuelva el lote: lo aplicado antes de un fallo se queda aplicado,
  * que es justo lo que el cliente necesita saber para no volver a enviarlo.
+ *
+ * Solo si el cliente lo pide (`partialFailures: true`, ver syncValidators.syncPushSchema). Un
+ * móvil anterior no sabe leer `failures` y daría por subido lo que falló: para él, el primer
+ * fallo sigue lanzando el error y tumbando la petición, como antes.
  */
 export async function push(userId: number, body: SyncPushBody, rejected: SyncPushFailure[] = []): Promise<PushResult> {
   const idMappings: IdMapping[] = [];
@@ -216,6 +220,7 @@ export async function push(userId: number, body: SyncPushBody, rejected: SyncPus
       try {
         await apply(input);
       } catch (error) {
+        if (!body.partialFailures) throw error;
         const { status, message } = describeError(error);
         const type = typeof entityType === "function" ? entityType(input) : entityType;
         failures.push({ section, op, index, entityType: type, status, message, retryable: status >= 500 });
@@ -593,6 +598,8 @@ interface UpdateEnvelope {
   [key: string]: unknown;
 }
 interface SyncPushBody {
+  // Si el cliente sabe recibir un éxito parcial (ver push).
+  partialFailures?: boolean;
   events: { create: Items<CreateEnvelope>; update: Items<UpdateEnvelope> };
   eventExceptions: { upsert: Items<{ eventId: number; [key: string]: unknown }> };
   tasks: { create: Items<CreateEnvelope>; update: Items<UpdateEnvelope> };

@@ -22,6 +22,11 @@ describe("syncValidators", () => {
       expect(value.notes).toEqual({ create: [{ localId: "no-es-uuid", content: "x", otro: 1 }], update: [] });
     });
 
+    it("partialFailures es false salvo que el cliente lo pida, y validateSyncPushItems lo conserva", () => {
+      expect(validateSyncPushItems(envelope({})).body.partialFailures).toBe(false);
+      expect(validateSyncPushItems(envelope({ partialFailures: true })).body.partialFailures).toBe(true);
+    });
+
     it("rechaza un sobre mal formado (una sección que no es una lista)", () => {
       expect(syncPushSchema.validate({ notes: { create: "x" } }).error).toBeDefined();
       expect(syncPushSchema.validate({ deletes: [1] }).error).toBeDefined();

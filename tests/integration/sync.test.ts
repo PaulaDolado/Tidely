@@ -325,6 +325,23 @@ describe("Sync Endpoints", () => {
       expect(response.status).toBe(400);
     });
 
+    it("a un cliente que no pide partialFailures (móvil anterior) un elemento no válido le sigue rechazando todo el push", async () => {
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          tasks: {
+            create: [
+              { localId: "not-a-uuid", title: "x" },
+              { localId: "88888888-8888-8888-8888-888888888888", title: "Válida" },
+            ],
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(await prisma.task.count()).toBe(0);
+    });
+
     it("un elemento no válido o rechazado no impide subir los demás: vuelve en `failures` con su sección e índice", async () => {
       const otherUser = await request(app).post("/auth/register").send({
         username: "ajena",
@@ -339,6 +356,7 @@ describe("Sync Endpoints", () => {
         .post("/sync/push")
         .set(authed())
         .send({
+          partialFailures: true,
           tasks: {
             create: [
               { localId: "not-a-uuid", title: "Sin localId válido" },
