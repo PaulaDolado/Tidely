@@ -31,18 +31,18 @@ permissions:
 
 jobs:
   build-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: mobile/package-lock.json
 
       # React Native 0.86 (Expo SDK 57) necesita JDK 17 para compilar el proyecto Android.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -50,7 +50,7 @@ jobs:
       # Cachea dependencias de Gradle entre ejecuciones (equivalente al cache: "npm" de arriba,
       # pero para el build nativo) — sin esto, cada release volvería a descargar/compilar todo el
       # árbol de Gradle desde cero.
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Instalar dependencias
         working-directory: mobile
@@ -124,7 +124,7 @@ jobs:
       - name: Verificar qué arquitecturas trae cada .apk
         run: for f in dist-apks/*.apk; do echo "== $f =="; unzip -l "$f" | grep '^.*lib/' | awk '{print $4}' | cut -d/ -f2 | sort -u; done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-apks
           path: dist-apks/*.apk
@@ -132,9 +132,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -171,25 +171,25 @@ jobs:
           msi=$(find dashboard/src-tauri/target/release/bundle/msi -name "*.msi" | head -n1)
           cp "$msi" Tidely-Setup.msi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-msi
           path: Tidely-Setup.msi
 
   release:
     needs: [build-android, build-windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android-apks
           path: dist
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: windows-msi
           path: dist
@@ -213,7 +213,7 @@ jobs:
       # ".../releases/latest/download/..." sea estable entre versiones, ver el comentario de arriba
       # del todo.
       - name: Crear el Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.apk
