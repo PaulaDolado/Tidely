@@ -485,6 +485,17 @@ export interface PullResponse {
 export interface PushResult {
   idMappings: { entityType: string; localId: string; id: number }[];
   conflicts: { entityType: string; id: number }[];
+  // Elementos que el servidor no ha aplicado, por su posición en el cuerpo enviado (ver
+  // syncService.push en el backend). Opcional: un servidor anterior no lo manda.
+  failures?: {
+    section: string;
+    op: string;
+    index: number;
+    entityType: string;
+    status: number;
+    message: string;
+    retryable: boolean;
+  }[];
 }
 
 // --- Filas tal cual se guardan en SQLite local (ver db/schema.ts) ---

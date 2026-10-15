@@ -158,6 +158,14 @@ existiendo para el uso conectado desde escritorio.
   usuario sincronizando entre sus propios dispositivos, no colaborativos entre personas.
 - Un `delete` sobre algo ya borrado (sincronizado desde otro dispositivo) es idempotente —
   éxito, no error.
+- **Cada elemento se valida y se aplica por separado.** Si uno no es válido o el servidor lo
+  rechaza (pertenece a otro usuario, su padre ya no existe, falla la base de datos...), los demás
+  se aplican igual y la respuesta lo devuelve en `failures: [{ section, op, index, entityType,
+  status, message, retryable }]`. Aquí `index` es su posición en `body[section][op]` (o en
+  `deletes`), y `retryable` vale `true` si el error puede ser pasajero (`status` 500). El móvil
+  confirma solo lo aplicado; lo que falló se queda pendiente y vuelve a subir en el siguiente sync.
+  Solo responde `400` si el sobre no tiene la forma esperada (una sección que no es una lista, por
+  ejemplo).
 
 ## Metas (Goals)
 

@@ -128,7 +128,7 @@ import * as scheduleService from "../../../src/services/scheduleService";
 import * as calendarLegendService from "../../../src/services/calendarLegendService";
 import * as customPagesService from "../../../src/services/customPagesService";
 import * as syncService from "../../../src/services/syncService";
-import { NotFoundError, ForbiddenError } from "../../../src/utils/errorHandler";
+import { NotFoundError, ForbiddenError, ValidationError } from "../../../src/utils/errorHandler";
 
 const prismaMock = prisma as unknown as {
   event: { findMany: jest.Mock; findUnique: jest.Mock };
@@ -339,6 +339,70 @@ describe("syncService", () => {
     });
   });
 
+  describe("push — fallos por elemento", () => {
+    it("un elemento rechazado no impide aplicar los demás del lote, y se devuelve con su sección e índice", async () => {
+      (notesService.createNote as jest.Mock).mockRejectedValueOnce(new ValidationError("Nota demasiado larga")).mockResolvedValueOnce({ id: 21 });
+      (plannerService.createTask as jest.Mock).mockResolvedValue({ id: 30 });
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        notes: {
+          create: [
+            { localId: "nota-mala", content: "x" },
+            { localId: "nota-buena", content: "y" },
+          ],
+          update: [],
+        },
+        tasks: { create: [{ localId: "tarea", title: "T" }], update: [] },
+      });
+
+      expect(result.idMappings).toEqual([
+        { entityType: "task", localId: "tarea", id: 30 },
+        { entityType: "note", localId: "nota-buena", id: 21 },
+      ]);
+      expect(result.failures).toEqual([
+        { section: "notes", op: "create", index: 0, entityType: "note", status: 400, message: "Nota demasiado larga", retryable: false },
+      ]);
+    });
+
+    it("un error inesperado (p.ej. la base de datos) se marca como reintentable, sin filtrar el detalle interno", async () => {
+      prismaMock.task.findUnique.mockRejectedValue(new Error("connection terminated"));
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        tasks: { create: [], update: [{ id: 10, clientUpdatedAt: "2026-08-02T00:00:00.000Z", title: "X" }] },
+      });
+
+      expect(result.failures).toEqual([
+        { section: "tasks", op: "update", index: 0, entityType: "task", status: 500, message: "Error interno del servidor", retryable: true },
+      ]);
+    });
+
+    it("se salta los elementos que llegan como null (rechazados al validar) y devuelve sus fallos junto a los demás", async () => {
+      (notesService.createNote as jest.Mock).mockResolvedValue({ id: 5 });
+      const rejected = [{ section: "notes", op: "create", index: 0, entityType: "note", status: 400, message: "inválida", retryable: false }];
+
+      const result = await syncService.push(1, { ...emptyBody(), notes: { create: [null, { localId: "ok", content: "z" }], update: [] } }, rejected);
+
+      expect(notesService.createNote).toHaveBeenCalledTimes(1);
+      expect(result.idMappings).toEqual([{ entityType: "note", localId: "ok", id: 5 }]);
+      expect(result.failures).toEqual(rejected);
+    });
+
+    it("si falla el segundo paso de un alta (completar la subtarea), el elemento cuenta como creado: reenviarlo lo duplicaría", async () => {
+      (plannerService.addSubtask as jest.Mock).mockResolvedValue({ id: 7 });
+      (plannerService.updateSubtask as jest.Mock).mockRejectedValue(new Error("timeout"));
+
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        subtasks: { create: [{ localId: "sub", taskId: 3, title: "Sub", completed: true }], update: [] },
+      });
+
+      expect(result.idMappings).toEqual([{ entityType: "subtask", localId: "sub", id: 7 }]);
+      expect(result.failures).toEqual([]);
+    });
+  });
+
   describe("push — HabitLogs", () => {
     it("crea el registro solo si no existe ya para ese día (alta idempotente)", async () => {
       prismaMock.habitLog.findUnique.mockResolvedValue(null);
@@ -391,10 +455,21 @@ describe("syncService", () => {
       expect(result).toBeDefined(); // no lanzó
     });
 
-    it("propaga cualquier otro error al borrar (p.ej. ForbiddenError)", async () => {
-      (plannerService.deleteTask as jest.Mock).mockRejectedValue(new ForbiddenError("No autorizado"));
+    it("cualquier otro error al borrar (p.ej. ForbiddenError) cuenta como fallo de ese borrado, sin tumbar el push", async () => {
+      (plannerService.deleteTask as jest.Mock).mockRejectedValueOnce(new ForbiddenError("No autorizado"));
 
-      await expect(syncService.push(1, { ...emptyBody(), deletes: [{ entityType: "task", id: 1 }] })).rejects.toThrow(ForbiddenError);
+      const result = await syncService.push(1, {
+        ...emptyBody(),
+        deletes: [
+          { entityType: "task", id: 1 },
+          { entityType: "note", id: 2 },
+        ],
+      });
+
+      expect(notesService.deleteNote).toHaveBeenCalledWith(1, 2);
+      expect(result.failures).toEqual([
+        { section: "deletes", op: "delete", index: 0, entityType: "task", status: 403, message: "No autorizado", retryable: false },
+      ]);
     });
 
     it("desmarca un habitLog al borrarlo solo si existía", async () => {

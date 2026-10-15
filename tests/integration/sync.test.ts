@@ -316,13 +316,50 @@ describe("Sync Endpoints", () => {
       expect(pull.body.tasks[0]).toMatchObject({ id: taskId, projectId: null, compact: false });
     });
 
-    it("rechaza un push mal formado (falta un campo requerido)", async () => {
+    it("rechaza un push cuyo sobre está mal formado (una sección que no es una lista)", async () => {
       const response = await request(app)
         .post("/sync/push")
         .set(authed())
-        .send({ tasks: { create: [{ localId: "not-a-uuid", title: "x" }] } });
+        .send({ tasks: { create: "x" } });
 
       expect(response.status).toBe(400);
+    });
+
+    it("un elemento no válido o rechazado no impide subir los demás: vuelve en `failures` con su sección e índice", async () => {
+      const otherUser = await request(app).post("/auth/register").send({
+        username: "ajena",
+        email: "ajena@example.com",
+        password: "Password123",
+        name: "Ajena",
+        timezone: "UTC",
+      });
+      const foreignNote = await request(app).post("/notes").set({ Authorization: `Bearer ${otherUser.body.token}` }).send({ content: "No es tuya" });
+
+      const response = await request(app)
+        .post("/sync/push")
+        .set(authed())
+        .send({
+          tasks: {
+            create: [
+              { localId: "not-a-uuid", title: "Sin localId válido" },
+              { localId: "66666666-6666-6666-6666-666666666666", title: "Buena" },
+            ],
+          },
+          notes: { create: [{ localId: "77777777-7777-7777-7777-777777777777", content: "También buena" }] },
+          deletes: [{ entityType: "note", id: foreignNote.body.id }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.idMappings.map((m: { localId: string }) => m.localId).sort()).toEqual([
+        "66666666-6666-6666-6666-666666666666",
+        "77777777-7777-7777-7777-777777777777",
+      ]);
+      expect(response.body.failures).toEqual([
+        expect.objectContaining({ section: "tasks", op: "create", index: 0, entityType: "task", status: 400, retryable: false }),
+        expect.objectContaining({ section: "deletes", op: "delete", index: 0, entityType: "note", status: 403, retryable: false }),
+      ]);
+      expect(await prisma.task.count({ where: { title: "Buena" } })).toBe(1);
+      expect(await prisma.note.findUnique({ where: { id: foreignNote.body.id } })).not.toBeNull();
     });
   });
 

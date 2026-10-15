@@ -139,8 +139,9 @@ import { PushResult } from "../types";
 
 /** Sube todo lo pendiente en un único lote (mismo contrato que `syncService.push` en el backend
  * — ver API.md). Eventos/tareas/subtareas siguen el mismo patrón que las notas: creadas offline
- * (`localId` uuid) o editadas (`id` de servidor + `clientUpdatedAt` para el last-write-wins). */
-export async function pushToServer(allowFollowUp = true): Promise<void> {
+ * (`localId` uuid) o editadas (`id` de servidor + `clientUpdatedAt` para el last-write-wins).
+ * Devuelve cuántos cambios ha rechazado el servidor: siguen pendientes en local. */
+export async function pushToServer(allowFollowUp = true): Promise<number> {
   const [
     newEvents,
     updatedEvents,
@@ -305,7 +306,7 @@ export async function pushToServer(allowFollowUp = true): Promise<void> {
     newCustomPages.length ||
     updatedCustomPages.length ||
     deletedCustomPages.length;
-  if (!hasChanges) return;
+  if (!hasChanges) return 0;
 
   const habitLogCreates = pendingLogs.filter((l) => l.pending === "create").map((l) => ({ habitId: l.habitId, date: l.date }));
   const habitLogDeletes = pendingLogs
@@ -315,6 +316,69 @@ export async function pushToServer(allowFollowUp = true): Promise<void> {
   // Solo tareas/subtareas ya sincronizadas (id numérico real) pueden borrarse en el servidor —
   // una fila `synced = 0` nunca llegó a existir ahí, así que su borrado ya se resolvió sin más en
   // `deleteEventLocal`/`deleteTaskLocal`/`deleteSubtaskLocal` (nunca llega hasta aquí).
+  // Cada borrado va junto a lo que hay que hacer en local cuando el servidor lo confirma: su
+  // posición en `body.deletes` es la que usa el servidor para decir cuáles han fallado.
+  const deleteOps: { payload: Record<string, unknown>; confirm: () => Promise<unknown> }[] = [
+    ...deletedEvents
+      .filter((e) => e.synced === 1)
+      .map((e) => ({ payload: { entityType: "event", id: Number(e.id) }, confirm: () => deleteEventRow(e.id) })),
+    ...deletedTasks
+      .filter((t) => t.synced === 1)
+      .map((t) => ({ payload: { entityType: "task", id: Number(t.id) }, confirm: () => deleteTaskRow(t.id) })),
+    ...deletedSubtasks.filter((s) => s.synced === 1).map((s) => ({
+      payload: { entityType: "subtask", id: Number(s.id), taskId: Number(s.taskId) },
+      confirm: () => deleteSubtaskRow(s.id),
+    })),
+    ...deletedNotes
+      .filter((n) => n.synced === 1)
+      .map((n) => ({ payload: { entityType: "note", id: Number(n.id) }, confirm: () => deleteNoteRow(n.id) })),
+    ...habitLogDeletes.map((l) => ({ payload: l, confirm: () => confirmHabitLogDeleted(l.habitId, l.date) })),
+    ...deletedHabits.map((h) => ({ payload: { entityType: "habit", id: h.id }, confirm: () => deleteHabitRow(h.id) })),
+    // "Restaurar horario original" — se identifica por (eventId, originalStartTime).
+    ...pendingExceptionDeletes.map((x) => ({
+      payload: { entityType: "eventException", eventId: Number(x.eventId), originalStartTime: x.originalStartTime },
+      confirm: () => confirmExceptionDeleted(x.eventId, x.originalStartTime),
+    })),
+    ...deletedTransactions
+      .filter((t) => t.synced === 1)
+      .map((t) => ({ payload: { entityType: "transaction", id: Number(t.id) }, confirm: () => deleteTransactionRow(t.id) })),
+    ...deletedSavingsGoals
+      .filter((g) => g.synced === 1)
+      .map((g) => ({ payload: { entityType: "savingsGoal", id: Number(g.id) }, confirm: () => deleteSavingsGoalRow(g.id) })),
+    ...deletedGoals
+      .filter((g) => g.synced === 1)
+      .map((g) => ({ payload: { entityType: "goal", id: Number(g.id) }, confirm: () => deleteGoalRow(g.id) })),
+    ...deletedProgress.filter((p) => p.synced === 1).map((p) => ({
+      payload: { entityType: "goalProgress", id: Number(p.id), goalId: Number(p.goalId) },
+      confirm: () => deleteProgressRow(p.id),
+    })),
+    ...deletedProjects
+      .filter((p) => p.synced === 1)
+      .map((p) => ({ payload: { entityType: "project", id: Number(p.id) }, confirm: () => deleteProjectRow(p.id) })),
+    ...deletedProjectTasks.filter((t) => t.synced === 1).map((t) => ({
+      payload: { entityType: "projectTask", id: Number(t.id), projectId: Number(t.projectId) },
+      confirm: () => deleteProjectTaskRow(t.id),
+    })),
+    ...deletedProjectPages.filter((p) => p.synced === 1).map((p) => ({
+      payload: { entityType: "projectPage", id: Number(p.id), projectId: Number(p.projectId) },
+      confirm: () => deleteProjectPageRow(p.id),
+    })),
+    ...deletedSchedules
+      .filter((s) => s.synced === 1)
+      .map((s) => ({ payload: { entityType: "schedule", id: Number(s.id) }, confirm: () => deleteScheduleDbRow(s.id) })),
+    ...deletedRows.filter((r) => r.synced === 1).map((r) => ({
+      payload: { entityType: "scheduleRow", id: Number(r.id), scheduleId: Number(r.scheduleId) },
+      confirm: () => deleteRowDbRow(r.id),
+    })),
+    ...deletedCategories
+      .filter((c) => c.synced === 1)
+      .map((c) => ({ payload: { entityType: "calendarLegendCategory", id: Number(c.id) }, confirm: () => deleteCategoryRow(c.id) })),
+    ...pendingMarkDeletes.map((m) => ({ payload: { entityType: "calendarDayMark", date: m.date }, confirm: () => confirmMarkDeleted(m.date) })),
+    ...deletedCustomPages
+      .filter((p) => p.synced === 1)
+      .map((p) => ({ payload: { entityType: "customPage", id: Number(p.id) }, confirm: () => deleteCustomPageRow(p.id) })),
+  ];
+
   const body = {
     events: {
       create: newEvents.map((e) => {
@@ -601,88 +665,47 @@ export async function pushToServer(allowFollowUp = true): Promise<void> {
         order: p.order,
       })),
     },
-    deletes: [
-      ...deletedEvents.filter((e) => e.synced === 1).map((e) => ({ entityType: "event" as const, id: Number(e.id) })),
-      ...deletedTasks.filter((t) => t.synced === 1).map((t) => ({ entityType: "task" as const, id: Number(t.id) })),
-      ...deletedSubtasks
-        .filter((s) => s.synced === 1)
-        .map((s) => ({ entityType: "subtask" as const, id: Number(s.id), taskId: Number(s.taskId) })),
-      ...deletedNotes.filter((n) => n.synced === 1).map((n) => ({ entityType: "note" as const, id: Number(n.id) })),
-      ...habitLogDeletes,
-      ...deletedHabits.map((h) => ({ entityType: "habit" as const, id: h.id })),
-      // "Restaurar horario original" — se identifica por (eventId, originalStartTime).
-      ...pendingExceptionDeletes.map((x) => ({
-        entityType: "eventException" as const,
-        eventId: Number(x.eventId),
-        originalStartTime: x.originalStartTime,
-      })),
-      ...deletedTransactions.filter((t) => t.synced === 1).map((t) => ({ entityType: "transaction" as const, id: Number(t.id) })),
-      ...deletedSavingsGoals.filter((g) => g.synced === 1).map((g) => ({ entityType: "savingsGoal" as const, id: Number(g.id) })),
-      ...deletedGoals.filter((g) => g.synced === 1).map((g) => ({ entityType: "goal" as const, id: Number(g.id) })),
-      ...deletedProgress
-        .filter((p) => p.synced === 1)
-        .map((p) => ({ entityType: "goalProgress" as const, id: Number(p.id), goalId: Number(p.goalId) })),
-      ...deletedProjects.filter((p) => p.synced === 1).map((p) => ({ entityType: "project" as const, id: Number(p.id) })),
-      ...deletedProjectTasks
-        .filter((t) => t.synced === 1)
-        .map((t) => ({ entityType: "projectTask" as const, id: Number(t.id), projectId: Number(t.projectId) })),
-      ...deletedProjectPages
-        .filter((p) => p.synced === 1)
-        .map((p) => ({ entityType: "projectPage" as const, id: Number(p.id), projectId: Number(p.projectId) })),
-      ...deletedSchedules.filter((s) => s.synced === 1).map((s) => ({ entityType: "schedule" as const, id: Number(s.id) })),
-      ...deletedRows
-        .filter((r) => r.synced === 1)
-        .map((r) => ({ entityType: "scheduleRow" as const, id: Number(r.id), scheduleId: Number(r.scheduleId) })),
-      ...deletedCategories
-        .filter((c) => c.synced === 1)
-        .map((c) => ({ entityType: "calendarLegendCategory" as const, id: Number(c.id) })),
-      ...pendingMarkDeletes.map((m) => ({ entityType: "calendarDayMark" as const, date: m.date })),
-      ...deletedCustomPages.filter((p) => p.synced === 1).map((p) => ({ entityType: "customPage" as const, id: Number(p.id) })),
-    ],
+    deletes: deleteOps.map((d) => d.payload),
   };
 
   const result = await api.post<PushResult>("/sync/push", body);
 
+  // Lo que el servidor no ha aplicado (no válido, rechazado o un error pasajero) se queda pendiente
+  // en SQLite y se reintenta en el siguiente sync: solo se confirma el resto. Cada fallo dice su
+  // sección, operación e índice en el cuerpo enviado. Un servidor anterior a este cambio no manda
+  // `failures` (con él, cualquier fallo hacía fallar la petición entera y no llegaba hasta aquí).
+  const failed = new Set((result.failures ?? []).map((f) => `${f.section}.${f.op}.${f.index}`));
+  const applied =
+    (section: string, op: string) =>
+    (_item: unknown, index: number): boolean =>
+      !failed.has(`${section}.${op}.${index}`);
+
   // Nada que hacer con `conflicts` aquí: la fila local ya se descartó en el servidor, y el
   // siguiente pull trae de vuelta la versión autoritativa — no hace falta reconciliar a mano.
-  await Promise.all(updatedEvents.map((e) => clearEventPendingOp(e.id)));
-  await Promise.all(deletedEvents.filter((e) => e.synced === 1).map((e) => deleteEventRow(e.id)));
-  await Promise.all(updatedTasks.map((t) => clearTaskPendingOp(t.id)));
-  await Promise.all(deletedTasks.filter((t) => t.synced === 1).map((t) => deleteTaskRow(t.id)));
-  await Promise.all(updatedSubtasks.map((s) => clearSubtaskPendingOp(s.id)));
-  await Promise.all(deletedSubtasks.filter((s) => s.synced === 1).map((s) => deleteSubtaskRow(s.id)));
-  await Promise.all(habitLogCreates.map((l) => confirmHabitLogCreated(l.habitId, l.date)));
-  await Promise.all(habitLogDeletes.map((l) => confirmHabitLogDeleted(l.habitId, l.date)));
-  await Promise.all(updatedHabits.map((h) => clearHabitPendingOp(h.id)));
-  await Promise.all(deletedHabits.map((h) => deleteHabitRow(h.id)));
-  await Promise.all(pendingExceptionUpserts.map((x) => confirmExceptionUpserted(x.eventId, x.originalStartTime)));
-  await Promise.all(pendingExceptionDeletes.map((x) => confirmExceptionDeleted(x.eventId, x.originalStartTime)));
-  await Promise.all(updatedNotes.map((n) => clearNotePendingOp(n.id)));
-  await Promise.all(deletedNotes.filter((n) => n.synced === 1).map((n) => deleteNoteRow(n.id)));
-  await Promise.all(updatedTransactions.map((t) => clearTransactionPendingOp(t.id)));
-  await Promise.all(deletedTransactions.filter((t) => t.synced === 1).map((t) => deleteTransactionRow(t.id)));
-  await Promise.all(updatedSavingsGoals.map((g) => clearSavingsGoalPendingOp(g.id)));
-  await Promise.all(deletedSavingsGoals.filter((g) => g.synced === 1).map((g) => deleteSavingsGoalRow(g.id)));
-  await Promise.all(updatedGoals.map((g) => clearGoalPendingOp(g.id)));
-  await Promise.all(deletedGoals.filter((g) => g.synced === 1).map((g) => deleteGoalRow(g.id)));
-  await Promise.all(updatedProgress.map((p) => clearProgressPendingOp(p.id)));
-  await Promise.all(deletedProgress.filter((p) => p.synced === 1).map((p) => deleteProgressRow(p.id)));
-  await Promise.all(updatedProjects.map((p) => clearProjectPendingOp(p.id)));
-  await Promise.all(deletedProjects.filter((p) => p.synced === 1).map((p) => deleteProjectRow(p.id)));
-  await Promise.all(updatedProjectTasks.map((t) => clearProjectTaskPendingOp(t.id)));
-  await Promise.all(deletedProjectTasks.filter((t) => t.synced === 1).map((t) => deleteProjectTaskRow(t.id)));
-  await Promise.all(updatedProjectPages.map((p) => clearProjectPagePendingOp(p.id)));
-  await Promise.all(deletedProjectPages.filter((p) => p.synced === 1).map((p) => deleteProjectPageRow(p.id)));
-  await Promise.all(updatedSchedules.map((s) => clearSchedulePendingOp(s.id)));
-  await Promise.all(deletedSchedules.filter((s) => s.synced === 1).map((s) => deleteScheduleDbRow(s.id)));
-  await Promise.all(updatedRows.map((r) => clearRowPendingOp(r.id)));
-  await Promise.all(deletedRows.filter((r) => r.synced === 1).map((r) => deleteRowDbRow(r.id)));
-  await Promise.all(updatedCategories.map((c) => clearCategoryPendingOp(c.id)));
-  await Promise.all(deletedCategories.filter((c) => c.synced === 1).map((c) => deleteCategoryRow(c.id)));
-  await Promise.all(pendingMarkUpserts.map((m) => confirmMarkUpserted(m.date)));
-  await Promise.all(pendingMarkDeletes.map((m) => confirmMarkDeleted(m.date)));
-  await Promise.all(updatedCustomPages.map((p) => clearCustomPagePendingOp(p.id)));
-  await Promise.all(deletedCustomPages.filter((p) => p.synced === 1).map((p) => deleteCustomPageRow(p.id)));
+  // Las altas no se confirman aquí sino con `idMappings` (más abajo): una que falló no tiene
+  // mapeo y sigue con `synced = 0`, así que vuelve a subir sola.
+  await Promise.all(updatedEvents.filter(applied("events", "update")).map((e) => clearEventPendingOp(e.id)));
+  await Promise.all(updatedTasks.filter(applied("tasks", "update")).map((t) => clearTaskPendingOp(t.id)));
+  await Promise.all(updatedSubtasks.filter(applied("subtasks", "update")).map((s) => clearSubtaskPendingOp(s.id)));
+  await Promise.all(habitLogCreates.filter(applied("habitLogs", "create")).map((l) => confirmHabitLogCreated(l.habitId, l.date)));
+  await Promise.all(updatedHabits.filter(applied("habits", "update")).map((h) => clearHabitPendingOp(h.id)));
+  await Promise.all(
+    pendingExceptionUpserts.filter(applied("eventExceptions", "upsert")).map((x) => confirmExceptionUpserted(x.eventId, x.originalStartTime))
+  );
+  await Promise.all(updatedNotes.filter(applied("notes", "update")).map((n) => clearNotePendingOp(n.id)));
+  await Promise.all(updatedTransactions.filter(applied("transactions", "update")).map((t) => clearTransactionPendingOp(t.id)));
+  await Promise.all(updatedSavingsGoals.filter(applied("savingsGoals", "update")).map((g) => clearSavingsGoalPendingOp(g.id)));
+  await Promise.all(updatedGoals.filter(applied("goals", "update")).map((g) => clearGoalPendingOp(g.id)));
+  await Promise.all(updatedProgress.filter(applied("goalProgress", "update")).map((p) => clearProgressPendingOp(p.id)));
+  await Promise.all(updatedProjects.filter(applied("projects", "update")).map((p) => clearProjectPendingOp(p.id)));
+  await Promise.all(updatedProjectTasks.filter(applied("projectTasks", "update")).map((t) => clearProjectTaskPendingOp(t.id)));
+  await Promise.all(updatedProjectPages.filter(applied("projectPages", "update")).map((p) => clearProjectPagePendingOp(p.id)));
+  await Promise.all(updatedSchedules.filter(applied("schedules", "update")).map((s) => clearSchedulePendingOp(s.id)));
+  await Promise.all(updatedRows.filter(applied("scheduleRows", "update")).map((r) => clearRowPendingOp(r.id)));
+  await Promise.all(updatedCategories.filter(applied("calendarLegendCategories", "update")).map((c) => clearCategoryPendingOp(c.id)));
+  await Promise.all(pendingMarkUpserts.filter(applied("calendarDayMarks", "upsert")).map((m) => confirmMarkUpserted(m.date)));
+  await Promise.all(updatedCustomPages.filter(applied("customPages", "update")).map((p) => clearCustomPagePendingOp(p.id)));
+  await Promise.all(deleteOps.filter(applied("deletes", "delete")).map((d) => d.confirm()));
 
   for (const mapping of result.idMappings) {
     if (mapping.entityType === "note") await markNoteSynced(mapping.localId, mapping.id);
@@ -707,5 +730,7 @@ export async function pushToServer(allowFollowUp = true): Promise<void> {
   // de un evento…) esperaba a conocer el id de servidor de su padre: ahora que `markXSynced` lo ha
   // reasignado, se sube en una segunda pasada del mismo ciclo en vez de esperar al siguiente sync.
   // Solo una vez (`allowFollowUp`): si esa segunda pasada ya no crea nada, no vuelve a repetirse.
-  if (allowFollowUp && result.idMappings.length > 0) await pushToServer(false);
+  // Lo que falló en la primera vuelve a intentarse en ella, así que su recuento es el que vale.
+  if (allowFollowUp && result.idMappings.length > 0) return pushToServer(false);
+  return failed.size;
 }

@@ -1,12 +1,21 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import * as syncController from "../controllers/syncController";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { validate } from "../middlewares/validation";
-import { syncPullQuerySchema, syncPushSchema } from "../validators/syncValidators";
+import { syncPullQuerySchema, syncPushSchema, validateSyncPushItems } from "../validators/syncValidators";
 
 const router = Router();
 
 router.use(authMiddleware);
+
+// Tras comprobar la forma del sobre, valida cada elemento por separado: los que no pasan quedan como
+// `null` en el cuerpo y su fallo se le pasa al servicio (ver syncValidators.validateSyncPushItems).
+function validatePushItems(req: Request, res: Response, next: NextFunction): void {
+  const { body, failures } = validateSyncPushItems(req.body);
+  req.body = body;
+  res.locals.syncRejected = failures;
+  next();
+}
 
 /**
  * @openapi
@@ -33,8 +42,9 @@ router.get("/pull", validate(syncPullQuerySchema, "query"), syncController.pull)
  *     summary: Sube cambios hechos offline (creados, editados, borrados) y reconcilia con el servidor
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: Mapeo de localId→id para lo creado, y conflictos (last-write-wins) para lo editado }
+ *       200: { description: "Mapeo de localId→id para lo creado, conflictos (last-write-wins) para lo editado y `failures`: los elementos que no se han aplicado (no válidos o rechazados), con su sección e índice. Un elemento rechazado no impide aplicar los demás." }
+ *       400: { description: El sobre no tiene la forma esperada (una sección que no es una lista, por ejemplo) }
  */
-router.post("/push", validate(syncPushSchema), syncController.push);
+router.post("/push", validate(syncPushSchema), validatePushItems, syncController.push);
 
 export default router;

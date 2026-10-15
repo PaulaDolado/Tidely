@@ -5,6 +5,8 @@ export interface SyncResult {
   success: boolean;
   error?: string;
   at: string;
+  // Cambios locales que el servidor ha rechazado en este sync: siguen pendientes y se reintentan.
+  rejected?: number;
 }
 
 // Cada pantalla (Hoy/Agenda/Planificador) dispara su propio `sync()` al montar/enfocar, y
@@ -31,9 +33,9 @@ export function runSync(): Promise<SyncResult> {
 
 async function runSyncNow(): Promise<SyncResult> {
   try {
-    await pushToServer();
+    const rejected = await pushToServer();
     await pullFromServer();
-    return { success: true, at: new Date().toISOString() };
+    return { success: true, at: new Date().toISOString(), rejected };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Error de sincronización", at: new Date().toISOString() };
   }
