@@ -94,6 +94,8 @@ export function HoyScreen() {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Cambios que el servidor rechazó en el último sync (siguen pendientes en el móvil, ver sync/push.ts).
+  const [syncRejected, setSyncRejected] = useState(0);
   // null = todavía no se ha podido pedir (recién abierto, o sin conexión) — a diferencia de
   // `habits`/`tasks`/etc. esto NO sale de SQLite: es un cálculo histórico real (ver
   // api/today.ts), así que sin red simplemente no se muestra el banner en vez de enseñar un
@@ -130,6 +132,7 @@ export function HoyScreen() {
     setSyncing(false);
     if (result.success) {
       setLastSyncedAt(result.at);
+      setSyncRejected(result.rejected ?? 0);
       await reload();
     } else {
       setSyncError(result.error ?? "No se pudo sincronizar");
@@ -259,7 +262,8 @@ export function HoyScreen() {
           {syncing
             ? "Sincronizando…"
             : lastSyncedAt
-              ? `Última sync: ${formatTime(new Date(lastSyncedAt))}`
+              ? `Última sync: ${formatTime(new Date(lastSyncedAt))}` +
+                (syncRejected > 0 ? ` · ${syncRejected} ${syncRejected === 1 ? "cambio sin subir" : "cambios sin subir"}` : "")
               : "Sin sincronizar aún"}
         </Text>
         <Pressable
