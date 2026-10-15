@@ -158,7 +158,9 @@ existiendo para el uso conectado desde escritorio.
   usuario sincronizando entre sus propios dispositivos, no colaborativos entre personas.
 - Un `delete` sobre algo ya borrado (sincronizado desde otro dispositivo) es idempotente —
   éxito, no error.
-- **Cada elemento se valida y se aplica por separado.** Si uno no es válido o el servidor lo
+- **Con `partialFailures: true` en el cuerpo, cada elemento se valida y se aplica por separado.**
+  Sin ese campo (versiones del móvil anteriores, que no saben leer `failures`), el primer fallo
+  sigue rechazando la petición entera, como antes. Si uno no es válido o el servidor lo
   rechaza (pertenece a otro usuario, su padre ya no existe, falla la base de datos...), los demás
   se aplican igual y la respuesta lo devuelve en `failures: [{ section, op, index, entityType,
   status, message, retryable }]`. Aquí `index` es su posición en `body[section][op]` (o en
