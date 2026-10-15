@@ -4,6 +4,8 @@ jest.mock("../../../src/config/database", () => ({
     eventException: { findMany: jest.fn() },
     goal: { findMany: jest.fn() },
     task: { findMany: jest.fn() },
+    transaction: { findMany: jest.fn() },
+    budgetCategory: { findMany: jest.fn() },
     notification: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -17,8 +19,13 @@ jest.mock("../../../src/config/database", () => ({
   },
 }));
 
+// El cálculo del presupuesto ya tiene sus propios tests (budgetService.test.ts): aquí solo importa qué hace
+// createBudgetAlerts con su resultado.
+jest.mock("../../../src/services/budgetService", () => ({ getBudgetSummary: jest.fn() }));
+
 import { prisma } from "../../../src/config/database";
 import * as notificationService from "../../../src/services/notificationService";
+import { getBudgetSummary } from "../../../src/services/budgetService";
 import { ForbiddenError, NotFoundError } from "../../../src/utils/errorHandler";
 
 const prismaMock = prisma as unknown as {
@@ -26,6 +33,8 @@ const prismaMock = prisma as unknown as {
   eventException: { findMany: jest.Mock };
   goal: { findMany: jest.Mock };
   task: { findMany: jest.Mock };
+  transaction: { findMany: jest.Mock };
+  budgetCategory: { findMany: jest.Mock };
   notification: {
     findMany: jest.Mock;
     findUnique: jest.Mock;
@@ -399,6 +408,61 @@ describe("notificationService", () => {
       const result = await notificationService.markAsRead(1, 1);
 
       expect(result.read).toBe(true);
+    });
+  });
+  describe("createBudgetAlerts", () => {
+    const now = new Date(2026, 9, 15, 12, 0, 0); // 15 de octubre de 2026, hora local
+    const monthStart = new Date(2026, 9, 1);
+    const summaryMock = getBudgetSummary as jest.Mock;
+
+    function category(id: number, name: string, budget: number, spent: number) {
+      return { id, name, color: "primary", percent: 10, order: id, budget, spent };
+    }
+
+    it("no calcula nada si nadie ha tocado sus finanzas en los últimos minutos", async () => {
+      prismaMock.transaction.findMany.mockResolvedValue([]);
+      prismaMock.budgetCategory.findMany.mockResolvedValue([]);
+
+      expect(await notificationService.createBudgetAlerts(now)).toBe(0);
+      expect(summaryMock).not.toHaveBeenCalled();
+      expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { updatedAt: { gte: new Date(now.getTime() - 15 * 60000) } }, distinct: ["userId"] })
+      );
+    });
+
+    it("avisa de cada categoría que se pasa de su máximo en el mes en curso, una vez por usuario aunque haya tocado movimientos y categorías", async () => {
+      prismaMock.transaction.findMany.mockResolvedValue([{ userId: 3 }]);
+      prismaMock.budgetCategory.findMany.mockResolvedValue([{ userId: 3 }]);
+      summaryMock.mockResolvedValue({
+        categories: [category(1, "Comida", 200, 230), category(2, "Casa", 600, 600), category(3, "Otro", 0, 40)],
+      });
+      prismaMock.notification.findMany.mockResolvedValue([]);
+
+      const created = await notificationService.createBudgetAlerts(now);
+
+      expect(created).toBe(1);
+      expect(summaryMock).toHaveBeenCalledTimes(1);
+      expect(summaryMock).toHaveBeenCalledWith(3, 10, 2026);
+      const data = prismaMock.notification.createMany.mock.calls[0][0].data;
+      expect(data).toEqual([
+        expect.objectContaining({ userId: 3, type: "budget_exceeded", title: "Presupuesto superado", relatedId: 1, occurrenceAt: monthStart }),
+      ]);
+      // Gastar justo el máximo (Casa) no es pasarse; una categoría con máximo 0 (Otro) no avisa.
+      expect(data[0].message).toContain('"Comida"');
+      expect(data[0].message).toContain("(115 %)");
+    });
+
+    it("no repite el aviso de una categoría que ya avisó este mes, se haya leído o no", async () => {
+      prismaMock.transaction.findMany.mockResolvedValue([{ userId: 3 }]);
+      prismaMock.budgetCategory.findMany.mockResolvedValue([]);
+      summaryMock.mockResolvedValue({ categories: [category(1, "Comida", 200, 250)] });
+      prismaMock.notification.findMany.mockResolvedValue([{ relatedId: 1 }]);
+
+      expect(await notificationService.createBudgetAlerts(now)).toBe(0);
+      expect(prismaMock.notification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { type: "budget_exceeded", relatedId: { in: [1] }, occurrenceAt: monthStart } })
+      );
+      expect(prismaMock.notification.createMany).not.toHaveBeenCalled();
     });
   });
 });

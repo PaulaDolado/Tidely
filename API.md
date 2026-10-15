@@ -244,7 +244,7 @@ Una meta que pasa su `periodEnd` sin completarse queda `expired=true` automátic
 | PUT | `/notifications/read-all` | JWT | Marca todas como leídas |
 | DELETE | `/notifications/:id` | JWT | Elimina |
 
-Las crean solo los schedulers (`event_reminder`, `goal_at_risk`, `task_due`), nunca el usuario directamente — no hay `POST /notifications`.
+Las crean solo los schedulers (`event_reminder`, `goal_at_risk`, `task_due`, `budget_exceeded`) y las invitaciones a eventos (`event_invitation`), nunca el usuario directamente — no hay `POST /notifications`.
 
 ## Otras rutas
 

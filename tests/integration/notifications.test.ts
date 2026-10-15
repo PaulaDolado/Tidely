@@ -1,7 +1,7 @@
 import request from "supertest";
 import { app } from "../../src/app";
 import { prisma } from "../../src/config/database";
-import { createEventReminders, createGoalRiskAlerts } from "../../src/services/notificationService";
+import { createBudgetAlerts, createEventReminders, createGoalRiskAlerts } from "../../src/services/notificationService";
 
 describe("Notifications Endpoints", () => {
   let token: string;
@@ -113,6 +113,28 @@ describe("Notifications Endpoints", () => {
 
       const response = await request(app).get("/notifications").set(authed());
       expect(response.body.notifications.some((n: { type: string }) => n.type === "goal_at_risk")).toBe(true);
+    });
+  });
+
+  describe("Presupuesto superado (vía createBudgetAlerts)", () => {
+    it("avisa una sola vez cuando un gasto del mes pasa a una categoría por encima de su máximo", async () => {
+      // Las categorías por defecto del alta: Comida es el 10% de la nómina → máximo 100 €.
+      const date = new Date().toISOString();
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "income", amount: 1000, category: "Nómina", date });
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "expense", amount: 90, category: "Comida", date });
+
+      expect(await createBudgetAlerts()).toBe(0); // 90 de 100: aún no se ha pasado
+
+      await request(app).post("/finance/transactions").set(authed()).send({ type: "expense", amount: 40, category: "Comida", date });
+      expect(await createBudgetAlerts()).toBe(1);
+      expect(await createBudgetAlerts()).toBe(0); // ya avisó este mes
+
+      const response = await request(app).get("/notifications").set(authed());
+      const alerts = response.body.notifications.filter((n: { type: string }) => n.type === "budget_exceeded");
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0].title).toBe("Presupuesto superado");
+      expect(alerts[0].message).toContain('"Comida"');
+      expect(alerts[0].message).toContain("(130 %)");
     });
   });
 

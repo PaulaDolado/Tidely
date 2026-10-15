@@ -4,7 +4,7 @@ import { api } from "./client";
 // notificationService.ts) — notificaciones solo dentro de la app (no hay push del sistema).
 export interface AppNotification {
   id: number;
-  type: "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation";
+  type: "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation" | "budget_exceeded";
   title: string;
   message: string;
   relatedId: number | null;

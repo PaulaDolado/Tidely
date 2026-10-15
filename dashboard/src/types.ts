@@ -427,7 +427,7 @@ export interface ProjectPage {
 
 export interface Notification {
   id: number;
-  type: "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation";
+  type: "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation" | "budget_exceeded";
   title: string;
   message: string;
   relatedId: number | null;
