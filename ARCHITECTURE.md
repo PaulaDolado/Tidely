@@ -62,7 +62,7 @@ Dos cron jobs (`node-cron`, in-process — no hay cola externa tipo Redis/BullMQ
 
 | Job | Frecuencia | Qué hace |
 |---|---|---|
-| `notificationScheduler` | cada 5 min | `event_reminder` (evento en ~30 min) + `goal_at_risk` (meta que no llegaría a tiempo) |
+| `notificationScheduler` | cada 5 min | `event_reminder` (evento en ~30 min) + `goal_at_risk` (meta que no llegaría a tiempo) + `task_due` (tarea vencida o a punto de vencer) + `budget_exceeded` (categoría del presupuesto que se pasa de su máximo en el mes; como mucho un aviso por categoría y mes) |
 | `goalExpiryScheduler` | cada hora | archiva metas con `periodEnd` pasado (`expired=true`) y crea la del siguiente periodo si `autoRenew` |
 
 Ambos son **idempotentes** por diseño: correr el mismo check dos veces no duplica notificaciones (dedup por `relatedId`+`occurrenceAt`, o por "ya hay una sin leer") ni duplica metas (una vez `expired=true`, el `where` ya no la vuelve a traer). Esto importa porque un proceso puede reiniciarse entre ticks, o el propio cron puede solaparse si un tick tarda más de lo esperado.

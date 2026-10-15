@@ -60,6 +60,7 @@ const TYPE_ICON: Record<AppNotification["type"], string> = {
   goal_at_risk: "🎯",
   task_due: "✅",
   event_invitation: "✉️",
+  budget_exceeded: "💸",
 };
 
 function timeAgo(iso: string): string {

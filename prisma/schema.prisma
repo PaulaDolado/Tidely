@@ -572,10 +572,10 @@ model HabitLog {
 model Notification {
   id        Int      @id @default(autoincrement())
   userId    Int
-  type      String // "event_reminder" | "goal_at_risk" | "task_due"
+  type      String // "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation" | "budget_exceeded"
   title     String
   message   String
-  relatedId Int? // eventId (series), goalId o taskId, según `type`
+  relatedId Int? // eventId (series), goalId, taskId o budgetCategoryId, según `type`
   // Para "event_reminder": el startTime de la ocurrencia concreta que generó el aviso
   // (los eventos recurrentes no materializan una fila por ocurrencia — ver utils/recurrence.ts —
   // así que esto es lo que distingue un recordatorio de "el lunes" de uno de "el martes siguiente").
