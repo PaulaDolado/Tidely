@@ -12,9 +12,11 @@ Ver [README.md](README.md#setup) para instalar dependencias, levantar Postgres y
 npm run lint          # ESLint sin errores
 npx tsc --noEmit        # typecheck sin errores
 npm test                 # unit + integration en verde (requiere Postgres levantado)
+(cd dashboard && npm run lint && npm run build)   # si tocas la web
+(cd mobile && npx tsc --noEmit)                   # si tocas la app móvil
 ```
 
-El CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) corre exactamente estos mismos pasos — si pasan en local, deberían pasar ahí.
+El CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) corre estos mismos pasos — si pasan en local, deberían pasar ahí.
 
 ## Convenciones de código
 
@@ -41,7 +43,39 @@ Sigue el patrón de los módulos existentes (`goals`, `projects`, etc.):
 
 ## Commits y PRs
 
-Sin convención estricta de commits (no Conventional Commits obligatorio), pero el mensaje debe explicar el *por qué*, no solo el *qué*. Un PR debe:
-- Tener CI en verde
+Los cambios entran en `main` **solo por pull request**: la rama está protegida y no admite `push` directo.
+
+1. Crea una rama desde `main` actualizada, con un nombre corto que diga qué haces:
+   `git switch main && git pull && git switch -c feat/lo-que-sea` (o `fix/…`, `docs/…`, `ci/…`).
+2. Haz commits pequeños. Sin convención estricta (no Conventional Commits obligatorio), pero el mensaje debe explicar
+   el *por qué*, no solo el *qué*.
+3. Sube la rama y abre la PR (`git push -u origin feat/lo-que-sea` y `gh pr create`, o desde GitHub). La
+   [plantilla de PR](.github/pull_request_template.md) te recuerda lo que hay que comprobar.
+4. Espera al CI: hay **cuatro checks obligatorios** y los cuatro tienen que estar en verde para poder fusionar.
+
+   | Check | Qué comprueba |
+   |---|---|
+   | `test` | Lint y tipos del servidor, migraciones y la suite completa de tests |
+   | `build` | Compila la API |
+   | `build-dashboard` | ESLint, tipos y build de la web |
+   | `mobile` | Tipos de la app móvil |
+
+5. Fusiona con **Squash and merge** (un commit por PR en `main`); la rama se borra sola al fusionar.
+
+Una PR debe, además:
 - Actualizar la documentación relevante si cambia comportamiento observable (endpoints, schema, variables de entorno)
 - Incluir tests para el cambio (unitarios como mínimo; de integración si toca un flujo HTTP completo)
+
+### Qué pasa al fusionar
+
+- La web se despliega sola en GitHub Pages (`deploy-pages.yml`).
+- La API se despliega en Render desde `main`; el contenedor ejecuta `prisma migrate deploy` al arrancar, así que
+  **una migración que llegue a `main` se aplica a producción**: revísala con cuidado en la PR.
+- Las versiones (APK + instalador de escritorio) **no salen de la fusión**: se publican al empujar una etiqueta
+  `vX.Y.Z` anotada sobre `main` (`release.yml`); el mensaje de la etiqueta es el texto de la release.
+
+### Reglas que hace cumplir el CI
+
+- Toda tabla nueva activa RLS en su propia migración (`tests/integration/rls.test.ts`): la API es lo único que habla
+  con la base, y Supabase expone `public` por su Data API si no.
+- Los tests del servidor se ejecutan siempre con `--runInBand` (comparten una sola base de datos).

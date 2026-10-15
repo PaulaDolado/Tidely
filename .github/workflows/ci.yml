@@ -6,6 +6,17 @@ on:
   pull_request:
     branches: [main, master]
 
+# Los cambios entran en main por pull request (ver CONTRIBUTING.md): estos jobs son los "checks obligatorios" de la
+# rama protegida — test, build, build-dashboard y mobile tienen que estar en verde para poder fusionar.
+permissions:
+  contents: read
+
+# Un push nuevo a la misma PR cancela la ejecución anterior (ya obsoleta); en main nunca se cancela, para que cada
+# fusión conserve su resultado.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -110,8 +121,34 @@ jobs:
         working-directory: dashboard
         run: npm ci
 
+      # ESLint del dashboard (react-hooks incluido, ver dashboard/.eslintrc.cjs): el build solo hace tsc + vite.
+      - name: Lint dashboard
+        working-directory: dashboard
+        run: npm run lint
+
       - name: Build dashboard
         working-directory: dashboard
         env:
           VITE_API_URL: https://placeholder.example.com
         run: npm run build
+
+  # La app móvil no tenía ninguna comprobación en CI: un error de tipos solo salía al compilar el APK (≈15 min después
+  # de etiquetar una versión). Aquí se detecta en la propia PR.
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck mobile
+        working-directory: mobile
+        run: npx tsc --noEmit
