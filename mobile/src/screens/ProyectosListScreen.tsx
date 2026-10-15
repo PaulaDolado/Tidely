@@ -104,7 +104,7 @@ export function ProyectosListScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, collapsed && { paddingLeft: SIDEBAR_CLIP_CLEARANCE }]}>
-        <Text style={styles.title}>Proyectos</Text>
+        <Text style={styles.title}>Libreta</Text>
         <Pressable style={styles.newButton} onPress={() => setShowCreate(true)}>
           <Text style={styles.newButtonText}>+ Nuevo</Text>
         </Pressable>
@@ -116,7 +116,7 @@ export function ProyectosListScreen({ navigation }: Props) {
         {loading && projects.length === 0 ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
         ) : projects.length === 0 ? (
-          <Text style={styles.emptyText}>Todavía no tienes proyectos.</Text>
+          <Text style={styles.emptyText}>Todavía no tienes libretas.</Text>
         ) : (
           projects.map((project, index) => {
             // Igual que la web (`project.color ?? PROJECT_COLORS[i % 3]`): el color elegido al
@@ -183,10 +183,10 @@ function NewProjectForm({
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled">
-      <Text style={styles.modalTitle}>Nuevo proyecto</Text>
+      <Text style={styles.modalTitle}>Nueva libreta</Text>
 
-      <Text style={styles.fieldLabel}>Nombre del proyecto</Text>
-      <TextInput style={styles.input} placeholder="Nombre del proyecto" value={title} onChangeText={setTitle} />
+      <Text style={styles.fieldLabel}>Nombre de la libreta</Text>
+      <TextInput style={styles.input} placeholder="Nombre de la libreta" value={title} onChangeText={setTitle} />
 
       <Text style={styles.fieldLabel}>Apunte rápido (opcional)</Text>
       <TextInput style={styles.input} placeholder="¿De qué trata?" value={note} onChangeText={setNote} />

@@ -125,7 +125,7 @@ const NAV: NavItem[] = [
     section: "finanzas",
     children: [{ route: "Ahorro", key: "finanzas-ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
   },
-  { route: "Proyectos", key: "proyectos", label: "Proyectos", section: "proyectos" },
+  { route: "Proyectos", key: "proyectos", label: "Libreta", section: "proyectos" },
 ];
 
 // Versiones anteriores del móvil guardaban en menuOrder el nombre de la ruta ("Hoy", "Objetivos"...)

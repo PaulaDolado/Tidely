@@ -15,12 +15,12 @@ export const CUSTOM_PAGE_TEMPLATES: CustomPageTemplateMeta[] = [
   { key: "kanban", label: "Kanban", description: "Tablero con columnas y tarjetas.", icon: "🗂️" },
   { key: "galeria", label: "Galería", description: "Fotos y notas en collage, como una pared de marcos.", icon: "🖼️" },
   { key: "finanzas", label: "Finanzas", description: "Ingresos y gastos propios, con balance.", icon: "💰" },
-  { key: "proyectos", label: "Proyectos", description: "Checklist de tareas para seguir algo.", icon: "📁" },
+  { key: "proyectos", label: "Libreta", description: "Checklist de tareas para seguir algo.", icon: "📁" },
   { key: "objetivos", label: "Objetivos", description: "Metas con barra de progreso.", icon: "🎯" },
   { key: "agenda", label: "Agenda", description: "Notas sueltas con fecha.", icon: "📅" },
   { key: "hoy", label: "Lista", description: "Checklist rápido para el día.", icon: "☀️" },
-  { key: "viajes", label: "Planificador de viajes o rutas", description: "Itinerario, presupuesto, lugares guardados, etc.", icon: "✈️" },
-  { key: "estudio", label: "Estudio", description: "Asignaturas y temas con tiempo de estudio, cronómetro y exámenes.", icon: "📚" },
+  { key: "viajes", label: "Viajes o rutas", description: "Itinerario, presupuesto, lugares guardados, etc.", icon: "✈️" },
+  { key: "estudio", label: "Estudio", description: "Asignaturas con tiempo de estudio, cronómetro y exámenes.", icon: "📚" },
 ];
 
 export const CUSTOM_PAGE_TEMPLATE_META: Record<CustomPageTemplate, CustomPageTemplateMeta> = Object.fromEntries(

@@ -765,7 +765,7 @@ function PrivacyPolicySection() {
 
       <PolicySection title="2. Para qué usamos tus datos">
         <ul className="list-disc space-y-1 pl-5">
-          <li>Prestar el servicio: mostrarte tu agenda, tareas, finanzas y proyectos, y guardarlos entre sesiones.</li>
+          <li>Prestar el servicio: mostrarte tu agenda, tareas, finanzas y libretas, y guardarlos entre sesiones.</li>
           <li>Autenticarte y proteger tu cuenta (inicio de sesión, verificación de email, recuperación de contraseña).</li>
           <li>Enviarte avisos que tú mismo configuras (recordatorios de eventos) y comunicaciones de servicio imprescindibles (verificación de email, cambios de seguridad).</li>
           <li>Sincronizar con Google Calendar si activas esa integración.</li>

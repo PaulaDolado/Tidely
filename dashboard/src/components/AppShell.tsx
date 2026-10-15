@@ -82,7 +82,7 @@ const NAV: NavItem[] = [
     section: "finanzas",
     children: [{ key: "finanzas-ahorro", label: "Metas de ahorro", section: "metasAhorro" }],
   },
-  { key: "proyectos", label: "Proyectos", section: "proyectos" },
+  { key: "proyectos", label: "Libreta", section: "proyectos" },
 ];
 
 // Poda NAV según los apartados que el usuario activó en el asistente de bienvenida (o en Ajustes
@@ -1116,7 +1116,7 @@ function GlobalSearch({ onNavigate }: { onNavigate: (tab: Tab, focus: SearchFocu
                 </SearchGroup>
               )}
               {results!.projects.length > 0 && (
-                <SearchGroup label="Proyectos">
+                <SearchGroup label="Libreta">
                   {results!.projects.map((p) => (
                     <SearchResultRow key={`project-${p.id}`} title={p.title} onClick={() => pick("proyectos", { type: "project", id: p.id })} />
                   ))}

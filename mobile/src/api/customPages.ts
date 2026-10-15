@@ -16,11 +16,11 @@ export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
   kanban: "Kanban",
   galeria: "Galería",
   finanzas: "Finanzas",
-  proyectos: "Proyectos",
+  proyectos: "Libreta",
   objetivos: "Objetivos",
   agenda: "Agenda",
   hoy: "Lista",
-  viajes: "Planificador de viajes o rutas",
+  viajes: "Viajes o rutas",
   estudio: "Estudio",
 };
 

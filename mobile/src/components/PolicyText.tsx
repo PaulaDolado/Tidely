@@ -164,7 +164,7 @@ export function PrivacyPolicySection() {
       </PolicySection>
 
       <PolicySection title="2. Para qué usamos tus datos">
-        <Li>Prestar el servicio: mostrarte tu agenda, tareas, finanzas y proyectos, y guardarlos entre sesiones.</Li>
+        <Li>Prestar el servicio: mostrarte tu agenda, tareas, finanzas y libretas, y guardarlos entre sesiones.</Li>
         <Li>Autenticarte y proteger tu cuenta (inicio de sesión, verificación de email, recuperación de contraseña).</Li>
         <Li>
           Enviarte avisos que tú mismo configuras (recordatorios de eventos) y comunicaciones de servicio imprescindibles

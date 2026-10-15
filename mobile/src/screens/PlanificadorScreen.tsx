@@ -1266,7 +1266,7 @@ export function PlanificadorScreen({ route, navigation }: { route?: { params?: F
                 placeholderTextColor={colors.mutedForeground}
               />
 
-              <Text style={styles.fieldLabel}>Proyecto</Text>
+              <Text style={styles.fieldLabel}>Libreta</Text>
               {/* Se guarda con "Guardar" como el resto de campos (y sube por /sync, también offline).
                   Solo proyectos ya sincronizados: son los únicos con id numérico que acepta el servidor. */}
               {form ? (

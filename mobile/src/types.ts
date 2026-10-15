@@ -26,7 +26,7 @@ export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   galeria: "Fotos y notas en collage, como una pared de marcos.",
   finanzas: "Ingresos, gastos y balance del mes.",
   metasAhorro: "Ahorro e inversión como casillas de progreso.",
-  proyectos: "Cuaderno con notas enriquecidas por proyecto.",
+  proyectos: "Cuaderno con notas enriquecidas por libreta.",
 };
 
 export type MenuLayout = "default" | "compact";

@@ -1096,7 +1096,7 @@ function TaskTable({
               <th className="px-4 py-3">Nombre</th>
               <th className="w-36 px-4 py-3">Estado</th>
               <th className="w-28 px-4 py-3">Vencimiento</th>
-              <th className="w-40 px-4 py-3">Proyecto</th>
+              <th className="w-40 px-4 py-3">Libreta</th>
               <th className="px-4 py-3">Etiquetas</th>
               <th className="w-28 px-4 py-3">Tiempo</th>
               <th className="w-24 px-4 py-3">Subtareas</th>
@@ -1336,7 +1336,7 @@ function TaskTableRow({
             }}
             className="field-input w-40 text-xs"
           >
-            <option value="">Sin proyecto</option>
+            <option value="">Sin libreta</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.title}
@@ -2065,13 +2065,13 @@ function TaskDetailDialog({
 
             {/* Proyecto */}
             <div>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Proyecto</p>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Libreta</p>
               <select
                 value={task.projectId ?? ""}
                 onChange={(e) => onUpdate({ projectId: e.target.value ? Number(e.target.value) : null })}
                 className="field-input w-full text-xs"
               >
-                <option value="">Sin proyecto</option>
+                <option value="">Sin libreta</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.title}

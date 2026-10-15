@@ -139,7 +139,7 @@ export function GlobalSearch({ onPick }: { onPick: (pick: SearchPick) => void })
                     </SearchGroup>
                   )}
                   {results!.projects.length > 0 && (
-                    <SearchGroup label="Proyectos" colors={colors}>
+                    <SearchGroup label="Libreta" colors={colors}>
                       {results!.projects.map((p) => (
                         <SearchRow
                           key={`project-${p.id}`}

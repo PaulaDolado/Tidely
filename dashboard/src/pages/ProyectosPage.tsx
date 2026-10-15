@@ -50,7 +50,7 @@ export function ProyectosPage({
 
   return (
     <>
-      <PageHeader title="Cuaderno de proyectos" subtitle="Apunta, anota y sigue el progreso" />
+      <PageHeader title="Libreta" subtitle="Apunta, anota y sigue el progreso" />
 
       {openId === null && (
         <form
@@ -69,7 +69,7 @@ export function ProyectosPage({
           }}
           className="mb-10 grid gap-4 card-soft md:grid-cols-[1fr_2fr_auto]"
         >
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nombre del proyecto" className="field-input" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nombre de la libreta" className="field-input" />
           <input
             value={quickNote}
             onChange={(e) => setQuickNote(e.target.value)}
@@ -121,9 +121,9 @@ export function ProyectosPage({
           onChanged={reload}
         />
       ) : loading ? (
-        <Loading label="Cargando proyectos..." />
+        <Loading label="Cargando libretas..." />
       ) : (data?.projects.length ?? 0) === 0 ? (
-        <EmptyState message="Todavía no tienes proyectos." />
+        <EmptyState message="Todavía no tienes libretas." />
       ) : (
         <div className="grid gap-x-6 gap-y-12 sm:grid-cols-2 xl:grid-cols-3">
           {data?.projects.map((project, i) => (
@@ -415,7 +415,7 @@ function ProjectNotebook({ projectId, onBack, onChanged }: { projectId: number; 
                 confirmingDelete ? "bg-destructive text-destructive-foreground" : "hover:text-destructive"
               }`}
             >
-              {confirmingDelete ? "¿Confirmar eliminar?" : "Eliminar proyecto"}
+              {confirmingDelete ? "¿Confirmar eliminar?" : "Eliminar libreta"}
             </button>
           </div>
         </div>

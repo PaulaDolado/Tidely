@@ -134,7 +134,7 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
   };
 
   const confirmDeleteProject = () => {
-    Alert.alert("Eliminar proyecto", `¿Seguro que quieres eliminar "${project?.title}" y todas sus páginas?`, [
+    Alert.alert("Eliminar libreta", `¿Seguro que quieres eliminar "${project?.title}" y todas sus páginas?`, [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Eliminar",
@@ -420,7 +420,7 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
         </View>
 
         <Pressable style={styles.deleteProjectButton} onPress={confirmDeleteProject}>
-          <Text style={styles.deleteProjectText}>Eliminar proyecto</Text>
+          <Text style={styles.deleteProjectText}>Eliminar libreta</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
