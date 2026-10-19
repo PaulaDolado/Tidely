@@ -324,7 +324,7 @@ export function CustomPagePage({
       {page.template === "estudio" && (
         <StudyPlannerTemplate pageId={pageId} content={content as CustomPageContentMap["estudio"]} onChange={updateContent} />
       )}
-      {page.template === "recetas" && <RecipeBoxTemplate pageId={pageId} content={content} onChange={updateContent} />}
+      {page.template === "recetas" && <RecipeBoxTemplate pageId={pageId} title={page.title} content={content} onChange={updateContent} />}
     </div>
   );
 }

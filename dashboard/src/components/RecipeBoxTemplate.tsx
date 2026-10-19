@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { newId } from "../utils/id";
 import {
+  buildRecipesExportHtml,
   DIFFICULTIES,
   DIFFICULTY_LABELS,
   emptyRecipe,
@@ -8,10 +9,15 @@ import {
   moveTab,
   normalizeRecipesContent,
   RECIPE_ILLUSTRATION,
+  recipeBookSections,
+  RecipeExportFormat,
+  RecipeExportSection,
+  recipeExportFilename,
   recipePatternTile,
   recipesInTab,
   removeTab,
 } from "../utils/recipes";
+import { downloadWordDocument, printHtmlDocument } from "../utils/notebookExport";
 import { Recipe, RecipeDifficulty, RecipesContent } from "../types";
 
 // Plantilla "recetas" de las páginas personalizadas (ver CustomPagePage): una caja de recetas de tela roja con filete
@@ -31,7 +37,24 @@ function readActiveTab(key: string): string | null {
   }
 }
 
-export function RecipeBoxTemplate({ pageId, content, onChange }: { pageId: number; content: unknown; onChange: (content: RecipesContent) => void }) {
+/** PDF: el diálogo de impresión del navegador ("Guardar como PDF"), que toma el nombre del <title>. Word: descarga un .doc. */
+function exportDocument(format: RecipeExportFormat, title: string, sections: RecipeExportSection[], cover: boolean) {
+  const html = buildRecipesExportHtml({ title, sections, format, cover });
+  if (format === "pdf") printHtmlDocument(html);
+  else downloadWordDocument(html, recipeExportFilename(title, "word"));
+}
+
+export function RecipeBoxTemplate({
+  pageId,
+  title,
+  content,
+  onChange,
+}: {
+  pageId: number;
+  title: string;
+  content: unknown;
+  onChange: (content: RecipesContent) => void;
+}) {
   const data = useMemo(() => normalizeRecipesContent(content), [content]);
   const { tabs, recipes } = data;
   const activeKey = `tidely.recipes.tab.${pageId}`;
@@ -121,6 +144,13 @@ export function RecipeBoxTemplate({ pageId, content, onChange }: { pageId: numbe
                 </>
               )}
             </button>
+            <ExportMenu
+              variant="box"
+              label="Exportar recetario"
+              disabled={recipes.length === 0}
+              disabledHint="Aún no hay recetas que exportar"
+              onExport={(format) => exportDocument(format, title || "Recetas", recipeBookSections(data), true)}
+            />
           </div>
 
           <div
@@ -388,6 +418,11 @@ function RecipeSheet({
               >
                 Editar receta
               </button>
+              <ExportMenu
+                variant="paper"
+                label="Exportar receta"
+                onExport={(format) => exportDocument(format, recipe.name || "Receta", [{ tabName, recipes: [recipe] }], false)}
+              />
               <button
                 type="button"
                 onClick={() => (confirmingDelete ? onDelete(recipe.id) : setConfirmingDelete(true))}
@@ -660,6 +695,104 @@ function TabEditor({ data, onChange, onDeleted }: { data: RecipesContent; onChan
           Añadir
         </button>
       </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Exportar: botón con un menú de dos formatos. En la caja (todo el recetario) va en dorado sobre la tela; dentro de
+// la ficha (solo esa receta), como un botón más del papel.
+// ---------------------------------------------------------------------------------------------------------------
+function ExportMenu({
+  variant,
+  label,
+  disabled = false,
+  disabledHint,
+  onExport,
+}: {
+  variant: "box" | "paper";
+  label: string;
+  disabled?: boolean;
+  disabledHint?: string;
+  onExport: (format: RecipeExportFormat) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  const choose = (format: RecipeExportFormat) => {
+    setOpen(false);
+    onExport(format);
+  };
+
+  const trigger =
+    variant === "box"
+      ? "mb-2 flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-[var(--rp-gold)]/60 px-2.5 py-1.5 font-serif text-sm text-[var(--rp-gold)] transition-colors hover:bg-[var(--rp-gold)]/15 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent sm:px-3.5"
+      : "flex cursor-pointer items-center gap-2 rounded-full border border-[var(--rp-rule)] px-5 py-2 text-sm text-[var(--rp-ink)] transition-colors hover:border-[var(--rp-red)] hover:text-[var(--rp-red)]";
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onKeyDown={(e) => {
+        // Escape cierra el menú, no la ficha que hay debajo.
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        title={disabled ? disabledHint : label}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={trigger}
+      >
+        <svg viewBox="0 0 16 16" className={`size-4 ${variant === "box" ? "sm:hidden" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M8 2.5 V10 M4.8 7 L8 10.2 L11.2 7 M3 12.5 H13" />
+        </svg>
+        <span className={variant === "box" ? "hidden sm:inline" : ""}>Exportar</span>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className={`recipe-paper absolute z-20 flex w-56 flex-col rounded-[4px] p-2 shadow-[0_14px_30px_-12px_rgb(20_10_8/0.55)] ${
+            variant === "box" ? "right-0 top-full mt-1" : "bottom-full left-0 mb-2"
+          }`}
+        >
+          <span className="recipe-label px-3 pb-1 pt-2">{variant === "box" ? "Todo el recetario" : "Solo esta receta"}</span>
+          {(
+            [
+              ["pdf", "PDF", "Para imprimir o guardar"],
+              ["word", "Word (.doc)", "Para editarlo"],
+            ] as const
+          ).map(([format, name, hint]) => (
+            <button
+              key={format}
+              type="button"
+              role="menuitem"
+              autoFocus={format === "pdf"}
+              onClick={() => choose(format)}
+              className="flex cursor-pointer flex-col items-start rounded-[3px] px-3 py-2 text-left transition-colors hover:bg-[var(--rp-paper-shade)] focus-visible:bg-[var(--rp-paper-shade)]"
+            >
+              <span className="font-serif text-lg leading-tight text-[var(--rp-ink)]">{name}</span>
+              <span className="text-xs text-[var(--rp-ink-soft)]">{hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

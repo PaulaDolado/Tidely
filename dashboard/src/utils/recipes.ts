@@ -170,3 +170,168 @@ export const RECIPE_ILLUSTRATION: { d: string; width?: number; opacity?: number 
   { d: "M58 85 L84 80 L90 85 L64 90 Z", width: 0.9 },
   { d: "M67 84 L72 89 M75 82 L80 87", width: 0.6, opacity: 0.8 },
 ];
+
+// ---------------------------------------------------------------------------------------------------------------
+// Exportar (PDF o Word): un documento HTML completo con la estética de las fichas. La web lo imprime en un iframe
+// ("Guardar como PDF") o lo descarga como .doc; el móvil lo pasa a expo-print o lo comparte como .doc. El HTML se
+// monta aquí, sin DOM, para que los dos generen exactamente el mismo documento.
+// ---------------------------------------------------------------------------------------------------------------
+
+export type RecipeExportFormat = "pdf" | "word";
+
+export interface RecipeExportSection {
+  tabName: string;
+  recipes: Recipe[];
+}
+
+const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
+/** Nombre de archivo seguro (sin los caracteres que prohíben Windows o Android) con su extensión. */
+export function recipeExportFilename(name: string, format: RecipeExportFormat): string {
+  const base = name.replace(/[\\/:*?"<>|]/g, "-").trim() || "Recetas";
+  return `${base}.${format === "pdf" ? "pdf" : "doc"}`;
+}
+
+/** Secciones del recetario entero: una por pestaña que tenga recetas, en el orden de las pestañas. */
+export function recipeBookSections(content: RecipesContent): RecipeExportSection[] {
+  return content.tabs.map((t) => ({ tabName: t.name, recipes: recipesInTab(content.recipes, t.id) })).filter((s) => s.recipes.length > 0);
+}
+
+const EXPORT_CSS = `
+  @page { size: A4; margin: 16mm; }
+  body { margin: 0; color: #2b2420; font-family: 'Outfit', 'Helvetica Neue', Arial, sans-serif; font-size: 10.5pt; line-height: 1.5;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .serif { font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif; font-weight: normal; }
+  .label { font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif; font-size: 8.5pt; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #8e1b25; }
+  .soft { color: #6a5a50; }
+  .break { page-break-before: always; }
+  .cover { border: 3px double #8e1b25; padding: 36px 40px; }
+  .cover h1 { font-size: 40pt; line-height: 1; margin: 6px 0 4px; color: #2b2420; }
+  .cover .count { font-size: 13pt; margin: 0 0 24px; }
+  .cover h2 { font-size: 17pt; margin: 22px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #cbb8a2; }
+  .cover ol { margin: 0; padding-left: 22px; }
+  .cover li { padding: 2px 0; }
+  .card { position: relative; border: 3px double #cbb8a2; background: #fbf7f0; padding: 26px 30px 30px; page-break-inside: avoid; }
+  .card h1 { font-size: 30pt; line-height: 1.05; margin: 6px 0 0; color: #2b2420; }
+  .card.has-illus h1, .card.has-illus .label-row { margin-right: 170px; }
+  .illus { position: absolute; top: 24px; right: 28px; width: 150px; height: 86px; }
+  table { border-collapse: collapse; width: 100%; }
+  .meta { margin: 18px 0 4px; border-top: 1px dotted #cbb8a2; border-bottom: 1px dotted #cbb8a2; }
+  .meta td { width: 33%; padding: 9px 0; vertical-align: top; }
+  .meta .value { font-size: 17pt; line-height: 1.1; }
+  .dots { color: #8e1b25; letter-spacing: 0.1em; }
+  h3.label { margin: 20px 0 6px; font-size: 9.5pt; font-weight: normal; }
+  .lines td { border-bottom: 1px dotted #cbb8a2; padding: 5px 0; vertical-align: top; }
+  .lines td.gap { width: 6%; border-bottom: 0; }
+  .lines td.num { width: 26px; padding-right: 10px; text-align: right; font-size: 14pt; line-height: 1.1; color: #8e1b25; }
+  .tips { font-size: 14pt; line-height: 1.35; margin: 4px 0 0; white-space: pre-line; }
+  .empty { font-style: italic; color: #6a5a50; border-bottom: 1px dotted #cbb8a2; padding: 5px 0; margin: 0; }
+`;
+
+function illustrationSvg(): string {
+  const paths = RECIPE_ILLUSTRATION.map(
+    (p) => `<path d="${p.d}" stroke-width="${p.width ?? 1.1}"${p.opacity !== undefined ? ` opacity="${p.opacity}"` : ""}/>`
+  ).join("");
+  return `<svg class="illus" viewBox="0 0 160 92" fill="none" stroke="#2b2420" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+}
+
+function difficultyHtml(difficulty: RecipeDifficulty | null): string {
+  if (!difficulty) return `<span class="soft">—</span>`;
+  const level = DIFFICULTIES.indexOf(difficulty) + 1;
+  return `<span class="dots">${"●".repeat(level)}${"○".repeat(3 - level)}</span> ${DIFFICULTY_LABELS[difficulty]}`;
+}
+
+function recipeCardHtml(recipe: Recipe, tabName: string, format: RecipeExportFormat, pageBreak: boolean): string {
+  const withIllus = format === "pdf";
+  const value = (v: string) => (v ? escapeHtml(v) : `<span class="soft">—</span>`);
+  const empty = (text: string) => `<p class="empty">${text}</p>`;
+
+  // Ingredientes a dos columnas, en una tabla (Word no entiende rejillas ni columnas CSS).
+  const ingredientRows: string[] = [];
+  for (let i = 0; i < recipe.ingredients.length; i += 2) {
+    const a = recipe.ingredients[i];
+    const b = recipe.ingredients[i + 1];
+    ingredientRows.push(`<tr><td>${escapeHtml(a)}</td><td class="gap"></td><td>${b !== undefined ? escapeHtml(b) : ""}</td></tr>`);
+  }
+  const steps = recipe.steps.map((s, i) => `<tr><td class="num serif">${i + 1}</td><td>${escapeHtml(s)}</td></tr>`).join("");
+
+  return `
+<div class="card${withIllus ? " has-illus" : ""}${pageBreak ? " break" : ""}">
+  ${withIllus ? illustrationSvg() : ""}
+  <div class="label label-row">Receta${tabName ? ` · ${escapeHtml(tabName)}` : ""}</div>
+  <h1 class="serif">${recipe.name ? escapeHtml(recipe.name) : "Sin nombre"}</h1>
+  <table class="meta"><tr>
+    <td><div class="label">Raciones</div><div class="value serif">${value(recipe.servings)}</div></td>
+    <td><div class="label">Tiempo</div><div class="value serif">${value(recipe.time)}</div></td>
+    <td><div class="label">Dificultad</div><div class="value serif">${difficultyHtml(recipe.difficulty)}</div></td>
+  </tr></table>
+  <h3 class="label">Ingredientes</h3>
+  ${ingredientRows.length ? `<table class="lines">${ingredientRows.join("")}</table>` : empty("Sin ingredientes apuntados.")}
+  <h3 class="label">Elaboración</h3>
+  ${steps ? `<table class="lines">${steps}</table>` : empty("Sin pasos apuntados.")}
+  <h3 class="label">Consejos</h3>
+  ${recipe.tips ? `<p class="tips serif">${escapeHtml(recipe.tips)}</p>` : empty("Sin consejos todavía.")}
+</div>`;
+}
+
+/**
+ * Documento completo para exportar. Con `cover` (el recetario entero) empieza con una portada y el índice por
+ * pestañas, y cada receta va después en su propia página. Word no entiende SVG ni tipografías externas: en ese formato
+ * se omite la ilustración y la letra cae a Georgia, pero el doble filete y las líneas punteadas se conservan.
+ */
+export function buildRecipesExportHtml({
+  title,
+  sections,
+  format,
+  cover,
+}: {
+  title: string;
+  sections: RecipeExportSection[];
+  format: RecipeExportFormat;
+  cover: boolean;
+}): string {
+  const total = sections.reduce((n, s) => n + s.recipes.length, 0);
+  const coverHtml = cover
+    ? `
+<div class="cover">
+  <div class="label">Recetario</div>
+  <h1 class="serif">${escapeHtml(title)}</h1>
+  <p class="count serif soft">${total === 1 ? "1 receta" : `${total} recetas`}</p>
+  ${sections
+    .map((s) => `<h2 class="serif">${escapeHtml(s.tabName)}</h2><ol>${s.recipes.map((r) => `<li>${r.name ? escapeHtml(r.name) : "Sin nombre"}</li>`).join("")}</ol>`)
+    .join("\n  ")}
+</div>`
+    : "";
+
+  // Cada receta empieza página, salvo la primera de una exportación sin portada.
+  const cards: string[] = [];
+  for (const section of sections) {
+    for (const recipe of section.recipes) cards.push(recipeCardHtml(recipe, section.tabName, format, cover || cards.length > 0));
+  }
+
+  const htmlOpen =
+    format === "pdf"
+      ? `<!DOCTYPE html>\n<html lang="es">`
+      : `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">`;
+  const extraHead =
+    format === "pdf"
+      ? `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500&family=Instrument+Serif&display=swap" />`
+      : `<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->`;
+
+  return `${htmlOpen}
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(title)}</title>
+${extraHead}
+<style>${EXPORT_CSS}</style>
+</head>
+<body>${coverHtml}
+${cards.join("\n")}
+</body>
+</html>`;
+}

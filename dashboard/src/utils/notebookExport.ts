@@ -97,12 +97,30 @@ function buildBodyHtml(subtitle: string, pages: ExportPage[]): string {
     .join("\n");
 }
 
+export function exportPagesToPdf(documentTitle: string, subtitle: string, pages: ExportPage[]) {
+  const bodyHtml = buildBodyHtml(subtitle, pages);
+  printHtmlDocument(`<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(documentTitle)}</title>
+<link rel="stylesheet" href="${KATEX_CSS_URL}" />
+${allGoogleFontsLinkTags()}
+<style>
+  @media print { .page-block { page-break-inside: avoid; } }
+  ${SHARED_CONTENT_CSS}
+</style>
+</head>
+<body>${bodyHtml}</body>
+</html>`);
+}
+
 // Usamos un <iframe> oculto en vez de window.open(): al no abrir una ventana/pestaña nueva no
 // hay bloqueador de pop-ups que lo pueda impedir, incluso si el navegador o la extensión del
 // usuario son estrictos con eso — solo pintamos el documento a exportar dentro de la página
-// actual y llamamos a print() sobre ese iframe.
-export function exportPagesToPdf(documentTitle: string, subtitle: string, pages: ExportPage[]) {
-  const bodyHtml = buildBodyHtml(subtitle, pages);
+// actual y llamamos a print() sobre ese iframe. Recibe el documento HTML completo: lo usan el
+// cuaderno (exportPagesToPdf) y el recetario (ver utils/recipes.ts).
+export function printHtmlDocument(html: string) {
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
   iframe.style.right = "0";
@@ -124,20 +142,7 @@ export function exportPagesToPdf(documentTitle: string, subtitle: string, pages:
     return;
   }
   doc.open();
-  doc.write(`<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8" />
-<title>${escapeHtml(documentTitle)}</title>
-<link rel="stylesheet" href="${KATEX_CSS_URL}" />
-${allGoogleFontsLinkTags()}
-<style>
-  @media print { .page-block { page-break-inside: avoid; } }
-  ${SHARED_CONTENT_CSS}
-</style>
-</head>
-<body>${bodyHtml}</body>
-</html>`);
+  doc.write(html);
   doc.close();
 
   const triggerPrint = () => {
@@ -175,12 +180,17 @@ export function exportPagesToWord(documentTitle: string, subtitle: string, pages
 <body>${bodyHtml}</body>
 </html>`;
 
+  downloadWordDocument(html, `${sanitizeFilename(documentTitle)}.doc`);
+}
+
+/** Descarga un documento HTML como .doc, que Word abre como uno propio. `filename` ya lleva la extensión. */
+export function downloadWordDocument(html: string, filename: string) {
   // El BOM (U+FEFF) al principio evita que Word interprete mal la codificación UTF-8.
   const blob = new Blob(["\uFEFF", html], { type: "application/msword" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${sanitizeFilename(documentTitle)}.doc`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
