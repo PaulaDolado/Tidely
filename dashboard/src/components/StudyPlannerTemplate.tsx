@@ -153,10 +153,14 @@ export function StudyPlannerTemplate({ pageId, content, onChange }: { pageId: nu
   const totalSpent = plan.reduce((sum, r) => sum + r.spentSeconds, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <div>
+      {/* En pantalla ancha: a la izquierda el plan y, justo debajo, el temario; a la derecha el temporizador y los
+          exámenes, ocupando las dos filas. La primera fila es `auto` y la del lateral no la estira (los elementos que
+          abarcan una pista flexible no cuentan para las `auto`), así que el plan mide lo que sus filas y el temario
+          empieza nada más acabar, tenga 1 asignatura o 10. En una sola columna el orden es plan, lateral, temario. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem] xl:grid-rows-[auto_1fr] xl:items-start">
         {/* Plan de estudio: asignatura, tema, tipo, tiempo asignado y tiempo real */}
-        <section className="card-soft min-w-0">
+        <section className="card-soft min-w-0 xl:col-start-1 xl:row-start-1">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className={sectionTitle}>Plan de estudio</h2>
             <button type="button" onClick={() => setPlanDialog({ rowId: null })} aria-label="Añadir al plan" title="Añadir un tema al plan" className={plusButton}>
@@ -233,7 +237,7 @@ export function StudyPlannerTemplate({ pageId, content, onChange }: { pageId: nu
         </section>
 
         {/* Lateral: temporizador y, debajo, los exámenes próximos */}
-        <div className="space-y-6">
+        <div className="space-y-6 xl:col-start-2 xl:row-span-2 xl:row-start-1">
           <StudyTimer
             topic={selectedRow ? topicNameOf(selectedRow, subjects) : null}
             subject={selectedRow ? (subjectOf(selectedRow.subjectId)?.name ?? "") : ""}
@@ -262,28 +266,28 @@ export function StudyPlannerTemplate({ pageId, content, onChange }: { pageId: nu
             />
           </section>
         </div>
-      </div>
 
-      {/* Temario: una tabla por asignatura con todos sus temas */}
-      {subjects.length > 0 && (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {subjects.map((subject) => (
-            <SubjectCard
-              key={subject.id}
-              subject={subject}
-              plan={plan}
-              onChange={(next) => update({ subjects: subjects.map((s) => (s.id === next.id ? next : s)), plan: plan.map((r) => (r.topicId && !next.topics.some((t) => t.id === r.topicId) && r.subjectId === next.id ? { ...r, topicId: undefined } : r)) })}
-              onRemove={() =>
-                update({
-                  subjects: subjects.filter((s) => s.id !== subject.id),
-                  plan: plan.filter((r) => r.subjectId !== subject.id),
-                  exams: exams.map((e) => (e.subjectId === subject.id ? { ...e, subjectId: undefined } : e)),
-                })
-              }
-            />
-          ))}
-        </div>
-      )}
+        {/* Temario: una tabla por asignatura con todos sus temas, justo debajo del plan */}
+        {subjects.length > 0 && (
+          <div className="grid min-w-0 gap-6 md:grid-cols-2 xl:col-start-1 xl:row-start-2 2xl:grid-cols-3">
+            {subjects.map((subject) => (
+              <SubjectCard
+                key={subject.id}
+                subject={subject}
+                plan={plan}
+                onChange={(next) => update({ subjects: subjects.map((s) => (s.id === next.id ? next : s)), plan: plan.map((r) => (r.topicId && !next.topics.some((t) => t.id === r.topicId) && r.subjectId === next.id ? { ...r, topicId: undefined } : r)) })}
+                onRemove={() =>
+                  update({
+                    subjects: subjects.filter((s) => s.id !== subject.id),
+                    plan: plan.filter((r) => r.subjectId !== subject.id),
+                    exams: exams.map((e) => (e.subjectId === subject.id ? { ...e, subjectId: undefined } : e)),
+                  })
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {planDialog && (
         <PlanDialog
