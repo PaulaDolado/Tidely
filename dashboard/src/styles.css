@@ -531,64 +531,63 @@
   }
 }
 
-/* Plantilla "recetas" (RecipeBoxTemplate): una caja de recetas de tela roja con filete dorado, separadores con
-   patrón de especias y tarjetas de papel crema con doble filete. Es un objeto físico, así que tiene su propia
-   paleta y no cambia entre tema claro y oscuro. */
+/* Plantilla "recetas" (RecipeBoxTemplate): un archivador con separadores y fichas de papel con doble filete, hecho
+   con los colores del tema (tarjeta, bordes, texto atenuado y el acento --primary), así que sigue al modo claro u
+   oscuro como el resto de la app. Lo propio del recetario está en la forma, no en el color: las pestañas de
+   separador, el doble filete, los rótulos en versalitas, las líneas punteadas y la ilustración a línea. */
 .recipe-box {
-  --rp-paper: #f6f0e5;
-  --rp-paper-shade: #e9dfcf;
-  --rp-ink: #2b2420;
-  --rp-ink-soft: #6a5a50;
-  --rp-red: #8e1b25;
-  --rp-red-deep: #5e1017;
-  --rp-gold: #cdae6c;
-  --rp-rule: #cbb8a2;
+  --rp-paper: var(--card);
+  --rp-paper-shade: var(--muted);
+  --rp-ink: var(--foreground);
+  --rp-ink-soft: var(--muted-foreground);
+  --rp-accent: var(--primary);
+  --rp-rule: color-mix(in oklab, var(--foreground) 14%, transparent);
+  --rp-dots: color-mix(in oklab, var(--foreground) 24%, transparent);
 }
-.recipe-box ::selection {
-  background: rgb(142 27 37 / 0.22);
-  color: var(--rp-ink);
+/* Patrón de especias de los separadores: se pinta con el color del texto a través de una máscara, muy tenue, para
+   que funcione igual en claro y en oscuro sin teñir nada de rojo. */
+.recipe-pattern {
+  background-color: var(--foreground);
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-size: 180px 180px;
+  mask-size: 180px 180px;
+  opacity: 0.045;
 }
-.recipe-cloth {
-  background-color: var(--rp-red);
-  background-image:
-    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.07) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 3px),
-    radial-gradient(120% 90% at 50% 0%, rgb(255 255 255 / 0.08), transparent 60%);
-}
-/* Doble filete del papel: el borde de fuera y, 7 px más adentro, una segunda línea (sombra interior), para dejar
-   `outline` libre para el foco. */
+/* Doble filete del papel: el borde y, 6 px más adentro, una segunda línea (sombra interior), para dejar `outline`
+   libre para el foco. */
 .recipe-paper {
   background-color: var(--rp-paper);
   color: var(--rp-ink);
   border: 1px solid var(--rp-rule);
   box-shadow:
-    inset 0 0 0 6px var(--rp-paper),
-    inset 0 0 0 7px var(--rp-rule);
-  caret-color: var(--rp-red);
+    inset 0 0 0 5px var(--rp-paper),
+    inset 0 0 0 6px var(--rp-rule);
+  caret-color: var(--rp-accent);
 }
 .recipe-label {
   font-family: var(--font-serif);
   font-size: 0.72rem;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--rp-red);
+  color: var(--rp-ink-soft);
 }
 .recipe-field {
   background: transparent;
   border: 0;
-  border-bottom: 1px dotted var(--rp-ink-soft);
+  border-bottom: 1px dotted var(--rp-dots);
   border-radius: 0;
   color: var(--rp-ink);
   outline: none;
 }
 .recipe-field::placeholder {
   color: var(--rp-ink-soft);
-  opacity: 0.85;
+  opacity: 0.8;
 }
 .recipe-field:focus-visible {
-  border-bottom: 1px solid var(--rp-red);
+  border-bottom: 1px solid var(--rp-accent);
 }
-/* Área de texto como papel pautado: una línea punteada por renglón. */
+/* Área de texto como papel pautado: una línea por renglón. */
 .recipe-lined {
   --rp-line: 2rem;
   line-height: var(--rp-line);
@@ -600,17 +599,13 @@
   resize: vertical;
 }
 .recipe-lined:focus-visible {
-  box-shadow: 0 2px 0 var(--rp-red);
+  box-shadow: 0 2px 0 var(--rp-accent);
 }
 .recipe-box :focus-visible {
-  outline: 2px solid var(--rp-gold);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-.recipe-paper :focus-visible,
-.recipe-paper:focus-visible {
-  outline-color: var(--rp-red);
-}
-/* Los campos marcan el foco con su propia línea (roja), no con un recuadro encima del renglón. */
+/* Los campos marcan el foco con su propia línea, no con un recuadro encima del renglón. */
 .recipe-box .recipe-field:focus-visible,
 .recipe-box .recipe-lined:focus-visible {
   outline: none;
@@ -630,17 +625,15 @@
 @keyframes recipe-sheet-in {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.975);
-    filter: blur(2px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: none;
-    filter: none;
   }
 }
 .recipe-sheet-in {
-  animation: recipe-sheet-in 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: recipe-sheet-in 220ms cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 @media (prefers-reduced-motion: reduce) {
   .recipe-sheet-in {
