@@ -285,7 +285,7 @@ export function AppShell({
   ) as Record<SectionPageTemplate, CustomPageSummary | null>;
   const otherPages = customPages.filter((p) => {
     if (p.template === "galeria") return false;
-    if (p.template === "viajes" || p.template === "estudio") {
+    if (p.template === "viajes" || p.template === "estudio" || p.template === "recetas") {
       return !(enabledSections.has(p.template) && sectionPages[p.template]?.id === p.id);
     }
     return true;

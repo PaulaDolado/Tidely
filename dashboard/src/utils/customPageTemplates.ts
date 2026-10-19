@@ -32,12 +32,13 @@ export const CUSTOM_PAGE_TEMPLATE_META: Record<CustomPageTemplate, CustomPageTem
 // DashboardPage.openSectionPage): la clave es la plantilla Y el apartado de User.enabledSections
 // a la vez (coinciden a propósito), y el valor la etiqueta del menú / título de la página que se
 // crea la primera vez. El orden es el de aparición por defecto en el menú.
-export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio"] as const;
+export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio", "recetas"] as const;
 export type SectionPageTemplate = (typeof SECTION_PAGE_TEMPLATES)[number];
 export const SECTION_PAGE_LABELS: Record<SectionPageTemplate, string> = {
   galeria: "Galería",
   viajes: "Viajes",
   estudio: "Estudio",
+  recetas: "Recetas",
 };
 
 // La página que abre el apartado de esa plantilla: la primera por `order` (y por id si empatan).

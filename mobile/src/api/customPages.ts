@@ -326,7 +326,7 @@ export interface CustomPage extends CustomPageSummary {
 // Plantillas que tienen su propio apartado opcional en el menú principal (la clave de
 // user.enabledSections es la misma que la de la plantilla): por debajo siguen siendo páginas
 // personalizadas, pero el menú abre siempre "la principal" en vez de listarlas como "Tus páginas".
-export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio"] as const;
+export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio", "recetas"] as const;
 export type SectionPageTemplate = (typeof SECTION_PAGE_TEMPLATES)[number];
 
 // Orden estable para decidir cuál es "la principal": por `order` y, a igualdad, por id. Los ids son
@@ -359,7 +359,7 @@ export function hiddenSectionPageIds<P extends { template: string; order: number
 ): Set<P["id"]> {
   const hidden = new Set<P["id"]>();
   for (const p of pages) if (p.template === "galeria") hidden.add(p.id);
-  for (const template of ["viajes", "estudio"] as const) {
+  for (const template of ["viajes", "estudio", "recetas"] as const) {
     if (!enabledSections.has(template)) continue;
     const primary = primaryPageOf(pages, template);
     if (primary) hidden.add(primary.id);

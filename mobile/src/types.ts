@@ -17,6 +17,7 @@ export const ENABLED_SECTIONS = [
   "proyectos",
   "viajes",
   "estudio",
+  "recetas",
 ] as const;
 export type EnabledSection = (typeof ENABLED_SECTIONS)[number];
 
@@ -32,6 +33,7 @@ export const SECTION_LABELS: Record<EnabledSection, string> = {
   proyectos: "Libreta",
   viajes: "Viajes",
   estudio: "Estudio",
+  recetas: "Recetas",
 };
 export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   planificador: "Tableros de tareas kanban, con propiedades personalizadas.",
@@ -43,6 +45,7 @@ export const SECTION_DESCRIPTIONS: Record<EnabledSection, string> = {
   proyectos: "Cuaderno con notas enriquecidas por libreta.",
   viajes: "Itinerario, presupuesto, lugares guardados, etc.",
   estudio: "Asignaturas con tiempo de estudio, cronómetro y exámenes.",
+  recetas: "Recetario en archivador: pestañas y una tarjeta por receta.",
 };
 
 export type MenuLayout = "default" | "compact";

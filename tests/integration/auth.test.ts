@@ -549,7 +549,7 @@ describe("Auth Endpoints", () => {
   });
 
   describe("PUT /auth/me/onboarding", () => {
-    it("una cuenta recién registrada empieza con onboardingCompleted=false y los 9 apartados activados", async () => {
+    it("una cuenta recién registrada empieza con onboardingCompleted=false y los 10 apartados activados", async () => {
       const register = await request(app).post("/auth/register").send({
         username: "test_user",
         email: "test@example.com",
@@ -559,7 +559,7 @@ describe("Auth Endpoints", () => {
 
       expect(register.body.user.onboardingCompleted).toBe(false);
       expect(register.body.user.enabledSections.sort()).toEqual(
-        ["estudio", "finanzas", "galeria", "horario", "metasAhorro", "objetivos", "planificador", "proyectos", "viajes"].sort()
+        ["estudio", "finanzas", "galeria", "horario", "metasAhorro", "objetivos", "planificador", "proyectos", "recetas", "viajes"].sort()
       );
     });
 
