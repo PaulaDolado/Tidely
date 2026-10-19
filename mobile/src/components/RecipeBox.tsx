@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, KeyboardAvoidingView, LayoutChangeEvent, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
@@ -24,7 +24,8 @@ import {
   removeTab,
 } from "../utils/recipes";
 import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
-import { fonts } from "../theme";
+import { ColorPalette, fonts, withAlpha } from "../theme";
+import { useTheme } from "../context/ThemeContext";
 
 // Plantilla "recetas" de las páginas personalizadas — puerto de dashboard/src/components/RecipeBoxTemplate.tsx: una
 // caja de tela roja con filete dorado; dentro, un archivador con una pestaña por categoría y, en la elegida, sus
@@ -34,19 +35,32 @@ import { fonts } from "../theme";
 // Igual que StudyPlanner: el componente guarda en cada acción y mantiene su PROPIA copia (`dataRef`), para que dos
 // guardados seguidos partan del último estado y no del que aún se está recargando en la pantalla padre.
 
-// Es un objeto físico: la misma paleta en tema claro y oscuro (igual que en la web, ver .recipe-box en styles.css).
-const RP = {
-  paper: "#f6f0e5",
-  paperShade: "#e9dfcf",
-  ink: "#2b2420",
-  inkSoft: "#6a5a50",
-  red: "#8e1b25",
-  redDeep: "#5e1017",
-  gold: "#cdae6c",
-  rule: "#cbb8a2",
-};
+// Los colores salen del tema de la app (claro, oscuro y el resto), igual que en la web (ver .recipe-box en
+// styles.css): lo propio del recetario está en la forma (separadores, doble filete, versalitas, líneas punteadas e
+// ilustración a línea), no en una paleta aparte.
+function recipePalette(c: ColorPalette) {
+  return {
+    bg: c.background,
+    paper: c.card,
+    paperShade: c.muted,
+    ink: c.foreground,
+    inkSoft: c.mutedForeground,
+    accent: c.primary,
+    destructive: c.destructive,
+    rule: withAlpha(c.foreground, 0.14),
+    dots: withAlpha(c.foreground, 0.24),
+  };
+}
+type RecipePalette = ReturnType<typeof recipePalette>;
 
-const PATTERN_XML = recipePatternTile(RP.red, 150);
+function useRecipeTheme() {
+  const { colors } = useTheme();
+  return useMemo(() => {
+    const RP = recipePalette(colors);
+    return { RP, styles: createStyles(RP), patternXml: recipePatternTile(colors.foreground, PATTERN_TILE) };
+  }, [colors]);
+}
+
 const PATTERN_TILE = 150;
 const activeTabKey = (pageId: string) => `tidely.recipes.tab.${pageId}`;
 
@@ -84,6 +98,7 @@ export function RecipeBox({
   content: unknown;
   onChange: (next: RecipesContent) => Promise<void>;
 }) {
+  const { RP, styles } = useRecipeTheme();
   const [data, setData] = useState<RecipesContent>(() => normalizeRecipesContent(content));
   const dataRef = useRef(data);
   const pendingRef = useRef(0);
@@ -154,9 +169,6 @@ export function RecipeBox({
 
   return (
     <View style={styles.box}>
-      <View pointerEvents="none" style={[styles.goldRule, { top: 6, left: 6, right: 6, bottom: 6, opacity: 0.7, borderRadius: 6 }]} />
-      <View pointerEvents="none" style={[styles.goldRule, { top: 10, left: 10, right: 10, bottom: 10, opacity: 0.35, borderRadius: 4 }]} />
-
       <View style={styles.tabRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabScrollContent}>
           {tabs.map((tab) => {
@@ -170,7 +182,7 @@ export function RecipeBox({
                 accessibilityState={{ selected: active }}
                 style={[styles.tab, active ? styles.tabActive : styles.tabInactive]}
               >
-                <Text style={styles.tabLabel} numberOfLines={1}>
+                <Text style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>
                   {tab.name.toUpperCase()}
                 </Text>
                 <Text style={styles.tabCount}>{count}</Text>
@@ -180,7 +192,7 @@ export function RecipeBox({
         </ScrollView>
         <Pressable onPress={() => setTabEditorOpen(true)} accessibilityLabel="Editar pestañas" hitSlop={8} style={styles.editTabsButton}>
           <Svg width={16} height={16} viewBox="0 0 16 16">
-            <Path d="M10.5 2.5 L13.5 5.5 L5.5 13.5 L2.5 13.5 L2.5 10.5 Z M8.5 4.5 L11.5 7.5" stroke={RP.gold} strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M10.5 2.5 L13.5 5.5 L5.5 13.5 L2.5 13.5 L2.5 10.5 Z M8.5 4.5 L11.5 7.5" stroke={RP.inkSoft} strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </Pressable>
         <Pressable
@@ -191,7 +203,7 @@ export function RecipeBox({
           hitSlop={8}
           style={[styles.editTabsButton, recipes.length === 0 && { opacity: 0.4 }]}
         >
-          <ExportIcon color={RP.gold} />
+          <ExportIcon color={RP.inkSoft} />
         </Pressable>
       </View>
 
@@ -206,7 +218,7 @@ export function RecipeBox({
                 <Text style={styles.panelCount}>{visible.length === 1 ? "1 receta" : `${visible.length} recetas`}</Text>
               </View>
               <Pressable onPress={() => setSheet({ draft: emptyRecipe(Crypto.randomUUID(), activeTab.id) })} style={({ pressed }) => [styles.redButton, pressed && styles.redButtonPressed]}>
-                <PlusIcon color={RP.paper} />
+                <PlusIcon color={RP.bg} />
                 <Text style={styles.redButtonText}>Nueva receta</Text>
               </Pressable>
             </Paper>
@@ -264,6 +276,7 @@ export function RecipeBox({
 
 /** Papel crema con doble filete: el borde y, 6 px más adentro, una segunda línea. */
 function Paper({ children, style }: { children: ReactNode; style?: object }) {
+  const { styles } = useRecipeTheme();
   return (
     <View style={[styles.paper, style]}>
       <View pointerEvents="none" style={styles.paperInnerRule} />
@@ -274,6 +287,7 @@ function Paper({ children, style }: { children: ReactNode; style?: object }) {
 
 /** Separador del archivador: papel con el patrón de especias, repetido en baldosas. */
 function PatternPanel({ children }: { children: ReactNode }) {
+  const { styles, patternXml } = useRecipeTheme();
   const [size, setSize] = useState({ width: 0, height: 0 });
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -283,11 +297,11 @@ function PatternPanel({ children }: { children: ReactNode }) {
   const rows = Math.ceil(size.height / PATTERN_TILE);
   return (
     <View style={styles.panel} onLayout={onLayout}>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.pattern]}>
         {Array.from({ length: rows }, (_, r) => (
           <View key={r} style={styles.patternRow}>
             {Array.from({ length: cols }, (_, c) => (
-              <SvgXml key={c} xml={PATTERN_XML} width={PATTERN_TILE} height={PATTERN_TILE} />
+              <SvgXml key={c} xml={patternXml} width={PATTERN_TILE} height={PATTERN_TILE} />
             ))}
           </View>
         ))}
@@ -298,6 +312,7 @@ function PatternPanel({ children }: { children: ReactNode }) {
 }
 
 function RecipeTile({ recipe, onOpen }: { recipe: Recipe; onOpen: () => void }) {
+  const { styles } = useRecipeTheme();
   const preview = recipe.ingredients.slice(0, 4).join(" · ");
   return (
     <Pressable onPress={onOpen} style={({ pressed }) => [styles.tileWrap, pressed && { transform: [{ translateY: 1 }], opacity: 0.94 }]}>
@@ -322,10 +337,12 @@ function RecipeTile({ recipe, onOpen }: { recipe: Recipe; onOpen: () => void }) 
 }
 
 function Label({ children, small = false }: { children: string; small?: boolean }) {
+  const { styles } = useRecipeTheme();
   return <Text style={[styles.label, small && styles.labelSmall]}>{children.toUpperCase()}</Text>;
 }
 
 function MetaCell({ label, value }: { label: string; value: string }) {
+  const { styles } = useRecipeTheme();
   return (
     <View style={styles.metaCell}>
       <Label small>{label}</Label>
@@ -337,13 +354,14 @@ function MetaCell({ label, value }: { label: string; value: string }) {
 }
 
 function DifficultyMarks({ difficulty, large = false }: { difficulty: RecipeDifficulty | null; large?: boolean }) {
+  const { RP, styles } = useRecipeTheme();
   const level = difficulty ? DIFFICULTIES.indexOf(difficulty) + 1 : 0;
   const size = large ? 12 : 10;
   return (
     <View style={styles.marks}>
       {[1, 2, 3].map((n) => (
         <Svg key={n} width={size} height={size} viewBox="0 0 10 10">
-          <Circle cx={5} cy={5} r={4} fill={n <= level ? RP.red : "none"} stroke={RP.red} strokeWidth={1.2} />
+          <Circle cx={5} cy={5} r={4} fill={n <= level ? RP.accent : "none"} stroke={RP.accent} strokeWidth={1.2} />
         </Svg>
       ))}
       <Text style={[large ? styles.marksLabelLarge : styles.marksLabel, !difficulty && styles.placeholderText]}>
@@ -354,6 +372,7 @@ function DifficultyMarks({ difficulty, large = false }: { difficulty: RecipeDiff
 }
 
 function PotIllustration({ width }: { width: number }) {
+  const { RP } = useRecipeTheme();
   return (
     <Svg width={width} height={(width * 92) / 160} viewBox="0 0 160 92">
       {RECIPE_ILLUSTRATION.map((p, i) => (
@@ -399,6 +418,7 @@ function RecipeSheet({
   onDelete: (recipe: Recipe) => void;
   onClose: () => void;
 }) {
+  const { RP, styles } = useRecipeTheme();
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(startEditing);
   const tabName = tabs.find((t) => t.id === recipe.tabId)?.name ?? "";
@@ -489,6 +509,7 @@ function RecipeSheet({
 }
 
 function SheetSection({ title, children }: { title: string; children: ReactNode }) {
+  const { styles } = useRecipeTheme();
   return (
     <View style={styles.section}>
       <Text style={[styles.label, styles.sectionLabel]}>{title.toUpperCase()}</Text>
@@ -510,6 +531,7 @@ function RecipeForm({
   onSave: (recipe: Recipe) => void;
   onCancel: () => void;
 }) {
+  const { RP, styles } = useRecipeTheme();
   const [name, setName] = useState(recipe.name);
   const [tabId, setTabId] = useState(recipe.tabId);
   const [servings, setServings] = useState(recipe.servings);
@@ -626,6 +648,7 @@ function FormArea({
   placeholder: string;
   serif?: boolean;
 }) {
+  const { RP, styles } = useRecipeTheme();
   const [height, setHeight] = useState(minLines * LINE);
   const lines = Math.max(minLines, Math.ceil(height / LINE));
   return (
@@ -673,6 +696,7 @@ function TabEditor({
   onChange: (next: RecipesContent) => void;
   getCurrent: () => RecipesContent;
 }) {
+  const { RP, styles } = useRecipeTheme();
   const insets = useSafeAreaInsets();
   const [names, setNames] = useState<Record<string, string>>({});
   const [newName, setNewName] = useState("");
@@ -756,7 +780,7 @@ function TabEditor({
               style={[styles.field, styles.editorName, { flex: 1 }]}
             />
             <Pressable onPress={add} disabled={!newName.trim()} style={[styles.redButton, !newName.trim() && styles.disabled]}>
-              <PlusIcon color={RP.paper} />
+              <PlusIcon color={RP.bg} />
               <Text style={styles.redButtonText}>Añadir</Text>
             </Pressable>
           </View>
@@ -767,6 +791,7 @@ function TabEditor({
 }
 
 function ArrowButton({ label, disabled, d, onPress }: { label: string; disabled: boolean; d: string; onPress: () => void }) {
+  const { RP, styles } = useRecipeTheme();
   return (
     <Pressable onPress={onPress} disabled={disabled} accessibilityLabel={label} hitSlop={4} style={[styles.arrowButton, disabled && { opacity: 0.3 }]}>
       <Svg width={16} height={16} viewBox="0 0 16 16">
@@ -778,18 +803,21 @@ function ArrowButton({ label, disabled, d, onPress }: { label: string; disabled:
 
 const serif = fonts.serif;
 
-const styles = StyleSheet.create({
+function createStyles(RP: RecipePalette) {
+  return StyleSheet.create({
   box: {
-    backgroundColor: RP.red,
-    borderRadius: 10,
-    padding: 10,
-    shadowColor: "#3c0a0f",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 5,
+    backgroundColor: RP.paper,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: RP.rule,
+    padding: 12,
+    shadowColor: "#2D2926",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 2,
   },
-  goldRule: { position: "absolute", borderWidth: 1, borderColor: RP.gold },
+  pattern: { opacity: 0.045 },
   tabRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingHorizontal: 4, paddingTop: 4 },
   tabScroll: { flex: 1, marginBottom: -1 },
   tabScrollContent: { alignItems: "flex-end", gap: 4, paddingTop: 6 },
@@ -806,33 +834,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     borderColor: RP.rule,
   },
-  tabActive: { backgroundColor: RP.paper, zIndex: 2 },
-  tabInactive: { backgroundColor: RP.paperShade, marginBottom: -6, paddingBottom: 14 },
-  tabLabel: { fontFamily: serif, fontSize: 12, letterSpacing: 2, color: RP.red, maxWidth: 160 },
+  tabActive: { backgroundColor: RP.bg, zIndex: 2 },
+  tabInactive: { backgroundColor: RP.paperShade, borderColor: "transparent", marginBottom: -4, paddingBottom: 12 },
+  tabLabel: { fontFamily: serif, fontSize: 12, letterSpacing: 2, color: RP.inkSoft, maxWidth: 160 },
+  tabLabelActive: { color: RP.ink },
   tabCount: { fontFamily: serif, fontSize: 12, color: RP.inkSoft },
   editTabsButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: RP.gold,
+    borderColor: RP.rule,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 6,
   },
   panel: {
-    backgroundColor: RP.paper,
+    backgroundColor: RP.bg,
     borderWidth: 1,
     borderColor: RP.rule,
-    borderRadius: 10,
+    borderRadius: 16,
     borderTopLeftRadius: 0,
     padding: 12,
     gap: 12,
     overflow: "hidden",
   },
   patternRow: { flexDirection: "row" },
-  paper: { backgroundColor: RP.paper, borderWidth: 1, borderColor: RP.rule, borderRadius: 4 },
-  paperInnerRule: { position: "absolute", top: 5, left: 5, right: 5, bottom: 5, borderWidth: 1, borderColor: RP.rule, borderRadius: 2 },
+  paper: { backgroundColor: RP.paper, borderWidth: 1, borderColor: RP.rule, borderRadius: 16 },
+  paperInnerRule: { position: "absolute", top: 5, left: 5, right: 5, bottom: 5, borderWidth: 1, borderColor: RP.rule, borderRadius: 12 },
   panelHeader: { padding: 18, gap: 12 },
   panelHeaderTitle: { flexDirection: "row", alignItems: "baseline", gap: 10 },
   panelTitle: { fontFamily: serif, fontSize: 30, color: RP.ink, flexShrink: 1 },
@@ -842,13 +871,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "flex-start",
     gap: 8,
-    backgroundColor: RP.red,
+    backgroundColor: RP.ink,
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  redButtonPressed: { backgroundColor: RP.redDeep },
-  redButtonText: { color: RP.paper, fontFamily: fonts.sansMedium, fontSize: 14 },
+  redButtonPressed: { opacity: 0.85 },
+  redButtonText: { color: RP.bg, fontFamily: fonts.sansMedium, fontSize: 14 },
   ghostButton: { borderRadius: 999, borderWidth: 1, borderColor: RP.rule, paddingHorizontal: 16, paddingVertical: 10 },
   ghostButtonText: { color: RP.inkSoft, fontFamily: fonts.sans, fontSize: 14 },
   exportButton: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -856,13 +885,13 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", gap: 10, paddingHorizontal: 22, paddingVertical: 28 },
   emptyTitle: { fontFamily: serif, fontSize: 21, color: RP.ink, textAlign: "center" },
   emptyText: { fontFamily: fonts.sans, fontSize: 14, color: RP.inkSoft, textAlign: "center", lineHeight: 20 },
-  link: { fontFamily: fonts.sans, fontSize: 14, color: RP.red, textDecorationLine: "underline" },
+  link: { fontFamily: fonts.sans, fontSize: 14, color: RP.accent, textDecorationLine: "underline" },
   tileWrap: {
-    shadowColor: "#2b2420",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.16,
+    shadowColor: "#2D2926",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
     shadowRadius: 10,
-    elevation: 2,
+    elevation: 1,
   },
   tile: { padding: 18, gap: 10 },
   tileName: { fontFamily: serif, fontSize: 25, lineHeight: 29, color: RP.ink },
@@ -878,14 +907,14 @@ const styles = StyleSheet.create({
   tilePreview: { fontFamily: fonts.sans, fontSize: 13.5, lineHeight: 19, color: RP.inkSoft },
   metaCell: { flex: 1, gap: 5, minWidth: 0 },
   metaValue: { fontFamily: serif, fontSize: 19, color: RP.ink },
-  label: { fontFamily: serif, fontSize: 11.5, letterSpacing: 2.2, color: RP.red },
+  label: { fontFamily: serif, fontSize: 11.5, letterSpacing: 2, color: RP.inkSoft },
   labelSmall: { fontSize: 10, letterSpacing: 1.6 },
   labelSoft: { color: RP.inkSoft },
   placeholderText: { color: RP.inkSoft },
   marks: { flexDirection: "row", alignItems: "center", gap: 4 },
   marksLabel: { fontFamily: serif, fontSize: 14, color: RP.ink, marginLeft: 3 },
   marksLabelLarge: { fontFamily: serif, fontSize: 18, color: RP.ink, marginLeft: 4 },
-  sheetBackdrop: { flex: 1, backgroundColor: "#1c1210" },
+  sheetBackdrop: { flex: 1, backgroundColor: RP.bg },
   sheetScroll: { paddingHorizontal: 10 },
   sheetCard: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 26 },
   sheetTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 },
@@ -914,7 +943,7 @@ const styles = StyleSheet.create({
     borderColor: RP.rule,
   },
   stepRow: { flexDirection: "row", gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderStyle: "dotted", borderColor: RP.rule },
-  stepNumber: { width: 20, textAlign: "right", fontFamily: serif, fontSize: 20, lineHeight: 22, color: RP.red },
+  stepNumber: { width: 20, textAlign: "right", fontFamily: serif, fontSize: 20, lineHeight: 22, color: RP.accent },
   stepText: { flex: 1, fontFamily: fonts.sans, fontSize: 15.5, lineHeight: 22, color: RP.ink },
   tips: { fontFamily: serif, fontSize: 20, lineHeight: 26, color: RP.ink },
   sheetFooter: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 28, paddingTop: 18, borderTopWidth: 1, borderColor: RP.rule },
@@ -923,7 +952,7 @@ const styles = StyleSheet.create({
     color: RP.ink,
     borderBottomWidth: 1,
     borderStyle: "dotted",
-    borderColor: RP.inkSoft,
+    borderColor: RP.dots,
     paddingVertical: 4,
     paddingHorizontal: 0,
   },
@@ -933,9 +962,9 @@ const styles = StyleSheet.create({
   metaField: { fontFamily: serif, fontSize: 22 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderRadius: 999, borderWidth: 1, borderColor: RP.rule, paddingHorizontal: 14, paddingVertical: 7 },
-  chipSelected: { backgroundColor: RP.red, borderColor: RP.red },
+  chipSelected: { backgroundColor: RP.ink, borderColor: RP.ink },
   chipText: { fontFamily: serif, fontSize: 16, color: RP.inkSoft },
-  chipTextSelected: { color: RP.paper },
+  chipTextSelected: { color: RP.bg },
   areaLabelRow: { flexDirection: "row", alignItems: "baseline", gap: 10 },
   areaHint: { fontFamily: serif, fontSize: 14, color: RP.inkSoft },
   paperLine: { position: "absolute", left: 0, right: 0, borderBottomWidth: 1, borderStyle: "dotted", borderColor: RP.rule },
@@ -949,18 +978,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   areaSerif: { fontFamily: serif, fontSize: 19 },
-  editorBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(28,18,16,0.55)" },
+  editorBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: withAlpha("#000000", 0.4) },
   editorSheet: {
     backgroundColor: RP.paper,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 18,
     maxHeight: "85%",
   },
   editorHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   editorTitle: { fontFamily: serif, fontSize: 26, color: RP.ink },
-  editorDone: { fontFamily: fonts.sansMedium, fontSize: 15, color: RP.red },
+  editorDone: { fontFamily: fonts.sansMedium, fontSize: 15, color: RP.accent },
   editorHint: { fontFamily: fonts.sans, fontSize: 13.5, lineHeight: 19, color: RP.inkSoft, marginTop: 6, marginBottom: 8 },
   editorList: { flexGrow: 0 },
   editorRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 6 },
@@ -969,6 +998,7 @@ const styles = StyleSheet.create({
   editorCount: { fontFamily: serif, fontSize: 13, color: RP.inkSoft, marginTop: 2 },
   arrowButton: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
   editorDelete: { paddingHorizontal: 10, paddingVertical: 8 },
-  editorDeleteText: { fontFamily: fonts.sans, fontSize: 13, color: RP.red },
+  editorDeleteText: { fontFamily: fonts.sans, fontSize: 13, color: RP.destructive },
   editorAddRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 14 },
-});
+  });
+}

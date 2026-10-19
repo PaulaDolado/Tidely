@@ -25,7 +25,13 @@ import { Recipe, RecipeDifficulty, RecipesContent } from "../types";
 // pestaña elegida, sus tarjetas de receta. Cada tarjeta se abre en grande, como la ficha de papel, para leerla o
 // editarla. Todo vive en `content` ({ tabs, recipes }); el componente es controlado y devuelve el contenido entero.
 
-const PATTERN_URL = `url("data:image/svg+xml,${encodeURIComponent(recipePatternTile("#8e1b25"))}")`;
+// El patrón se usa como máscara (ver .recipe-pattern): el color lo pone el tema, no el dibujo.
+const PATTERN_MASK = `url("data:image/svg+xml,${encodeURIComponent(recipePatternTile("#000"))}")`;
+
+const PRIMARY_BUTTON =
+  "flex cursor-pointer items-center gap-2 rounded-full bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45";
+const SECONDARY_BUTTON =
+  "flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent sm:px-3.5";
 
 type Sheet = { recipeId: string; editing: boolean } | { draft: Recipe } | null;
 
@@ -92,99 +98,86 @@ export function RecipeBoxTemplate({
 
   return (
     <section className="recipe-box">
-      <div className="recipe-cloth relative rounded-[10px] p-3 shadow-[0_18px_40px_-18px_rgb(60_10_15/0.55)] sm:p-5">
-        {/* doble filete dorado de la tapa */}
-        <span aria-hidden className="pointer-events-none absolute inset-[7px] rounded-[6px] border border-[var(--rp-gold)]/70" />
-        <span aria-hidden className="pointer-events-none absolute inset-[11px] rounded-[4px] border border-[var(--rp-gold)]/35" />
-
-        <div className="relative flex flex-col">
-          <div className="flex items-end gap-3 px-1 pt-1 sm:px-2">
-            <div role="tablist" aria-label="Pestañas del recetario" className="recipe-scroll -mb-px flex min-w-0 flex-1 items-end gap-1 overflow-x-auto overflow-y-hidden pt-2">
-              {tabs.map((tab) => {
-                const active = tab.id === activeTab?.id;
-                const count = recipes.filter((r) => r.tabId === tab.id).length;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    aria-controls="recipe-panel"
-                    onClick={(e) => {
-                      selectTab(tab.id);
-                      e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-                    }}
-                    className={`group relative shrink-0 cursor-pointer rounded-t-[10px] border border-b-0 px-4 pb-2 pt-2.5 transition-[transform,background-color] duration-200 ease-out sm:px-5 ${
-                      active
-                        ? "z-10 border-[var(--rp-rule)] bg-[var(--rp-paper)]"
-                        : "translate-y-1.5 border-[var(--rp-rule)]/70 bg-[var(--rp-paper-shade)] hover:translate-y-0.5"
-                    }`}
-                  >
-                    <span className="recipe-label whitespace-nowrap">{tab.name}</span>
-                    <span className={`ml-2 font-serif text-xs tabular-nums ${active ? "text-[var(--rp-ink-soft)]" : "text-[var(--rp-ink-soft)]/80"}`}>{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditingTabs((v) => !v)}
-              aria-pressed={editingTabs}
-              aria-label={editingTabs ? "Terminar de editar las pestañas" : "Editar pestañas"}
-              className="mb-2 flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-[var(--rp-gold)]/60 px-2.5 py-1.5 font-serif text-sm text-[var(--rp-gold)] transition-colors hover:bg-[var(--rp-gold)]/15 sm:px-3.5"
-            >
-              {editingTabs ? (
-                "Listo"
-              ) : (
-                <>
-                  <svg viewBox="0 0 16 16" className="size-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M10.5 2.5 L13.5 5.5 L5.5 13.5 L2.5 13.5 L2.5 10.5 Z M8.5 4.5 L11.5 7.5" />
-                  </svg>
-                  <span className="hidden sm:inline">Editar pestañas</span>
-                </>
-              )}
-            </button>
-            <ExportMenu
-              variant="box"
-              label="Exportar recetario"
-              disabled={recipes.length === 0}
-              disabledHint="Aún no hay recetas que exportar"
-              onExport={(format) => exportDocument(format, title || "Recetas", recipeBookSections(data), true)}
-            />
+      <div className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-soft)] sm:p-6">
+        <div className="flex items-end gap-2">
+          <div role="tablist" aria-label="Pestañas del recetario" className="recipe-scroll -mb-px flex min-w-0 flex-1 items-end gap-1 overflow-x-auto overflow-y-hidden pt-1">
+            {tabs.map((tab) => {
+              const active = tab.id === activeTab?.id;
+              const count = recipes.filter((r) => r.tabId === tab.id).length;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls="recipe-panel"
+                  onClick={(e) => {
+                    selectTab(tab.id);
+                    e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+                  }}
+                  className={`relative shrink-0 cursor-pointer rounded-t-xl border border-b-0 px-4 pb-2 pt-2.5 transition-[transform,background-color] duration-200 ease-out ${
+                    active ? "z-10 border-border bg-background" : "translate-y-1 border-transparent bg-muted/70 hover:translate-y-0.5 hover:bg-muted"
+                  }`}
+                >
+                  <span className="recipe-label whitespace-nowrap" style={active ? { color: "var(--rp-ink)" } : undefined}>
+                    {tab.name}
+                  </span>
+                  <span className="ml-2 text-xs tabular-nums text-muted-foreground">{count}</span>
+                </button>
+              );
+            })}
           </div>
-
-          <div
-            id="recipe-panel"
-            role="tabpanel"
-            className="relative rounded-[10px] rounded-tl-none border border-[var(--rp-rule)] p-4 sm:p-6"
-            style={{ backgroundColor: "var(--rp-paper)", backgroundImage: PATTERN_URL, backgroundSize: "180px 180px" }}
+          <button
+            type="button"
+            onClick={() => setEditingTabs((v) => !v)}
+            aria-pressed={editingTabs}
+            aria-label={editingTabs ? "Terminar de editar las pestañas" : "Editar pestañas"}
+            className={`mb-1.5 ${SECONDARY_BUTTON}`}
           >
+            {editingTabs ? (
+              "Listo"
+            ) : (
+              <>
+                <svg viewBox="0 0 16 16" className="size-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M10.5 2.5 L13.5 5.5 L5.5 13.5 L2.5 13.5 L2.5 10.5 Z M8.5 4.5 L11.5 7.5" />
+                </svg>
+                <span className="hidden sm:inline">Editar pestañas</span>
+              </>
+            )}
+          </button>
+          <ExportMenu
+            variant="box"
+            label="Exportar recetario"
+            disabled={recipes.length === 0}
+            disabledHint="Aún no hay recetas que exportar"
+            onExport={(format) => exportDocument(format, title || "Recetas", recipeBookSections(data), true)}
+          />
+        </div>
+
+        <div id="recipe-panel" role="tabpanel" className="relative overflow-hidden rounded-2xl rounded-tl-none border border-border bg-background p-4 sm:p-6">
+          {/* patrón de especias del separador, casi imperceptible */}
+          <div aria-hidden className="recipe-pattern pointer-events-none absolute inset-0" style={{ maskImage: PATTERN_MASK, WebkitMaskImage: PATTERN_MASK }} />
+          <div className="relative">
             {editingTabs ? (
               <TabEditor data={data} onChange={onChange} onDeleted={(id) => id === activeTab?.id && setStoredTab(null)} />
             ) : activeTab ? (
               <>
-                <div className="recipe-paper mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[4px] px-6 py-4">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-baseline gap-3">
-                    <h3 className="font-serif text-3xl leading-none text-[var(--rp-ink)]">{activeTab.name}</h3>
-                    <span className="font-serif text-sm italic text-[var(--rp-ink-soft)]">
-                      {visible.length === 1 ? "1 receta" : `${visible.length} recetas`}
-                    </span>
+                    <h3 className="font-serif text-3xl leading-none">{activeTab.name}</h3>
+                    <span className="text-sm text-muted-foreground">{visible.length === 1 ? "1 receta" : `${visible.length} recetas`}</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSheet({ draft: emptyRecipe(newId(), activeTab.id) })}
-                    className="flex cursor-pointer items-center gap-2 rounded-full bg-[var(--rp-red)] px-4 py-2 text-sm text-[var(--rp-paper)] shadow-[0_6px_14px_-8px_rgb(94_16_23/0.8)] transition-colors hover:bg-[var(--rp-red-deep)]"
-                  >
+                  <button type="button" onClick={() => setSheet({ draft: emptyRecipe(newId(), activeTab.id) })} className={PRIMARY_BUTTON}>
                     <PlusIcon />
                     Nueva receta
                   </button>
                 </div>
 
                 {visible.length === 0 ? (
-                  <div className="recipe-paper mx-auto flex max-w-md flex-col items-center gap-3 rounded-[4px] px-8 py-10 text-center">
-                    <PotIllustration className="w-40 text-[var(--rp-ink)]" />
+                  <div className="recipe-paper mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl px-8 py-10 text-center">
+                    <PotIllustration className="w-36 text-muted-foreground" />
                     <p className="font-serif text-xl">Aún no hay recetas en {activeTab.name}.</p>
-                    <p className="text-sm text-[var(--rp-ink-soft)]">Apunta la primera: raciones, tiempo, ingredientes y cómo se hace.</p>
+                    <p className="text-sm text-muted-foreground">Apunta la primera: raciones, tiempo, ingredientes y cómo se hace.</p>
                   </div>
                 ) : (
                   <ul className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
@@ -197,9 +190,9 @@ export function RecipeBoxTemplate({
                 )}
               </>
             ) : (
-              <div className="recipe-paper mx-auto flex max-w-md flex-col items-center gap-3 rounded-[4px] px-8 py-10 text-center">
+              <div className="recipe-paper mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl px-8 py-10 text-center">
                 <p className="font-serif text-xl">El archivador está vacío.</p>
-                <button type="button" onClick={() => setEditingTabs(true)} className="cursor-pointer text-sm text-[var(--rp-red)] underline underline-offset-4">
+                <button type="button" onClick={() => setEditingTabs(true)} className="cursor-pointer text-sm text-primary underline underline-offset-4">
                   Añade una pestaña para empezar
                 </button>
               </div>
@@ -233,7 +226,7 @@ function RecipeTile({ recipe, onOpen }: { recipe: Recipe; onOpen: () => void }) 
     <button
       type="button"
       onClick={onOpen}
-      className="recipe-paper group flex h-full w-full cursor-pointer flex-col gap-3 rounded-[4px] p-6 text-left shadow-[0_8px_18px_-14px_rgb(43_36_32/0.6)] transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_18px_28px_-18px_rgb(43_36_32/0.7)]"
+      className="recipe-paper group flex h-full w-full cursor-pointer flex-col gap-3 rounded-2xl p-6 text-left transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
     >
       <span className="recipe-label">Receta</span>
       <span className={`font-serif text-2xl leading-tight ${recipe.name ? "" : "italic text-[var(--rp-ink-soft)]"}`}>{recipe.name || "Sin nombre"}</span>
@@ -269,7 +262,7 @@ function DifficultyMarks({ difficulty, large = false }: { difficulty: RecipeDiff
       <span className="flex gap-1" aria-hidden>
         {[1, 2, 3].map((n) => (
           <svg key={n} viewBox="0 0 10 10" className={large ? "size-3" : "size-2.5"}>
-            <circle cx="5" cy="5" r="4" fill={n <= level ? "var(--rp-red)" : "none"} stroke="var(--rp-red)" strokeWidth="1.2" />
+            <circle cx="5" cy="5" r="4" fill={n <= level ? "var(--rp-accent)" : "none"} stroke="var(--rp-accent)" strokeWidth="1.2" />
           </svg>
         ))}
       </span>
@@ -329,12 +322,12 @@ function RecipeSheet({
       role="dialog"
       aria-modal="true"
       aria-label={recipe.name || "Nueva receta"}
-      className="recipe-box fixed inset-0 z-50 overflow-y-auto bg-[rgb(28_18_16/0.62)] px-3 py-6 sm:px-6 sm:py-12"
+      className="recipe-box fixed inset-0 z-50 overflow-y-auto bg-foreground/50 px-3 py-6 sm:px-6 sm:py-12"
       onClick={onClose}
     >
       <article
         onClick={(e) => e.stopPropagation()}
-        className="recipe-paper recipe-sheet-in relative mx-auto w-full max-w-3xl rounded-[6px] px-6 pb-8 pt-9 shadow-[0_30px_60px_-24px_rgb(20_10_8/0.65)] sm:px-12 sm:pb-12 sm:pt-12"
+        className="recipe-paper recipe-sheet-in relative mx-auto w-full max-w-3xl rounded-3xl px-6 pb-8 pt-9 shadow-[var(--shadow-soft)] sm:px-12 sm:pb-12 sm:pt-12"
       >
         <button
           ref={closeRef}
@@ -347,7 +340,7 @@ function RecipeSheet({
             <path d="M3.5 3.5 L12.5 12.5 M12.5 3.5 L3.5 12.5" />
           </svg>
         </button>
-        <PotIllustration className="pointer-events-none absolute right-12 top-10 hidden w-44 text-[var(--rp-ink)] opacity-90 md:block" />
+        <PotIllustration className="pointer-events-none absolute right-12 top-10 hidden w-40 text-muted-foreground md:block" />
 
         {editing ? (
           <RecipeForm
@@ -392,7 +385,7 @@ function RecipeSheet({
                 <ol className="flex flex-col">
                   {recipe.steps.map((step, i) => (
                     <li key={i} className="flex gap-4 border-b border-dotted border-[var(--rp-rule)] py-2.5 leading-relaxed">
-                      <span className="w-6 shrink-0 text-right font-serif text-xl leading-6 text-[var(--rp-red)] tabular-nums">{i + 1}</span>
+                      <span className="w-6 shrink-0 text-right font-serif text-xl leading-6 text-[var(--rp-accent)] tabular-nums">{i + 1}</span>
                       <span className="min-w-0 max-w-[68ch]">{step}</span>
                     </li>
                   ))}
@@ -414,7 +407,7 @@ function RecipeSheet({
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                className="cursor-pointer rounded-full bg-[var(--rp-red)] px-5 py-2 text-sm text-[var(--rp-paper)] transition-colors hover:bg-[var(--rp-red-deep)]"
+                className={PRIMARY_BUTTON}
               >
                 Editar receta
               </button>
@@ -429,8 +422,8 @@ function RecipeSheet({
                 onBlur={() => setConfirmingDelete(false)}
                 className={`cursor-pointer rounded-full px-5 py-2 text-sm transition-colors ${
                   confirmingDelete
-                    ? "bg-[var(--rp-red-deep)] text-[var(--rp-paper)]"
-                    : "border border-[var(--rp-rule)] text-[var(--rp-ink-soft)] hover:border-[var(--rp-red)] hover:text-[var(--rp-red)]"
+                    ? "bg-destructive text-destructive-foreground"
+                    : "border border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive"
                 }`}
               >
                 {confirmingDelete ? "¿Seguro? Pulsa otra vez" : "Eliminar receta"}
@@ -539,8 +532,8 @@ function RecipeForm({
                 onClick={() => setDifficulty(difficulty === d ? null : d)}
                 className={`cursor-pointer rounded-full border px-3 py-1 font-serif text-base transition-colors ${
                   difficulty === d
-                    ? "border-[var(--rp-red)] bg-[var(--rp-red)] text-[var(--rp-paper)]"
-                    : "border-[var(--rp-rule)] text-[var(--rp-ink-soft)] hover:border-[var(--rp-red)] hover:text-[var(--rp-red)]"
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                 }`}
               >
                 {DIFFICULTY_LABELS[d]}
@@ -569,7 +562,7 @@ function RecipeForm({
         <button
           type="submit"
           disabled={!name.trim()}
-          className="cursor-pointer rounded-full bg-[var(--rp-red)] px-5 py-2 text-sm text-[var(--rp-paper)] transition-colors hover:bg-[var(--rp-red-deep)] disabled:cursor-not-allowed disabled:opacity-45"
+          className={PRIMARY_BUTTON}
         >
           {isNew ? "Guardar receta" : "Guardar cambios"}
         </button>
@@ -634,7 +627,7 @@ function TabEditor({ data, onChange, onDeleted }: { data: RecipesContent; onChan
   };
 
   return (
-    <div className="recipe-paper mx-auto flex max-w-2xl flex-col gap-1 rounded-[4px] px-6 py-6 sm:px-8">
+    <div className="recipe-paper mx-auto flex max-w-2xl flex-col gap-1 rounded-2xl px-6 py-6 sm:px-8">
       <h3 className="font-serif text-2xl">Pestañas del archivador</h3>
       <p className="mb-3 text-sm text-[var(--rp-ink-soft)]">Cámbiales el nombre, ordénalas o añade otras. Borrar una pestaña borra también sus recetas.</p>
       <ul className="flex flex-col">
@@ -668,8 +661,8 @@ function TabEditor({ data, onChange, onDeleted }: { data: RecipesContent; onChan
                 onBlur={() => setConfirming(null)}
                 className={`shrink-0 cursor-pointer rounded-full px-3 py-1 text-xs transition-colors ${
                   confirming === tab.id
-                    ? "bg-[var(--rp-red-deep)] text-[var(--rp-paper)]"
-                    : "text-[var(--rp-ink-soft)] hover:bg-[var(--rp-paper-shade)] hover:text-[var(--rp-red)]"
+                    ? "bg-destructive text-destructive-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-destructive"
                 }`}
               >
                 {confirming === tab.id ? `Borrar con ${count === 1 ? "su receta" : `sus ${count} recetas`}` : "Borrar"}
@@ -689,7 +682,7 @@ function TabEditor({ data, onChange, onDeleted }: { data: RecipesContent; onChan
         <button
           type="submit"
           disabled={!newName.trim()}
-          className="flex shrink-0 cursor-pointer items-center gap-2 rounded-full bg-[var(--rp-red)] px-4 py-2 text-sm text-[var(--rp-paper)] transition-colors hover:bg-[var(--rp-red-deep)] disabled:cursor-not-allowed disabled:opacity-45"
+          className={`shrink-0 ${PRIMARY_BUTTON}`}
         >
           <PlusIcon />
           Añadir
@@ -735,8 +728,8 @@ function ExportMenu({
 
   const trigger =
     variant === "box"
-      ? "mb-2 flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-[var(--rp-gold)]/60 px-2.5 py-1.5 font-serif text-sm text-[var(--rp-gold)] transition-colors hover:bg-[var(--rp-gold)]/15 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent sm:px-3.5"
-      : "flex cursor-pointer items-center gap-2 rounded-full border border-[var(--rp-rule)] px-5 py-2 text-sm text-[var(--rp-ink)] transition-colors hover:border-[var(--rp-red)] hover:text-[var(--rp-red)]";
+      ? `mb-1.5 ${SECONDARY_BUTTON}`
+      : "flex cursor-pointer items-center gap-2 rounded-full border border-border px-5 py-2 text-sm text-foreground transition-colors hover:bg-muted";
 
   return (
     <div
@@ -768,7 +761,7 @@ function ExportMenu({
       {open && (
         <div
           role="menu"
-          className={`recipe-paper absolute z-20 flex w-56 flex-col rounded-[4px] p-2 shadow-[0_14px_30px_-12px_rgb(20_10_8/0.55)] ${
+          className={`absolute z-20 flex w-56 flex-col rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-soft)] ${
             variant === "box" ? "right-0 top-full mt-1" : "bottom-full left-0 mb-2"
           }`}
         >
@@ -785,7 +778,7 @@ function ExportMenu({
               role="menuitem"
               autoFocus={format === "pdf"}
               onClick={() => choose(format)}
-              className="flex cursor-pointer flex-col items-start rounded-[3px] px-3 py-2 text-left transition-colors hover:bg-[var(--rp-paper-shade)] focus-visible:bg-[var(--rp-paper-shade)]"
+              className="flex cursor-pointer flex-col items-start rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:bg-muted"
             >
               <span className="font-serif text-lg leading-tight text-[var(--rp-ink)]">{name}</span>
               <span className="text-xs text-[var(--rp-ink-soft)]">{hint}</span>
