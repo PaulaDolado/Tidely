@@ -6,6 +6,7 @@ import { RichTextEditor } from "../components/RichTextEditor";
 import { CustomFieldInput, formatCustomFieldValue } from "../components/CustomFieldInput";
 import { TravelPlannerTemplate } from "../components/TravelPlannerTemplate";
 import { StudyPlannerTemplate } from "../components/StudyPlannerTemplate";
+import { RecipeBoxTemplate } from "../components/RecipeBoxTemplate";
 import { newId } from "../utils/id";
 import { CUSTOM_PAGE_TEMPLATE_META } from "../utils/customPageTemplates";
 import { placeholderColorFor, frameHeightFor } from "../utils/galleryPalette";
@@ -323,6 +324,7 @@ export function CustomPagePage({
       {page.template === "estudio" && (
         <StudyPlannerTemplate pageId={pageId} content={content as CustomPageContentMap["estudio"]} onChange={updateContent} />
       )}
+      {page.template === "recetas" && <RecipeBoxTemplate pageId={pageId} content={content} onChange={updateContent} />}
     </div>
   );
 }

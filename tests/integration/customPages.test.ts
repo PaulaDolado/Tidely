@@ -88,6 +88,21 @@ describe("Custom Pages Endpoints", () => {
       expect(response.body.content).toEqual({ subjects: [], plan: [], exams: [] });
     });
 
+    it("crea una página de tipo recetas con las cuatro pestañas de partida y sin recetas", async () => {
+      const response = await request(app).post("/custom-pages").set(authed()).send({ title: "Recetas", template: "recetas" });
+
+      expect(response.status).toBe(201);
+      expect(response.body.content).toEqual({
+        tabs: [
+          { id: "entrantes", name: "Entrantes" },
+          { id: "verduras", name: "Verduras" },
+          { id: "carnes", name: "Carnes" },
+          { id: "reposteria", name: "Repostería" },
+        ],
+        recipes: [],
+      });
+    });
+
     it("rechaza un modelo desconocido", async () => {
       const response = await request(app).post("/custom-pages").set(authed()).send({ title: "X", template: "no-existe" });
       expect(response.status).toBe(400);

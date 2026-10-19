@@ -21,6 +21,7 @@ export const CUSTOM_PAGE_TEMPLATES: CustomPageTemplateMeta[] = [
   { key: "hoy", label: "Lista", description: "Checklist rápido para el día.", icon: "☀️" },
   { key: "viajes", label: "Viajes o rutas", description: "Itinerario, presupuesto, lugares guardados, etc.", icon: "✈️" },
   { key: "estudio", label: "Estudio", description: "Asignaturas con tiempo de estudio, cronómetro y exámenes.", icon: "📚" },
+  { key: "recetas", label: "Recetas", description: "Recetario en archivador: pestañas y una tarjeta por receta.", icon: "🍲" },
 ];
 
 export const CUSTOM_PAGE_TEMPLATE_META: Record<CustomPageTemplate, CustomPageTemplateMeta> = Object.fromEntries(

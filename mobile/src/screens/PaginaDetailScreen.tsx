@@ -46,12 +46,14 @@ import {
   NotaContent,
   SimpleGoal,
   StudyContent,
+  RecipesContent,
   TEMPLATE_LABELS,
   TravelContent,
 } from "../api/customPages";
 import { RichTextEditor } from "../components/RichTextEditor";
 import { TravelPlannerEditor } from "../components/TravelPlanner";
 import { StudyPlannerEditor } from "../components/StudyPlanner";
+import { RecipeBox } from "../components/RecipeBox";
 import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
 import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
 import { colors, fonts, radius, shadow, withAlpha } from "../theme";
@@ -226,6 +228,12 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
     await persist({ content });
   };
 
+  // "Recetas": igual que Estudio, guarda el contenido entero en cada acción (RecipeBox lleva su propia copia).
+  const saveRecipes = async (content: RecipesContent) => {
+    if (!page) return;
+    await persist({ content });
+  };
+
   const handleAddEntry = async () => {
     const entry: GalleryEntry = { id: Crypto.randomUUID() };
     await saveGalleryItems([entry, ...galleryItems]);
@@ -359,6 +367,8 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
           />
         ) : page?.template === "estudio" ? (
           <StudyPlannerEditor pageId={page.id} content={page.content} onChange={saveStudy} />
+        ) : page?.template === "recetas" ? (
+          <RecipeBox pageId={page.id} content={page.content} onChange={saveRecipes} />
         ) : page ? (
           <View style={styles.fallbackCard}>
             <Text style={styles.fallbackText}>

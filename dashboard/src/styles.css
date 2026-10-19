@@ -530,3 +530,120 @@
     @apply my-3 cursor-pointer overflow-x-auto rounded-lg px-2 py-3 text-center hover:bg-foreground/[0.04];
   }
 }
+
+/* Plantilla "recetas" (RecipeBoxTemplate): una caja de recetas de tela roja con filete dorado, separadores con
+   patrón de especias y tarjetas de papel crema con doble filete. Es un objeto físico, así que tiene su propia
+   paleta y no cambia entre tema claro y oscuro. */
+.recipe-box {
+  --rp-paper: #f6f0e5;
+  --rp-paper-shade: #e9dfcf;
+  --rp-ink: #2b2420;
+  --rp-ink-soft: #6a5a50;
+  --rp-red: #8e1b25;
+  --rp-red-deep: #5e1017;
+  --rp-gold: #cdae6c;
+  --rp-rule: #cbb8a2;
+}
+.recipe-box ::selection {
+  background: rgb(142 27 37 / 0.22);
+  color: var(--rp-ink);
+}
+.recipe-cloth {
+  background-color: var(--rp-red);
+  background-image:
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.07) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 50% 0%, rgb(255 255 255 / 0.08), transparent 60%);
+}
+/* Doble filete del papel: el borde de fuera y, 7 px más adentro, una segunda línea (sombra interior), para dejar
+   `outline` libre para el foco. */
+.recipe-paper {
+  background-color: var(--rp-paper);
+  color: var(--rp-ink);
+  border: 1px solid var(--rp-rule);
+  box-shadow:
+    inset 0 0 0 6px var(--rp-paper),
+    inset 0 0 0 7px var(--rp-rule);
+  caret-color: var(--rp-red);
+}
+.recipe-label {
+  font-family: var(--font-serif);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rp-red);
+}
+.recipe-field {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dotted var(--rp-ink-soft);
+  border-radius: 0;
+  color: var(--rp-ink);
+  outline: none;
+}
+.recipe-field::placeholder {
+  color: var(--rp-ink-soft);
+  opacity: 0.85;
+}
+.recipe-field:focus-visible {
+  border-bottom: 1px solid var(--rp-red);
+}
+/* Área de texto como papel pautado: una línea punteada por renglón. */
+.recipe-lined {
+  --rp-line: 2rem;
+  line-height: var(--rp-line);
+  background: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rp-line) - 1px), var(--rp-rule) calc(var(--rp-line) - 1px) var(--rp-line));
+  background-attachment: local;
+  border: 0;
+  color: var(--rp-ink);
+  outline: none;
+  resize: vertical;
+}
+.recipe-lined:focus-visible {
+  box-shadow: 0 2px 0 var(--rp-red);
+}
+.recipe-box :focus-visible {
+  outline: 2px solid var(--rp-gold);
+  outline-offset: 2px;
+}
+.recipe-paper :focus-visible,
+.recipe-paper:focus-visible {
+  outline-color: var(--rp-red);
+}
+/* Los campos marcan el foco con su propia línea (roja), no con un recuadro encima del renglón. */
+.recipe-box .recipe-field:focus-visible,
+.recipe-box .recipe-lined:focus-visible {
+  outline: none;
+}
+/* El campo crece con lo escrito: sin barra de desplazamiento dentro de la ficha. */
+.recipe-grow {
+  field-sizing: content;
+  overflow: hidden;
+}
+/* La fila de pestañas se desliza sin barra visible (con el dedo, la rueda o el trackpad). */
+.recipe-scroll {
+  scrollbar-width: none;
+}
+.recipe-scroll::-webkit-scrollbar {
+  display: none;
+}
+@keyframes recipe-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.975);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+.recipe-sheet-in {
+  animation: recipe-sheet-in 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .recipe-sheet-in {
+    animation: none;
+  }
+}

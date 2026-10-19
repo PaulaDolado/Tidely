@@ -472,7 +472,7 @@ export interface IcsImportResult {
 // Páginas personalizadas ("+ Nueva página" en el menú lateral, ver AppShell/CreatePageModal).
 // Cada `template` determina la forma de `content` — el dashboard interpreta cada una con su
 // propio componente (ver CustomPageView).
-export type CustomPageTemplate = "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy" | "viajes" | "estudio";
+export type CustomPageTemplate = "nota" | "kanban" | "galeria" | "finanzas" | "proyectos" | "objetivos" | "agenda" | "hoy" | "viajes" | "estudio" | "recetas";
 
 // Fila devuelta por GET /custom-pages (lista para el menú) — sin `content`, que solo llega en el
 // detalle (GET /custom-pages/:id) para no cargar el JSON completo de cada página solo para pintar
@@ -676,6 +676,33 @@ export interface CustomPageContentMap {
   // `places` suelto = LEGADO (ver SavedPlace/Trip.places): los lugares ahora viven dentro de cada viaje.
   viajes: { trips: Trip[]; places?: SavedPlace[] };
   estudio: StudyContent;
+  recetas: RecipesContent;
+}
+
+// Plantilla "recetas" (ver RecipeBoxTemplate): un archivador con pestañas editables y, en cada una, sus tarjetas de
+// receta. Todo vive en el JSON de CustomPage.content. Raciones y tiempo son texto libre ("4", "45 min", "1 h 30").
+export type RecipeDifficulty = "facil" | "media" | "dificil";
+
+export interface RecipeTab {
+  id: string;
+  name: string;
+}
+
+export interface Recipe {
+  id: string;
+  tabId: string;
+  name: string;
+  servings: string;
+  time: string;
+  difficulty: RecipeDifficulty | null;
+  ingredients: string[]; // uno por línea
+  steps: string[]; // pasos de la elaboración, en orden
+  tips: string;
+}
+
+export interface RecipesContent {
+  tabs: RecipeTab[];
+  recipes: Recipe[];
 }
 
 // Plantilla "estudio" (ver StudyPlannerTemplate): todo vive dentro del JSON de CustomPage.content. Un temario por
