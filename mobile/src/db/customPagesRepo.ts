@@ -1,6 +1,7 @@
 import * as Crypto from "expo-crypto";
 import { getDb } from "./index";
 import { LocalCustomPage, ServerCustomPage } from "../types";
+import { DEFAULT_RECIPE_TABS } from "../utils/recipes";
 
 /** `content` llega como JSON (objeto) del servidor pero se guarda como TEXT en SQLite — blob
  * opaco para el sync, igual que project_pages.content pero serializado (aquí sí es JSON
@@ -58,6 +59,9 @@ export function defaultContentFor(template: string): unknown {
       return { trips: [], places: [] };
     case "estudio":
       return { subjects: [], plan: [], exams: [] };
+    case "recetas":
+      // Mismas cuatro pestañas de partida (y mismos ids) que pone el servidor, ver utils/recipes.ts.
+      return { tabs: DEFAULT_RECIPE_TABS.map((t) => ({ ...t })), recipes: [] };
     case "nota":
     default:
       return { html: "" };

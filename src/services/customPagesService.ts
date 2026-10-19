@@ -38,6 +38,19 @@ function defaultContent(template: string): Prisma.InputJsonValue {
     case "estudio":
       // asignaturas (con su temario), filas del plan (tiempo asignado/real por tema) y exámenes próximos
       return { subjects: [], plan: [], exams: [] };
+    case "recetas":
+      // Archivador con las cuatro pestañas de partida (el usuario las renombra, borra o añade) y sin recetas.
+      // Los ids de estas cuatro son fijos, los mismos que usan la web y el móvil si el contenido llega sin
+      // pestañas: solo tienen que ser únicos dentro de la página.
+      return {
+        tabs: [
+          { id: "entrantes", name: "Entrantes" },
+          { id: "verduras", name: "Verduras" },
+          { id: "carnes", name: "Carnes" },
+          { id: "reposteria", name: "Repostería" },
+        ],
+        recipes: [],
+      };
     case "nota":
     default:
       return { html: "" };

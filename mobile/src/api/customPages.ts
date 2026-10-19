@@ -8,7 +8,7 @@ import { api } from "./client";
 // Las 8 plantillas de `CUSTOM_PAGE_TEMPLATES` en dashboard/src/utils/customPageTemplates.ts ya
 // tienen todas editor propio en el móvil (ver PaginaDetailScreen.tsx) — "hoy" reutiliza el mismo
 // componente que "proyectos" (mismo tipo ChecklistContent, igual que en la propia web).
-export const CUSTOM_PAGE_TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes", "estudio"] as const;
+export const CUSTOM_PAGE_TEMPLATES = ["nota", "kanban", "galeria", "finanzas", "proyectos", "objetivos", "agenda", "hoy", "viajes", "estudio", "recetas"] as const;
 export type CustomPageTemplate = (typeof CUSTOM_PAGE_TEMPLATES)[number];
 
 export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
@@ -22,6 +22,7 @@ export const TEMPLATE_LABELS: Record<CustomPageTemplate, string> = {
   hoy: "Lista",
   viajes: "Viajes o rutas",
   estudio: "Estudio",
+  recetas: "Recetas",
 };
 
 // Icono por defecto de cada plantilla (se muestra mientras el usuario no elija uno propio, ver
@@ -38,6 +39,7 @@ export const TEMPLATE_ICONS: Record<CustomPageTemplate, string> = {
   hoy: "☀️",
   viajes: "✈️",
   estudio: "📚",
+  recetas: "🍲",
 };
 
 // Paleta rápida del selector de icono de la página (ver "Cambiar icono" en PaginaDetailScreen.tsx)
@@ -280,7 +282,32 @@ export interface StudyContent {
   exams: StudyExam[];
 }
 
+// Plantilla "recetas" — mismos tipos que en dashboard/src/types.ts: un archivador con pestañas editables y, en
+// cada una, sus tarjetas de receta (ids = uuid del cliente; las cuatro pestañas de partida tienen ids fijos, ver
+// utils/recipes.ts). Raciones y tiempo son texto libre ("4", "45 min").
+export type RecipeDifficulty = "facil" | "media" | "dificil";
+export interface RecipeTab {
+  id: string;
+  name: string;
+}
+export interface Recipe {
+  id: string;
+  tabId: string;
+  name: string;
+  servings: string;
+  time: string;
+  difficulty: RecipeDifficulty | null;
+  ingredients: string[];
+  steps: string[];
+  tips: string;
+}
+export interface RecipesContent {
+  tabs: RecipeTab[];
+  recipes: Recipe[];
+}
+
 export type CustomPageContent =
+  | RecipesContent
   | StudyContent
   | GalleryContent
   | NotaContent
@@ -299,7 +326,7 @@ export interface CustomPage extends CustomPageSummary {
 // Plantillas que tienen su propio apartado opcional en el menú principal (la clave de
 // user.enabledSections es la misma que la de la plantilla): por debajo siguen siendo páginas
 // personalizadas, pero el menú abre siempre "la principal" en vez de listarlas como "Tus páginas".
-export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio"] as const;
+export const SECTION_PAGE_TEMPLATES = ["galeria", "viajes", "estudio", "recetas"] as const;
 export type SectionPageTemplate = (typeof SECTION_PAGE_TEMPLATES)[number];
 
 // Orden estable para decidir cuál es "la principal": por `order` y, a igualdad, por id. Los ids son
@@ -332,7 +359,7 @@ export function hiddenSectionPageIds<P extends { template: string; order: number
 ): Set<P["id"]> {
   const hidden = new Set<P["id"]>();
   for (const p of pages) if (p.template === "galeria") hidden.add(p.id);
-  for (const template of ["viajes", "estudio"] as const) {
+  for (const template of ["viajes", "estudio", "recetas"] as const) {
     if (!enabledSections.has(template)) continue;
     const primary = primaryPageOf(pages, template);
     if (primary) hidden.add(primary.id);

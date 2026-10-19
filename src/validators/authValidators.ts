@@ -72,7 +72,7 @@ export const verifyEmailSchema = Joi.object({
 // Mismos 9 apartados opcionales que `User.enabledSections` en schema.prisma — "Hoy" y "Agenda"
 // no son opcionales, así que no están aquí. Exportada para que el controller/tests puedan
 // reutilizarla sin duplicar la lista de valores válidos.
-export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos", "viajes", "estudio"] as const;
+export const ENABLED_SECTIONS = ["planificador", "horario", "objetivos", "galeria", "finanzas", "metasAhorro", "proyectos", "viajes", "estudio", "recetas"] as const;
 
 export const completeOnboardingSchema = Joi.object({
   enabledSections: Joi.array().items(Joi.string().valid(...ENABLED_SECTIONS)).unique().required(),
