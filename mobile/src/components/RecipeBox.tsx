@@ -7,6 +7,7 @@ import Svg, { Circle, Path, SvgXml } from "react-native-svg";
 import { Text, TextInput } from "./AppText";
 import { Recipe, RecipeDifficulty, RecipesContent, RecipeTab } from "../api/customPages";
 import {
+  buildRecipesExportHtml,
   DIFFICULTIES,
   DIFFICULTY_LABELS,
   emptyRecipe,
@@ -14,10 +15,15 @@ import {
   moveTab,
   normalizeRecipesContent,
   RECIPE_ILLUSTRATION,
+  recipeBookSections,
+  RecipeExportFormat,
+  RecipeExportSection,
+  recipeExportFilename,
   recipePatternTile,
   recipesInTab,
   removeTab,
 } from "../utils/recipes";
+import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
 import { fonts } from "../theme";
 
 // Plantilla "recetas" de las páginas personalizadas — puerto de dashboard/src/components/RecipeBoxTemplate.tsx: una
@@ -46,7 +52,38 @@ const activeTabKey = (pageId: string) => `tidely.recipes.tab.${pageId}`;
 
 type Sheet = { recipeId: string; editing: boolean } | { draft: Recipe } | null;
 
-export function RecipeBox({ pageId, content, onChange }: { pageId: string; content: unknown; onChange: (next: RecipesContent) => Promise<void> }) {
+/**
+ * Exportar en PDF (expo-print) o Word (.doc) y abrir la hoja de compartir del sistema, igual que el cuaderno. El
+ * documento es el mismo que en la web (utils/recipes.ts). Pregunta antes el formato.
+ */
+function askExport(heading: string, title: string, sections: RecipeExportSection[], cover: boolean) {
+  const run = async (format: RecipeExportFormat) => {
+    try {
+      const html = buildRecipesExportHtml({ title, sections, format, cover });
+      if (format === "pdf") await exportHtmlToPdf(html, recipeExportFilename(title, "pdf"));
+      else await saveAndShareText(html, recipeExportFilename(title, "word"), "application/msword");
+    } catch (err) {
+      Alert.alert("No se pudo exportar", err instanceof Error ? err.message : "Inténtalo de nuevo.");
+    }
+  };
+  Alert.alert(heading, "¿En qué formato?", [
+    { text: "PDF", onPress: () => void run("pdf") },
+    { text: "Word (.doc)", onPress: () => void run("word") },
+    { text: "Cancelar", style: "cancel" },
+  ]);
+}
+
+export function RecipeBox({
+  pageId,
+  title,
+  content,
+  onChange,
+}: {
+  pageId: string;
+  title: string;
+  content: unknown;
+  onChange: (next: RecipesContent) => Promise<void>;
+}) {
   const [data, setData] = useState<RecipesContent>(() => normalizeRecipesContent(content));
   const dataRef = useRef(data);
   const pendingRef = useRef(0);
@@ -145,6 +182,16 @@ export function RecipeBox({ pageId, content, onChange }: { pageId: string; conte
           <Svg width={16} height={16} viewBox="0 0 16 16">
             <Path d="M10.5 2.5 L13.5 5.5 L5.5 13.5 L2.5 13.5 L2.5 10.5 Z M8.5 4.5 L11.5 7.5" stroke={RP.gold} strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
+        </Pressable>
+        <Pressable
+          onPress={() => askExport("Exportar todo el recetario", title || "Recetas", recipeBookSections(dataRef.current), true)}
+          disabled={recipes.length === 0}
+          accessibilityLabel="Exportar recetario"
+          accessibilityState={{ disabled: recipes.length === 0 }}
+          hitSlop={8}
+          style={[styles.editTabsButton, recipes.length === 0 && { opacity: 0.4 }]}
+        >
+          <ExportIcon color={RP.gold} />
         </Pressable>
       </View>
 
@@ -316,6 +363,14 @@ function PotIllustration({ width }: { width: number }) {
   );
 }
 
+function ExportIcon({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 16 16">
+      <Path d="M8 2.5 V10 M4.8 7 L8 10.2 L11.2 7 M3 12.5 H13" stroke={color} strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 function PlusIcon({ color }: { color: string }) {
   return (
     <Svg width={14} height={14} viewBox="0 0 16 16">
@@ -412,6 +467,13 @@ function RecipeSheet({
                 <View style={styles.sheetFooter}>
                   <Pressable onPress={() => setEditing(true)} style={({ pressed }) => [styles.redButton, pressed && styles.redButtonPressed]}>
                     <Text style={styles.redButtonText}>Editar receta</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => askExport("Exportar esta receta", recipe.name || "Receta", [{ tabName, recipes: [recipe] }], false)}
+                    style={[styles.ghostButton, styles.exportButton]}
+                  >
+                    <ExportIcon color={RP.ink} />
+                    <Text style={[styles.ghostButtonText, { color: RP.ink }]}>Exportar</Text>
                   </Pressable>
                   <Pressable onPress={() => onDelete(recipe)} style={styles.ghostButton}>
                     <Text style={styles.ghostButtonText}>Eliminar receta</Text>
@@ -789,6 +851,7 @@ const styles = StyleSheet.create({
   redButtonText: { color: RP.paper, fontFamily: fonts.sansMedium, fontSize: 14 },
   ghostButton: { borderRadius: 999, borderWidth: 1, borderColor: RP.rule, paddingHorizontal: 16, paddingVertical: 10 },
   ghostButtonText: { color: RP.inkSoft, fontFamily: fonts.sans, fontSize: 14 },
+  exportButton: { flexDirection: "row", alignItems: "center", gap: 8 },
   disabled: { opacity: 0.45 },
   empty: { alignItems: "center", gap: 10, paddingHorizontal: 22, paddingVertical: 28 },
   emptyTitle: { fontFamily: serif, fontSize: 21, color: RP.ink, textAlign: "center" },

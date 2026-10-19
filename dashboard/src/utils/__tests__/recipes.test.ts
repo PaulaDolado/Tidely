@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRecipesExportHtml,
   DEFAULT_RECIPE_TABS,
   emptyRecipe,
   linesToList,
   moveTab,
   normalizeRecipesContent,
+  recipeBookSections,
+  recipeExportFilename,
   recipePatternTile,
   recipesInTab,
   removeTab,
@@ -83,6 +86,52 @@ describe("removeTab y moveTab", () => {
     expect(moveTab(content.tabs, "entrantes", -1)).toBe(content.tabs);
     expect(moveTab(content.tabs, "reposteria", 1)).toBe(content.tabs);
     expect(moveTab(content.tabs, "no-existe", 1)).toBe(content.tabs);
+  });
+});
+
+describe("exportar", () => {
+  const flan = recipe({ id: "f", tabId: "reposteria", name: "Flan <casero>", servings: "6", difficulty: "media", ingredients: ["Huevos", "Leche", "Azúcar"], steps: ["Caramelizar", "Hornear al baño maría"], tips: "Mejor de un día para otro" });
+  const sopa = recipe({ id: "s", tabId: "entrantes", name: "Sopa" });
+  const content = normalizeRecipesContent({ tabs: DEFAULT_RECIPE_TABS, recipes: [flan, sopa] });
+
+  it("el recetario entero agrupa por pestaña, en el orden de las pestañas, y salta las vacías", () => {
+    expect(recipeBookSections(content).map((s) => [s.tabName, s.recipes.map((r) => r.id)])).toEqual([
+      ["Entrantes", ["s"]],
+      ["Repostería", ["f"]],
+    ]);
+  });
+
+  it("con portada lleva el índice, cada receta en su página y escapa el texto", () => {
+    const html = buildRecipesExportHtml({ title: "Mis recetas", sections: recipeBookSections(content), format: "pdf", cover: true });
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("2 recetas");
+    expect(html).toContain("Flan &lt;casero&gt;");
+    expect(html).not.toContain("Flan <casero>");
+    expect(html).toContain("Hornear al baño maría");
+    expect(html).toContain("●●○</span> Media");
+    expect(html.match(/class="card[^"]*break/g)).toHaveLength(2); // las dos fichas empiezan página tras la portada
+    expect(html).toContain('class="illus"');
+  });
+
+  it("una sola receta sin portada no fuerza salto de página; en Word va sin ilustración ni tipografías externas", () => {
+    const html = buildRecipesExportHtml({ title: "Flan", sections: [{ tabName: "Repostería", recipes: [flan] }], format: "word", cover: false });
+    expect(html).toContain("urn:schemas-microsoft-com:office:word");
+    expect(html).not.toContain("Recetario");
+    expect(html).not.toMatch(/class="card[^"]*break/);
+    expect(html).not.toContain("<svg");
+    expect(html).not.toContain("fonts.googleapis.com");
+  });
+
+  it("los campos vacíos se exportan con su texto de vacío, no en blanco", () => {
+    const html = buildRecipesExportHtml({ title: "Sopa", sections: [{ tabName: "Entrantes", recipes: [sopa] }], format: "pdf", cover: false });
+    expect(html).toContain("Sin ingredientes apuntados.");
+    expect(html).toContain("Sin pasos apuntados.");
+    expect(html).toContain("Sin consejos todavía.");
+  });
+
+  it("nombre de archivo sin caracteres prohibidos y con su extensión", () => {
+    expect(recipeExportFilename('Tarta: "la buena"', "pdf")).toBe("Tarta- -la buena-.pdf");
+    expect(recipeExportFilename("  ", "word")).toBe("Recetas.doc");
   });
 });
 

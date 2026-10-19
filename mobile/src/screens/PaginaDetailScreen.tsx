@@ -368,7 +368,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
         ) : page?.template === "estudio" ? (
           <StudyPlannerEditor pageId={page.id} content={page.content} onChange={saveStudy} />
         ) : page?.template === "recetas" ? (
-          <RecipeBox pageId={page.id} content={page.content} onChange={saveRecipes} />
+          <RecipeBox pageId={page.id} title={page.title} content={page.content} onChange={saveRecipes} />
         ) : page ? (
           <View style={styles.fallbackCard}>
             <Text style={styles.fallbackText}>
