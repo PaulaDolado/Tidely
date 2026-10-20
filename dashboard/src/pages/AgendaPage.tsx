@@ -465,8 +465,10 @@ export function AgendaPage({
         {/* min-w-0: un hijo flex no encoge por debajo de su contenido sin él, y desbordaba la página. */}
         <div className="flex min-w-0 flex-col gap-6 lg:flex-1">
           <HabitsTrackerCard habits={habitsData?.habits ?? []} onChanged={reloadHabits} />
+          {/* En la Agenda solo las 4 más recientes; en Hoy, todas las que manda el servidor. */}
           <RecentEntriesCard
             entries={recentEntriesData?.entries}
+            limit={4}
             failed={recentEntriesError !== null}
             onOpenProject={(projectId) => onNavigate?.("proyectos", { type: "project", id: projectId })}
           />

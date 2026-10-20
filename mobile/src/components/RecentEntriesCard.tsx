@@ -23,7 +23,9 @@ function formatRelative(iso: string): string {
   return new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
 }
 
-export function RecentEntriesCard() {
+// `limit`: cuántas entradas enseñar como mucho (las más recientes); sin indicar, todas las que manda el servidor (5).
+// Igual que en la web, la Agenda pide 4 y Hoy las deja todas.
+export function RecentEntriesCard({ limit }: { limit?: number } = {}) {
   const { user } = useAuth();
   const [entries, setEntries] = useState<RecentProjectEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -78,7 +80,7 @@ export function RecentEntriesCard() {
       <Text style={styles.title}>📓 Entradas recientes en tus libretas</Text>
       {failed && <Text style={styles.staleNotice}>Sin conexión: puede que no estén al día.</Text>}
       <View style={styles.list}>
-        {entries.map((entry) => (
+        {(limit !== undefined ? entries.slice(0, limit) : entries).map((entry) => (
           <Pressable key={entry.id} style={styles.row} onPress={() => openEntry(entry)}>
             <View style={styles.rowHeader}>
               <Text style={styles.rowTitle} numberOfLines={1}>
