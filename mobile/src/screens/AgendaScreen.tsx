@@ -756,7 +756,7 @@ export function AgendaScreen({
             apilados en una sola columna en vez de la rejilla de dos columnas de escritorio. */}
         <View style={styles.extraSections}>
           <HabitsCard />
-          <RecentEntriesCard />
+          <RecentEntriesCard limit={4} />
           <GoalsProgressCard />
           <QuickNotesCard />
         </View>

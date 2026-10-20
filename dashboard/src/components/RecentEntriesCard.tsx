@@ -49,9 +49,12 @@ export function RecentEntriesCard({
   entries,
   onOpenProject,
   failed = false,
+  limit,
 }: {
   entries: RecentProjectEntry[] | undefined;
   onOpenProject: (projectId: number) => void;
+  // Cuántas entradas enseñar como mucho (las más recientes); sin indicar, todas las que manda el servidor (5).
+  limit?: number;
   // La petición de las entradas falló (sin red, servidor caído...): se explica en la tarjeta en
   // vez de ocultarla, igual que en el móvil. Solo aplica si no hay entradas ya cargadas.
   failed?: boolean;
@@ -70,7 +73,7 @@ export function RecentEntriesCard({
         <p className="text-sm text-muted-foreground">Todavía no has escrito en ninguna libreta.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {entries.map((entry) => (
+          {(limit !== undefined ? entries.slice(0, limit) : entries).map((entry) => (
             <RecentEntryRow key={entry.id} entry={entry} onOpen={() => onOpenProject(entry.projectId)} />
           ))}
         </ul>
