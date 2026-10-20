@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, ActivityIndicator, Modal, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, ActivityIndicator, Modal, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -8,7 +8,7 @@ import { runSync } from "../sync";
 import { listProjects, createProjectLocal } from "../db/projectsRepo";
 import { createProjectTaskLocal } from "../db/projectTasksRepo";
 import { LocalProject } from "../types";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { ProyectosStackParamList } from "./ProyectosScreen";
 import { FolderIcon } from "../components/FolderIcon";
@@ -219,7 +219,7 @@ function NewProjectForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },
@@ -285,4 +285,4 @@ const styles = StyleSheet.create({
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
-});
+}));

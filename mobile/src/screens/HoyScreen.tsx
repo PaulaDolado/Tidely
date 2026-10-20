@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, FlatList, StyleSheet, ActivityIndicator, Linking, Alert } from "react-native";
+import { View, Pressable, FlatList, ActivityIndicator, Linking, Alert } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNetInfo } from "@react-native-community/netinfo";
@@ -16,7 +16,7 @@ import { EventOccurrence } from "../utils/recurrence";
 import { listEventCategories } from "../api/eventCategories";
 import { eventCategoryLabel, eventCategoryStyle } from "../utils/eventCategories";
 import { EventCategory, LocalHabit, LocalNote, LocalTask } from "../types";
-import { colors, fonts, radius, withAlpha } from "../theme";
+import { colors, fonts, radius, withAlpha, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { QuickAccessCard } from "../components/QuickAccessCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
@@ -618,7 +618,7 @@ function Checkbox({ checked }: { checked: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // ========== LAYOUT BASE ==========
   container: {
     flex: 1,
@@ -1049,4 +1049,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-});
+}));

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Modal, Pressable, Alert, KeyboardAvoidingView } from "react-native";
+import { View, Modal, Pressable, Alert, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "./AppText";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 import * as ImagePicker from "expo-image-picker";
 import { RICH_EDITOR_HTML } from "./richEditorHtml";
 import { api, ApiError } from "../api/client";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, themedStyles } from "../theme";
 
 // Mismo shape que LinkPreview en src/services/linkPreviewService.ts (backend) — solo los campos
 // que de verdad usa la tarjeta de miniatura web (ver applyBookmark en richEditorHtml.ts); no
@@ -227,7 +227,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   wrap: { height: 440, borderRadius: radius.card, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
   webview: { flex: 1, backgroundColor: "transparent" },
   promptBackdrop: { flex: 1, backgroundColor: "rgba(45,41,38,0.4)", alignItems: "center", justifyContent: "center", padding: 24 },
@@ -248,4 +248,4 @@ const styles = StyleSheet.create({
   promptCancel: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
   promptSubmit: { backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 16, paddingVertical: 8 },
   promptSubmitText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primaryForeground },
-});
+}));

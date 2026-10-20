@@ -1,10 +1,10 @@
 import { View, Pressable, StyleSheet } from "react-native";
 import { Text } from "./AppText";
-import { useTheme } from "../context/ThemeContext";
+import { keepAcrossThemeChange, useTheme } from "../context/ThemeContext";
 import { FONT_SIZE_OPTIONS, useFontSize } from "../context/FontSizeContext";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
-import { fonts, PALETTES, radius, THEME_OPTIONS } from "../theme";
+import { fonts, PALETTES, radius, Theme, THEME_OPTIONS } from "../theme";
 import { MenuLayout } from "../types";
 
 // Puerto de la sección "General > Apariencia" de dashboard/src/components/SettingsDialog.tsx:
@@ -23,7 +23,7 @@ export function AppearanceSettings() {
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
         Elige cómo se ve Tidely. "Sistema" mantiene el aspecto actual y sigue el modo claro/oscuro de tu dispositivo.
       </Text>
-      <ThemePicker />
+      <ThemePicker onBeforeRemount={() => keepAcrossThemeChange("settings", "apariencia")} />
 
       <Text style={[styles.title, styles.sectionSpacing, { color: colors.foreground }]}>Tamaño de letra</Text>
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
@@ -44,8 +44,15 @@ export function AppearanceSettings() {
 // mismo grid tal cual en su paso 2 — mismo componente, mismo comportamiento (tocar aplica el tema
 // al instante vía useTheme, no hace falta "guardar" aparte). Mismo criterio que ThemePicker en
 // dashboard/src/components/SettingsDialog.tsx (reutilizado ahí por OnboardingWizard.tsx).
-export function ThemePicker() {
-  const { theme, setTheme, colors } = useTheme();
+// `onBeforeRemount`: se llama justo antes de un cambio de tema que va a volver a montar la app (ver App.tsx), para
+// que quien lo use guarde lo que quiera recuperar después (keepAcrossThemeChange).
+export function ThemePicker({ onBeforeRemount }: { onBeforeRemount?: () => void } = {}) {
+  const { theme, setTheme, colors, changesPalette } = useTheme();
+  const choose = (next: Theme) => {
+    if (next === theme) return;
+    if (changesPalette(next)) onBeforeRemount?.();
+    setTheme(next);
+  };
 
   return (
     <View style={styles.grid}>
@@ -55,7 +62,7 @@ export function ThemePicker() {
         return (
           <Pressable
             key={option.value}
-            onPress={() => setTheme(option.value)}
+            onPress={() => choose(option.value)}
             style={[styles.card, { borderColor: selected ? colors.primary : colors.border, borderWidth: selected ? 2 : 1 }]}
           >
             <View style={[styles.preview, { backgroundColor: palette.background }]}>

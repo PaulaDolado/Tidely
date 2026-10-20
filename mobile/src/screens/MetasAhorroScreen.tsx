@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -12,7 +12,7 @@ import {
 } from "../db/savingsGoalsRepo";
 import { createTransactionLocal } from "../db/transactionsRepo";
 import { AvailableSurplus, getAvailableSurplus } from "../api/finance";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
 // Puerto de dashboard/src/pages/MetasAhorroPage.tsx + dashboard/src/components/SavingsGoals.tsx
@@ -440,7 +440,7 @@ function NewSavingsGoalForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   surplusCard: {
     backgroundColor: withAlpha(colors.primary, 0.06),
     borderRadius: radius.card,
@@ -583,4 +583,4 @@ const styles = StyleSheet.create({
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
-});
+}));

@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useAuth } from "../auth/AuthContext";
 import { useSidebar } from "./SidebarContext";
+import { takeKeptAcrossThemeChange } from "../context/ThemeContext";
 import { useTheme } from "../context/ThemeContext";
 import { api, ApiError } from "../api/client";
 import {
@@ -362,12 +363,14 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [labelWidths, setLabelWidths] = useState<Record<string, number>>({});
   const [showCreatePage, setShowCreatePage] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  // Si se acaba de cambiar el tema desde Ajustes, la app se ha vuelto a montar: Ajustes sigue abierto en esa pestaña.
+  const [reopenSettings] = useState(() => takeKeptAcrossThemeChange<"apariencia">("settings"));
+  const [showSettings, setShowSettings] = useState(reopenSettings !== undefined);
   // Igual criterio que el menú de la web (SettingsDialog.tsx), aplanado a estas 5 pestañas — deja
   // fuera "Invitar a un amigo"/"Obtener ayuda", que en la propia web tampoco son más que un aviso
   // de "esto llega más adelante" (ver el comentario de cabecera del fichero), así que no aportan
   // nada real que portar todavía.
-  const [settingsSection, setSettingsSection] = useState<"cuenta" | "general" | "apariencia" | "uso" | "privacidad" | "sobre">("cuenta");
+  const [settingsSection, setSettingsSection] = useState<"cuenta" | "general" | "apariencia" | "uso" | "privacidad" | "sobre">(reopenSettings ?? "cuenta");
   const [customPages, setCustomPages] = useState<CustomPageSummary[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   // AppSidebar vive siempre montado (es el tabBar), así que el sondeo del contador de notificaciones

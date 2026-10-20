@@ -1,5 +1,6 @@
 import { Text as RNText, TextInput as RNTextInput, StyleSheet, TextProps, TextInputProps } from "react-native";
 import { useFontSize } from "../context/FontSizeContext";
+import { useTheme } from "../context/ThemeContext";
 
 // Ajuste de tamaño de letra global (ver FontSizeContext.tsx) sin tocar los ~400 `fontSize: N`
 // sueltos repartidos por cada pantalla (StyleSheet.create de módulo, no hay una "unidad rem" que
@@ -10,18 +11,33 @@ import { useFontSize } from "../context/FontSizeContext";
 // re-renderiza sola en cuanto cambia el ajuste, sin esperar a que la pantalla entera se
 // desmonte/remonte). Si el estilo no trae `fontSize` explícito, se deja tal cual (el tamaño por
 // defecto de RN, ~14, no necesita escalarse a mano aquí).
+//
+// También pone los colores por defecto del tema cuando el componente no los indica: sin esto, un texto o un campo
+// sin `color` salía en el negro de React Native y, en modo oscuro, era ilegible sobre el fondo; y el texto de
+// ayuda de un campo (placeholder) usaba el gris del sistema en vez del atenuado del tema.
 export function Text({ style, ...props }: TextProps) {
   const { scale } = useFontSize();
-  if (scale === 1) return <RNText style={style} {...props} />;
+  const { colors } = useTheme();
   const flat = StyleSheet.flatten(style);
-  const fontSize = typeof flat?.fontSize === "number" ? flat.fontSize * scale : undefined;
-  return <RNText style={fontSize !== undefined ? [style, { fontSize }] : style} {...props} />;
+  const color = flat?.color === undefined ? { color: colors.foreground } : null;
+  const fontSize = scale !== 1 && typeof flat?.fontSize === "number" ? { fontSize: flat.fontSize * scale } : null;
+  if (!color && !fontSize) return <RNText style={style} {...props} />;
+  return <RNText style={[color, style, fontSize]} {...props} />;
 }
 
-export function TextInput({ style, ...props }: TextInputProps) {
+export function TextInput({ style, placeholderTextColor, selectionColor, cursorColor, ...props }: TextInputProps) {
   const { scale } = useFontSize();
-  if (scale === 1) return <RNTextInput style={style} {...props} />;
+  const { colors } = useTheme();
   const flat = StyleSheet.flatten(style);
-  const fontSize = typeof flat?.fontSize === "number" ? flat.fontSize * scale : undefined;
-  return <RNTextInput style={fontSize !== undefined ? [style, { fontSize }] : style} {...props} />;
+  const color = flat?.color === undefined ? { color: colors.foreground } : null;
+  const fontSize = scale !== 1 && typeof flat?.fontSize === "number" ? { fontSize: flat.fontSize * scale } : null;
+  return (
+    <RNTextInput
+      style={color || fontSize ? [color, style, fontSize] : style}
+      placeholderTextColor={placeholderTextColor ?? colors.mutedForeground}
+      selectionColor={selectionColor ?? colors.primary}
+      cursorColor={cursorColor ?? colors.primary}
+      {...props}
+    />
+  );
 }

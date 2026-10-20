@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Pressable, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { runSync } from "../sync";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../db/calendarLegendRepo";
 import { CalendarColor, LocalCalendarLegendCategory } from "../types";
 import { CALENDAR_COLOR_CLASSES, CALENDAR_COLOR_OPTIONS } from "../utils/calendarColors";
-import { colors, fonts, radius, withAlpha } from "../theme";
+import { colors, fonts, radius, withAlpha, themedStyles } from "../theme";
 
 const MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -374,7 +374,7 @@ function AddCategoryForm({ onAdd, onCancel }: { onAdd: (label: string, color: Ca
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   section: { marginTop: 32, paddingHorizontal: 20, paddingBottom: 20 },
   sectionHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 },
   sectionTitle: { fontFamily: fonts.serif, fontSize: 22, color: colors.foreground },
@@ -494,4 +494,4 @@ const styles = StyleSheet.create({
   addFormSubmit: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   addFormSubmitText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.background },
   addFormCancel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
-});
+}));

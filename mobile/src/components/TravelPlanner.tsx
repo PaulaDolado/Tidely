@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, Image, Alert, Platform, KeyboardAvoidingView, Linking } from "react-native";
+import { View, Pressable, ScrollView, Modal, Image, Alert, Platform, KeyboardAvoidingView, Linking } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
@@ -18,7 +18,7 @@ import {
   totalAttachmentChars,
 } from "../utils/travelFiles";
 import { buildTransportChains, formatLayover, formatSchedule, layoverMinutes, linkCandidates, shortDay, validateTransportTimes } from "../utils/travelTransport";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles } from "../theme";
 
 // Plantilla "viajes" de las páginas personalizadas — puerto de
 // dashboard/src/components/TravelPlannerTemplate.tsx: formulario para añadir un viaje, cuatro
@@ -1688,7 +1688,7 @@ function PlaceForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
@@ -1844,4 +1844,4 @@ const styles = StyleSheet.create({
   deleteButtonText: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.destructive },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground },
-});
+}));

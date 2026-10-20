@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { View, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView } from "react-native";
+import { View, Pressable, ActivityIndicator, KeyboardAvoidingView, ScrollView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import Svg, { Path } from "react-native-svg";
 import { useAuth } from "../auth/AuthContext";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, themedStyles } from "../theme";
 
 // Ojo abierto/tachado — mismo trazo outline que su equivalente web (LoginPage.tsx), en SVG (ya es
 // dependencia del proyecto, sin librería de iconos aparte).
@@ -220,7 +220,7 @@ export function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flexGrow: 1, justifyContent: "center", padding: 16 },
   card: {
@@ -280,4 +280,4 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   switchModeText: { fontFamily: fonts.sans, textAlign: "center", color: colors.mutedForeground, fontSize: 12, marginTop: 8 },
-});
+}));

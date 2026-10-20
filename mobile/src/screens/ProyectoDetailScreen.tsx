@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Pressable, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -23,7 +23,7 @@ import { LocalProject, LocalProjectPage, LocalProjectTask } from "../types";
 import { RichTextEditor } from "../components/RichTextEditor";
 import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
 import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, themedStyles } from "../theme";
 import { ProyectosStackParamList } from "./ProyectosScreen";
 
 // Cuaderno de un proyecto — puerto de ProjectNotebook + ProjectPages en
@@ -427,7 +427,7 @@ export function ProyectoDetailScreen({ route, navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, gap: 24, paddingBottom: 40 },
   errorBanner: { fontFamily: fonts.sans, fontSize: 13, color: colors.destructive, padding: 20 },
@@ -564,4 +564,4 @@ const styles = StyleSheet.create({
 
   deleteProjectButton: { alignItems: "center", paddingVertical: 12 },
   deleteProjectText: { fontFamily: fonts.sansSemiBold, fontSize: 13, color: colors.destructive },
-});
+}));

@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import { View, Pressable } from "react-native";
 import { Text } from "./AppText";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAuth } from "../auth/AuthContext";
 import { listRecentEntries, RecentProjectEntry } from "../api/projects";
 import { ENABLED_SECTIONS } from "../types";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, themedStyles } from "../theme";
 
 // Puerto de dashboard/src/components/RecentEntriesCard.tsx — últimas páginas de libreta tocadas
 // (ver GET /projects/recent-entries), en las vistas "Hoy" y "Agenda". Va directa a la API (no pasa
@@ -100,7 +100,7 @@ export function RecentEntriesCard({ limit }: { limit?: number } = {}) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // rounded-3xl border-border bg-card p-6 de la web (tarjeta neutra, sin tinte de color). Sin
   // sombra a propósito — ver el comentario en el estilo `section` de HoyScreen.tsx.
   card: {
@@ -134,4 +134,4 @@ const styles = StyleSheet.create({
   rowProject: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
   rowTime: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground, flexShrink: 0 },
   rowPreview: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
-});
+}));

@@ -1,7 +1,7 @@
-import { Pressable, StyleSheet } from "react-native";
+import { Pressable } from "react-native";
 import { Text } from "./AppText";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
-import { colors, fonts } from "../theme";
+import { colors, fonts, themedStyles } from "../theme";
 
 /**
  * Flecha de "volver" para la cabecera NATIVA de un stack de detalle (Proyectos > libreta,
@@ -22,7 +22,7 @@ export function DetailBackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   arrow: { fontSize: 28, fontFamily: fonts.sansMedium, color: colors.foreground, lineHeight: 28 },
   collapsedOffset: { marginLeft: SIDEBAR_CLIP_CLEARANCE },
-});
+}));

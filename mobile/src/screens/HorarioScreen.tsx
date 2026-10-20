@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
@@ -20,7 +20,7 @@ import {
   moveRowLocal,
 } from "../db/scheduleRowsRepo";
 import { LocalSchedule, LocalScheduleRow } from "../types";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { AnnualCalendarLegend } from "../components/AnnualCalendarLegend";
 
@@ -573,7 +573,7 @@ const TIME_COL_WIDTH = 96;
 const DAY_COL_WIDTH = 128;
 const ACTIONS_COL_WIDTH = 60;
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   emptyRowsText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground, fontStyle: "italic", textAlign: "center", paddingVertical: 12 },
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
@@ -707,4 +707,4 @@ const styles = StyleSheet.create({
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
-});
+}));

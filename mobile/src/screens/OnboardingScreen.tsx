@@ -3,7 +3,7 @@ import { View, Pressable, ScrollView, StyleSheet, ActivityIndicator } from "reac
 import { Text } from "../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../auth/AuthContext";
-import { useTheme } from "../context/ThemeContext";
+import { keepAcrossThemeChange, takeKeptAcrossThemeChange, useTheme } from "../context/ThemeContext";
 import { ThemePicker } from "../components/AppearanceSettings";
 import { api, ApiError } from "../api/client";
 import { ColorPalette, fonts, radius } from "../theme";
@@ -26,8 +26,10 @@ export function OnboardingScreen() {
   const { updateUser } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [step, setStep] = useState<Step>("apartados");
-  const [selected, setSelected] = useState<Set<EnabledSection>>(new Set(ENABLED_SECTIONS));
+  // Elegir tema en el paso 2 vuelve a montar la app (ver App.tsx): se recupera el paso y los apartados marcados.
+  const [kept] = useState(() => takeKeptAcrossThemeChange<{ step: Step; selected: EnabledSection[] }>("onboarding"));
+  const [step, setStep] = useState<Step>(kept?.step ?? "apartados");
+  const [selected, setSelected] = useState<Set<EnabledSection>>(new Set(kept?.selected ?? ENABLED_SECTIONS));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,7 +101,7 @@ export function OnboardingScreen() {
               "Sistema" mantiene el aspecto actual y sigue el modo claro/oscuro de tu dispositivo. Puedes probar los distintos
               temas ahora mismo — se aplican al instante.
             </Text>
-            <ThemePicker />
+            <ThemePicker onBeforeRemount={() => keepAcrossThemeChange("onboarding", { step, selected: [...selected] })} />
 
             <Text style={styles.hint}>ℹ️ Esto siempre se puede cambiar más adelante desde Ajustes.</Text>
 

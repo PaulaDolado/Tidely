@@ -4,7 +4,6 @@ import {
   View,
   Pressable,
   ScrollView,
-  StyleSheet,
   Modal,
   Platform,
   ActivityIndicator,
@@ -30,7 +29,7 @@ import { listTasksByPlanner, createTaskLocal, updateTaskLocal, moveTask, toggleT
 import { listForTask, createSubtaskLocal, toggleSubtask, deleteSubtaskLocal, getSubtaskCounts, SubtaskCount } from "../db/subtasksRepo";
 import { listProjects } from "../db/projectsRepo";
 import { LocalProject, LocalSubtask, LocalTask, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, TaskPriority, TaskStatus } from "../types";
-import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow, withAlpha } from "../theme";
+import { colors, dueDateStyle, fonts, priorityStyle, radius, shadow, withAlpha, themedStyles, themed } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 
 // Puerto de dashboard/src/pages/PlanificadorPage.tsx: el usuario puede tener varios tableros de
@@ -72,17 +71,17 @@ const PLANNER_VIEW_MODE_KEY = "life-organizer.planificador-tableros-view-mode";
 type PlannerViewMode = "flechas" | "apilado";
 
 // Estilos de columnas por estado (igual que web)
-const COLUMN_BG_COLORS: Record<TaskStatus, string> = {
+const COLUMN_BG_COLORS: Record<TaskStatus, string> = themed(() => ({
   todo: colors.card,
   in_progress: withAlpha(colors.warning, 0.1),
   done: withAlpha(colors.positive, 0.1),
-};
+}));
 
-const COLUMN_BORDER_COLORS: Record<TaskStatus, string> = {
+const COLUMN_BORDER_COLORS: Record<TaskStatus, string> = themed(() => ({
   todo: colors.border,
   in_progress: withAlpha(colors.warning, 0.3),
   done: withAlpha(colors.positive, 0.3),
-};
+}));
 
 const COLUMN_HEADERS: Record<TaskStatus, string> = {
   todo: "Por hacer",
@@ -2086,7 +2085,7 @@ function PlannerBoardCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },
@@ -2499,4 +2498,4 @@ const styles = StyleSheet.create({
   addCustomFieldText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground, marginBottom: 12 },
   saveButtonSmall: { backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8, alignSelf: "flex-start" },
   saveButtonSmallText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.primaryForeground },
-});
+}));

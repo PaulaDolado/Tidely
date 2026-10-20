@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView } from "react-native";
 import { Text } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -9,7 +9,7 @@ import { listCustomPages, createCustomPageLocal, deleteCustomPageLocal, movePage
 import { CustomPageTemplate, hiddenSectionPageIds, TEMPLATE_ICONS, TEMPLATE_LABELS } from "../api/customPages";
 import { useAuth } from "../auth/AuthContext";
 import { ENABLED_SECTIONS, LocalCustomPage } from "../types";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { NewPageForm } from "../components/NewPageForm";
 import { PaginasStackParamList } from "./PaginasScreen";
@@ -157,7 +157,7 @@ export function PaginasListScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, paddingBottom: 8 },
   title: { fontFamily: fonts.serif, fontSize: 30, color: colors.foreground },
@@ -197,4 +197,4 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: "88%",
   },
-});
+}));

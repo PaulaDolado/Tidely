@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Pressable, ScrollView } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { CUSTOM_PAGE_TEMPLATES, CustomPageTemplate, TEMPLATE_LABELS } from "../api/customPages";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, themedStyles } from "../theme";
 
 // "galeria" no se ofrece aquí: desde que tiene su propio apartado "Galería" en el menú principal
 // (con una sola por cuenta, ver AppSidebar.openSectionPage), permitir crearla también desde este
@@ -78,7 +78,7 @@ export function NewPageForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   modalTitle: { fontFamily: fonts.serif, fontSize: 24, color: colors.foreground, marginBottom: 16 },
   fieldLabel: {
     fontFamily: fonts.sansBold,
@@ -115,4 +115,4 @@ const styles = StyleSheet.create({
   saveButtonText: { fontFamily: fonts.sansMedium, color: colors.primaryForeground, fontSize: 15 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, color: colors.mutedForeground, fontSize: 14 },
-});
+}));

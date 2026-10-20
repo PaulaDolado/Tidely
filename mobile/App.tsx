@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { NavigationContainer, NavigatorScreenParams } from "@react-navigation/native";
+import { DarkTheme, DefaultTheme, NavigationContainer, NavigationState, NavigatorScreenParams, Theme as NavigationTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts, Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold } from "@expo-google-fonts/outfit";
@@ -108,9 +108,22 @@ function storeTab(userId: number, route: string): void {
   });
 }
 
+// Estado de navegación que sobrevive a que Root se vuelva a montar al cambiar de tema (ver ThemedRoot): con él la
+// app se queda en la misma pantalla en vez de volver a la pestaña inicial. Lleva el id del usuario para no
+// heredarlo entre cuentas.
+let persistedNavigation: { userId: number; state: NavigationState } | null = null;
+
+// Root se monta de nuevo cada vez que cambia la paleta efectiva (paletteKey): así todas las pantallas se pintan con
+// los colores nuevos, incluidas las que no usan useTheme (sus estilos son themedStyles, ver theme.ts). Pasa al
+// arrancar, cuando se lee el tema guardado o el modo oscuro del móvil, y al cambiarlo en Ajustes.
+function ThemedRoot() {
+  const { paletteKey } = useTheme();
+  return <Root key={paletteKey} />;
+}
+
 function Root() {
   const { user, ready } = useAuth();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   // Pestaña guardada de ESTE usuario ya leída (`route` null = no había o no se pudo leer). Hasta que no
   // está lista no se monta el navegador: `initialRouteName` solo cuenta en el primer montaje, y leer el
   // almacenamiento tarda un instante. Los hooks van antes de los `return` tempranos de abajo.
@@ -166,13 +179,34 @@ function Root() {
   // cae a "Hoy" en vez de pasarle al navegador una ruta inexistente.
   const initialRouteName = restoredTab.route && validTabs(enabledSections).has(restoredTab.route) ? restoredTab.route : "Hoy";
 
+  // Colores del propio navegador (fondo detrás de cada pantalla, cabeceras de las pilas...). Sin esto usaba su tema
+  // por defecto, gris claro, que asomaba detrás de las pantallas en modo oscuro.
+  const base = isDark ? DarkTheme : DefaultTheme;
+  const navigationTheme: NavigationTheme = {
+    ...base,
+    dark: isDark,
+    colors: {
+      ...base.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.card,
+      text: colors.foreground,
+      border: colors.border,
+      notification: colors.destructive,
+    },
+  };
+  const initialNavigationState = persistedNavigation?.userId === user.id ? persistedNavigation.state : undefined;
+
   return (
     // SidebarProvider por fuera del Navigator: AppSidebar (el tabBar) y todas las pantallas
     // (hermanas suyas dentro del Navigator, no hijas) necesitan leer/escribir el mismo "¿está
     // colapsado el menú?" — ver SidebarContext.tsx para el porqué.
     <SidebarProvider>
       <NavigationContainer
+        theme={navigationTheme}
+        initialState={initialNavigationState}
         onStateChange={(state) => {
+          if (state) persistedNavigation = { userId: user.id, state };
           // Pestaña de primer nivel con foco — `state.index` apunta a la ruta activa del navegador raíz.
           const route = state?.routes[state.index]?.name;
           if (!route || route === lastStoredRoute.current) return;
@@ -227,7 +261,7 @@ export default function App() {
       <ThemeProvider>
         <FontSizeProvider>
           <AuthProvider>
-            <Root />
+            <ThemedRoot />
             <ThemedStatusBar />
           </AuthProvider>
         </FontSizeProvider>
