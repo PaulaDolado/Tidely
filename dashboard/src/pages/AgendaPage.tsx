@@ -2040,69 +2040,82 @@ function EventDialog({
             setSubmitting(false);
           }
         }}
-        className="w-full max-w-md rounded-3xl bg-card p-6 shadow-[var(--shadow-soft)] sm:p-8"
+        // Ancho de dos columnas y, como mucho, el alto de la ventana: la cabecera y los botones quedan fijos y lo de en
+        // medio se desplaza. Antes era una columna estrecha (max-w-md) centrada en vertical que, con recordatorios,
+        // invitados e invitaciones, pasaba del alto de la ventana y se cortaba por arriba sin poder llegar.
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col rounded-3xl bg-card shadow-[var(--shadow-soft)]"
       >
-        <div className="mb-6 flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between px-6 pb-4 pt-6 sm:px-8 sm:pt-8">
           <h2 className="font-serif text-xl">Editar evento</h2>
           <button type="button" onClick={onClose} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
             ✕ Cerrar
           </button>
         </div>
 
-        {event.isRecurringInstance && (
-          <p className="mb-4 rounded-xl bg-secondary/40 p-3 text-xs text-muted-foreground">
-            Este evento pertenece a una serie recurrente. "Guardar cambios" afecta a toda la serie — usa los botones de abajo para
-            {event.isException ? " restaurar" : " mover o cancelar"} solo esta ocurrencia.
-          </p>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 sm:px-8">
+          {event.isRecurringInstance && (
+            <p className="mb-4 rounded-xl bg-secondary/40 p-3 text-xs text-muted-foreground">
+              Este evento pertenece a una serie recurrente. "Guardar cambios" afecta a toda la serie — usa los botones de abajo para
+              {event.isException ? " restaurar" : " mover o cancelar"} solo esta ocurrencia.
+            </p>
+          )}
 
-        <div className="grid gap-4">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="¿Qué necesitas hacer?" className="field-input" />
-          <div className="grid grid-cols-3 gap-3">
-            <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="field-input" />
-            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field-input" />
-            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field-input" />
+          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
+            {/* Qué y cuándo */}
+            <div className="grid content-start gap-4">
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="¿Qué necesitas hacer?" className="field-input" />
+              {/* Fecha en su propia fila y las dos horas debajo: en media columna, las tres en fila no caben (se cortaba
+                  el año de la fecha o los minutos de las horas). */}
+              <div className="grid grid-cols-2 gap-3">
+                <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="field-input col-span-2" />
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field-input" />
+                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field-input" />
+              </div>
+              <EventCategoryField
+                categoryId={categoryId}
+                onChange={setCategoryId}
+                categories={categories}
+                onCategoriesChanged={onCategoriesChanged}
+              />
+
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+                Evento recurrente
+              </label>
+              {isRecurring && (
+                <select
+                  value={recurringPattern}
+                  onChange={(e) => setRecurringPattern(e.target.value as RecurringPattern)}
+                  className="field-input"
+                >
+                  {RECURRENCES.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {isRecurring && recurringPattern === "weekday_range" && (
+                <WeekdayRangeFields
+                  start={recurringWeekdayStart}
+                  end={recurringWeekdayEnd}
+                  onStartChange={setRecurringWeekdayStart}
+                  onEndChange={setRecurringWeekdayEnd}
+                />
+              )}
+            </div>
+
+            {/* Avisos y con quién */}
+            <div className="grid min-w-0 content-start gap-4">
+              <ReminderCheckboxes value={reminderMinutesBefore} onChange={setReminderMinutesBefore} />
+              <GuestsEditor value={guests} onChange={setGuests} />
+              <EventInvitationsEditor eventId={event.id} />
+            </div>
           </div>
-          <EventCategoryField
-            categoryId={categoryId}
-            onChange={setCategoryId}
-            categories={categories}
-            onCategoriesChanged={onCategoriesChanged}
-          />
-
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
-            Evento recurrente
-          </label>
-          {isRecurring && (
-            <select
-              value={recurringPattern}
-              onChange={(e) => setRecurringPattern(e.target.value as RecurringPattern)}
-              className="field-input"
-            >
-              {RECURRENCES.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {isRecurring && recurringPattern === "weekday_range" && (
-            <WeekdayRangeFields
-              start={recurringWeekdayStart}
-              end={recurringWeekdayEnd}
-              onStartChange={setRecurringWeekdayStart}
-              onEndChange={setRecurringWeekdayEnd}
-            />
-          )}
-
-          <ReminderCheckboxes value={reminderMinutesBefore} onChange={setReminderMinutesBefore} />
-          <GuestsEditor value={guests} onChange={setGuests} />
-          <EventInvitationsEditor eventId={event.id} />
         </div>
 
         {event.isRecurringInstance && (
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+          <div className="mx-6 flex shrink-0 flex-wrap gap-2 border-t border-border pt-4 sm:mx-8">
             {event.isException ? (
               <button type="button" onClick={onRestoreOccurrence} className="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
                 Restaurar horario original
@@ -2128,7 +2141,7 @@ function EventDialog({
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-between gap-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-6 pb-6 pt-4 sm:px-8 sm:pb-8">
           <button
             type="button"
             onClick={() => {
