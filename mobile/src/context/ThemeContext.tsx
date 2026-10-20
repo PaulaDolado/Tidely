@@ -6,16 +6,15 @@ import { applyPalette, ColorPalette, PALETTES, Theme, THEME_OPTIONS } from "../t
 export { THEME_OPTIONS };
 export type { Theme };
 
-// Nota sobre alcance: React Native no tiene el equivalente de las variables CSS del dashboard
-// (donde cambiar `--color-primary` en styles.css repinta TODA la app sin tocar componentes) — la
-// mayoría de pantallas de mobile/ definen sus estilos con `StyleSheet.create({...})` a nivel de
-// módulo, leyendo `colors.x` UNA sola vez cuando ese fichero se importa por primera vez, así que
-// mutar el objeto `colors` de theme.ts no les llega. Este contexto SÍ es reactivo de verdad (usa
-// React state, no solo mutación) para quien lo consuma con el hook `useTheme()` — de momento
-// App.tsx (pantalla de carga + StatusBar) y AppSidebar.tsx (el menú, visible en toda la app). El
-// resto de pantallas (Hoy, Agenda, Planificador...) siguen leyendo el `colors` estático de
-// theme.ts hasta que se les aplique el mismo cambio (mover su `StyleSheet.create` dentro del
-// componente y construirlo con `useTheme().colors` — mecánico, pendiente).
+// Cómo llega el tema a cada pantalla. React Native no tiene variables CSS como la web (donde cambiar
+// `--color-primary` repinta toda la app), así que hay dos piezas:
+// - Los estilos y tablas de color de nivel de módulo se crean con `themedStyles`/`themed` (theme.ts): se
+//   recalculan solos la primera vez que se leen tras un cambio de paleta. Antes eran `StyleSheet.create` normales,
+//   calculados una vez al importar el fichero con la paleta "sistema" clara, y con otro tema o en modo oscuro
+//   quedaban colores mezclados.
+// - App.tsx vuelve a montar las pantallas (con `paletteKey` como `key`) cuando cambia la paleta efectiva, para que
+//   todas se pinten de nuevo, conservando la pantalla en la que estabas.
+// Quien necesite reaccionar al tema dentro de un componente puede usar además `useTheme()`.
 const STORAGE_KEY = "tidely:theme";
 
 interface ThemeContextValue {
@@ -26,6 +25,11 @@ interface ThemeContextValue {
   // ver App.tsx): true en "oscuro"/"espresso", o en "sistema" cuando el dispositivo está en
   // oscuro — mismo criterio que decide qué paleta se aplica, un par de líneas más abajo.
   isDark: boolean;
+  // Nombre de la paleta que se está viendo de verdad ("sistema" con el móvil en oscuro es "oscuro"). App.tsx lo usa
+  // como `key` para volver a montar las pantallas cuando cambia, y que todas lean los colores nuevos.
+  paletteKey: Theme;
+  // ¿Elegir este tema cambiaría la paleta efectiva (y, por tanto, volvería a montar la app)?
+  changesPalette: (next: Theme) => boolean;
 }
 
 // Únicos dos temas de fondo oscuro — "sistema" no está en esta lista porque su propio "modo
@@ -33,6 +37,25 @@ interface ThemeContextValue {
 const DARK_THEMES: ReadonlySet<Theme> = new Set(["oscuro", "espresso"]);
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+
+function effectivePalette(theme: Theme, systemScheme: string | null | undefined): Theme {
+  return theme === "sistema" ? (systemScheme === "dark" ? "oscuro" : "sistema") : theme;
+}
+
+// Lo que una pantalla quiere recuperar después de que un cambio de tema vuelva a montar la app (ver App.tsx): que
+// Ajustes siga abierto en Apariencia, o que el alta siga en el paso en el que estaba. Se guarda justo antes de cambiar
+// el tema y se recoge (una sola vez) al montar de nuevo.
+const keptAcrossThemeChange = new Map<string, unknown>();
+
+export function keepAcrossThemeChange(key: string, value: unknown): void {
+  keptAcrossThemeChange.set(key, value);
+}
+
+export function takeKeptAcrossThemeChange<T>(key: string): T | undefined {
+  const value = keptAcrossThemeChange.get(key) as T | undefined;
+  keptAcrossThemeChange.delete(key);
+  return value;
+}
 
 function isValidTheme(value: string | null): value is Theme {
   return !!value && THEME_OPTIONS.some((t) => t.value === value);
@@ -62,6 +85,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme, systemScheme]);
 
   const isDark = theme === "sistema" ? systemScheme === "dark" : DARK_THEMES.has(theme);
+  const paletteKey = effectivePalette(theme, systemScheme);
+  const changesPalette = (next: Theme) => effectivePalette(next, systemScheme) !== paletteKey;
 
   const setTheme = (next: Theme) => {
     setThemeState(next);
@@ -71,7 +96,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  return <ThemeContext.Provider value={{ theme, setTheme, colors, isDark }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme, setTheme, colors, isDark, paletteKey, changesPalette }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

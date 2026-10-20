@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, Switch, Platform, KeyboardAvoidingView, Alert, ActivityIndicator } from "react-native";
+import { View, Pressable, ScrollView, Modal, Switch, Platform, KeyboardAvoidingView, Alert, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 // Ver el comentario de este mismo import en HoyScreen.tsx: el `SafeAreaView` de "react-native"
 // está deprecado, este es el reemplazo recomendado.
@@ -51,7 +51,7 @@ import {
   REMINDER_PRESET_LABELS,
   WEEKDAYS,
 } from "../types";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { HabitsCard } from "../components/HabitsCard";
 import { RecentEntriesCard } from "../components/RecentEntriesCard";
@@ -1744,7 +1744,7 @@ const INVITATION_STATUS_LABELS: Record<EventInvitation["status"], string> = {
   declined: "Rechazada",
 };
 
-const invitationStyles = StyleSheet.create({
+const invitationStyles = themedStyles(() => ({
   banner: {
     marginHorizontal: 20,
     marginBottom: 8,
@@ -1800,7 +1800,7 @@ const invitationStyles = StyleSheet.create({
   },
   inviteButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 12, justifyContent: "center" },
   inviteButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground },
-});
+}));
 
 // Gestión de categorías de evento (añadir, renombrar, recolorear o borrar, incluidas las que
 // trae la cuenta por defecto) sin salir del formulario de creación/edición — puerto simplificado
@@ -1966,7 +1966,7 @@ function AddEventCategoryForm({ onAdd, onCancel }: { onAdd: (label: string, colo
   );
 }
 
-const managerStyles = StyleSheet.create({
+const managerStyles = themedStyles(() => ({
   card: { marginTop: 4, marginBottom: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, padding: 10 },
   title: { fontFamily: fonts.sansBold, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, color: colors.mutedForeground, marginBottom: 8 },
   list: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "flex-start" },
@@ -2035,9 +2035,9 @@ const managerStyles = StyleSheet.create({
   addFormSubmit: { backgroundColor: colors.foreground, borderRadius: radius.full, paddingHorizontal: 14, paddingVertical: 8 },
   addFormSubmitText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.background },
   addFormCancel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
-});
+}));
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   exportScopeChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
   exportScopeChipSelected: { backgroundColor: colors.foreground, borderColor: colors.foreground },
   exportScopeChipText: { fontFamily: fonts.sans, fontSize: 13, color: colors.mutedForeground },
@@ -2275,4 +2275,4 @@ const styles = StyleSheet.create({
   sharedNoticeText: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 8, marginBottom: 20 },
   leaveButton: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, padding: 14, alignItems: "center" },
   leaveButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
-});
+}));

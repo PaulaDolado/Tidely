@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { View, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, Modal, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "../components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -20,7 +20,7 @@ import {
 } from "../db/transactionsRepo";
 import { listSavingsGoals } from "../db/savingsGoalsRepo";
 import { LocalTransaction } from "../types";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles } from "../theme";
 import { useSidebar, SIDEBAR_CLIP_CLEARANCE } from "../navigation/SidebarContext";
 import { api } from "../api/client";
 import { BudgetSummary, getBudgetSummary } from "../api/finance";
@@ -793,7 +793,7 @@ function MovementForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   pager: { marginTop: 12, gap: 10 },
   pagerSizes: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
   pagerLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
@@ -1009,4 +1009,4 @@ const styles = StyleSheet.create({
   deleteButtonConfirming: { backgroundColor: colors.destructive },
   deleteButtonText: { fontFamily: fonts.sansMedium, color: colors.destructive, fontSize: 14 },
   deleteButtonTextConfirming: { color: colors.destructiveForeground, fontWeight: "700" },
-});
+}));

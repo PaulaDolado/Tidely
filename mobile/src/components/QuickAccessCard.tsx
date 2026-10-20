@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Pressable, Modal, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Image } from "react-native";
+import { View, Pressable, Modal, ScrollView, Alert, KeyboardAvoidingView, Image } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
@@ -18,7 +18,7 @@ import {
   fetchFaviconFor,
   normalizeQuickAccessUrl,
 } from "../utils/quickAccessApps";
-import { colors, fonts, radius, withAlpha } from "../theme";
+import { colors, fonts, radius, withAlpha, themedStyles } from "../theme";
 
 // Puerto de dashboard/src/components/QuickAccessCard.tsx — mismo catálogo, misma idea (elegir qué
 // apps mostrar + enlaces propios), pero con estado cargado de forma asíncrona (SecureStore, ver
@@ -331,7 +331,7 @@ function AddCustomLinkForm({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // rounded-3xl border-primary/30 bg-primary/10 p-6 de la web.
   card: {
     borderRadius: radius.card,
@@ -549,4 +549,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.primaryForeground,
   },
-});
+}));

@@ -1,16 +1,16 @@
 import { useCallback, useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { View } from "react-native";
 import { Text } from "./AppText";
 import Svg, { G, Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { listGoals, Goal } from "../api/goals";
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, themedStyles, themed } from "../theme";
 
 // Colores que se leen bien sobre la tarjeta bg-solid-card (sage, o el azul apagado propio de
 // "Oscuro"/"Sistema" oscuro) del progreso de objetivos — mismo criterio que
 // dashboard/src/components/GoalsDonutChart.tsx (evita primary/positive, que son el mismo sage y
 // se camuflarían), traducido a los tokens RGB de theme.ts.
-const GOALS_DONUT_PALETTE = [colors.solidCardForeground, colors.hobby, colors.secondary, colors.warning];
+const GOALS_DONUT_PALETTE = themed(() => [colors.solidCardForeground, colors.hobby, colors.secondary, colors.warning], "array");
 
 // Más pequeño que un donut "de cartel": va al lado de la lista de objetivos, no tiene toda la
 // tarjeta para él solo — mismas medidas que la web.
@@ -138,7 +138,7 @@ export function GoalsProgressCard() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // rounded-3xl bg-solid-card p-8 text-solid-card-foreground de la web.
   card: {
     borderRadius: radius.card,
@@ -176,4 +176,4 @@ const styles = StyleSheet.create({
   legendRow: { flexDirection: "row", alignItems: "center", gap: 6, minWidth: 0 },
   legendDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   legendText: { flex: 1, minWidth: 0, fontFamily: fonts.sans, fontSize: 12, color: colors.solidCardForeground, opacity: 0.8 },
-});
+}));

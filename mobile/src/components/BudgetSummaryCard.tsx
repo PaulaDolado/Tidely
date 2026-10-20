@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Pressable, StyleSheet, Modal, ScrollView, KeyboardAvoidingView, ActivityIndicator } from "react-native";
+import { View, Pressable, Modal, ScrollView, KeyboardAvoidingView, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, G } from "react-native-svg";
@@ -14,7 +14,7 @@ import {
   updateBudgetCategory,
 } from "../api/finance";
 import { MonthPickerButton, Period, periodLabel } from "./MonthSwitcher";
-import { colors, fonts, radius, shadow } from "../theme";
+import { colors, fonts, radius, shadow, themedStyles } from "../theme";
 
 // Puerto de dashboard/src/components/BudgetSummaryCard.tsx: "Resumen del presupuesto" de Finanzas —
 // un donut con los gastos del mes por categoría y, a sus lados, cada categoría con lo gastado frente
@@ -396,7 +396,7 @@ export function BudgetSummaryCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
@@ -462,4 +462,4 @@ const styles = StyleSheet.create({
   deleteButtonText: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.destructive },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground },
-});
+}));

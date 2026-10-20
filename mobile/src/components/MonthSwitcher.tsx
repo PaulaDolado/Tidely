@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { View, Pressable, StyleSheet, Modal } from "react-native";
+import { View, Pressable, Modal } from "react-native";
 import Svg, { Path, Rect } from "react-native-svg";
 import { Text } from "./AppText";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles } from "../theme";
 
 // Puerto de dashboard/src/components/MonthSwitcher.tsx: botón de calendario (junto al "+" de "Resumen del
 // presupuesto") que abre un selector de mes. Elige el mes que enseñan el presupuesto, "Resumen del mes" y
@@ -123,7 +123,7 @@ export function MonthPickerButton({ value, onChange }: { value: Period; onChange
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     width: 26,
     height: 26,
@@ -149,4 +149,4 @@ const styles = StyleSheet.create({
   monthTextSelected: { color: colors.background },
   backButton: { alignItems: "center", paddingVertical: 8 },
   backText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.primary },
-});
+}));

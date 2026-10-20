@@ -3,7 +3,6 @@ import {
   View,
   Pressable,
   ScrollView,
-  StyleSheet,
   Modal,
   ActivityIndicator,
   Image,
@@ -56,7 +55,7 @@ import { StudyPlannerEditor } from "../components/StudyPlanner";
 import { RecipeBox } from "../components/RecipeBox";
 import { buildNotebookPdfHtml, buildNotebookWordHtml } from "../utils/notebookExport";
 import { exportHtmlToPdf, saveAndShareText } from "../utils/fileExport";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles, themed } from "../theme";
 import { PaginasStackParamList } from "./PaginasScreen";
 
 // Detalle de una página personalizada — puerto de dashboard/src/pages/CustomPagePage.tsx. Título/
@@ -412,7 +411,7 @@ export function PaginaDetailScreen({ route, navigation }: Props) {
 // los mismos 7 tonos del tema. Calculados con `withAlpha` sobre el color sólido de `colors` (en
 // vez de rgba() fijos en los tonos de la paleta "sistema") para que sigan al tema activo — por
 // ejemplo en "espresso" salen en tonos marrones, no en el verde/naranja/azul de siempre.
-const PLACEHOLDER_COLORS = [
+const PLACEHOLDER_COLORS = themed(() => [
   withAlpha(colors.primary, 0.1), // bg-primary/10
   withAlpha(colors.hobby, 0.15), // bg-hobby/15
   withAlpha(colors.warning, 0.1), // bg-warning/10
@@ -420,7 +419,7 @@ const PLACEHOLDER_COLORS = [
   withAlpha(colors.habit, 0.1), // bg-habit/10
   withAlpha(colors.secondary, 0.5), // bg-secondary/50
   withAlpha(colors.cover, 0.1), // bg-cover/10
-];
+], "array");
 // h-40, h-64, h-52, h-72, h-44, h-60, h-48, h-56 de Tailwind, en px.
 const FRAME_HEIGHTS = [160, 256, 208, 288, 176, 240, 192, 224];
 
@@ -590,11 +589,11 @@ function GalleryItemForm({
 // — igual criterio que KANBAN_COLUMN_STYLES en dashboard/src/pages/CustomPagePage.tsx: una página
 // de kanban puede tener cualquier número de columnas con el nombre que el usuario quiera, así que
 // no hay un "estado" al que atar cada color, solo su orden.
-const KANBAN_COLUMN_STYLES: { box: { borderColor: string; backgroundColor: string }; header: string }[] = [
+const KANBAN_COLUMN_STYLES: { box: { borderColor: string; backgroundColor: string }; header: string }[] = themed(() => [
   { box: { borderColor: colors.border, backgroundColor: colors.card }, header: colors.foreground },
   { box: { borderColor: withAlpha(colors.warning, 0.3), backgroundColor: withAlpha(colors.warning, 0.1) }, header: colors.warning },
   { box: { borderColor: withAlpha(colors.positive, 0.3), backgroundColor: withAlpha(colors.positive, 0.1) }, header: colors.positive },
-];
+], "array");
 
 // Mismas etiquetas que FIELD_TYPE_LABELS en dashboard/src/pages/CustomPagePage.tsx (y en
 // PlanificadorScreen.tsx, que porta el mismo concepto para el Planificador).
@@ -2079,7 +2078,7 @@ function AgendaNotesTemplateEditor({ items, onChange }: { items: AgendaNote[]; o
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, gap: 12, paddingBottom: 40 },
   errorBanner: { fontFamily: fonts.sans, fontSize: 13, color: colors.destructive, padding: 20 },
@@ -2492,4 +2491,4 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   clearDateButton: { padding: 8 },
   clearDateButtonText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.destructive },
-});
+}));

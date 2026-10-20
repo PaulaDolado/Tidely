@@ -21,6 +21,8 @@
 // dashboard/src/pages/AgendaPage.tsx y PlanificadorPage.tsx: fondo al 15% de opacidad del color +
 // texto en el color sólido — de ahí los `*Tint` en rgba (RN no tiene el `bg-x/15` de Tailwind).
 
+import { StyleSheet } from "react-native";
+
 export type Theme = "sistema" | "basico" | "oscuro" | "salvia" | "espresso" | "amor";
 
 export const THEME_OPTIONS: { value: Theme; label: string }[] = [
@@ -293,8 +295,53 @@ export const PALETTES: Record<Theme, ColorPalette> = {
 // importan este mismo objeto por nombre, vean el tema nuevo sin cambiar su forma de leerlo.
 export const colors: ColorPalette = { ...PALETTES.sistema };
 
+// Sube cada vez que cambia la paleta: los valores creados con `themed`/`themedStyles` lo comparan para saber si
+// tienen que recalcularse.
+let paletteVersion = 0;
+
 export function applyPalette(palette: ColorPalette): void {
   Object.assign(colors, palette);
+  paletteVersion += 1;
+}
+
+/**
+ * Un valor (objeto o array) que depende de `colors` y se recalcula solo cuando cambia la paleta. Se lee igual que
+ * una constante normal (`TABLA.clave`, `LISTA.map(...)`): por dentro es un Proxy que vuelve a llamar a `factory` la
+ * primera vez que se lee tras un cambio de tema.
+ *
+ * Existe porque casi todas las pantallas calculaban sus estilos y tablas de color UNA vez, al importarse el
+ * fichero, con la paleta que hubiera en ese momento (la "sistema" clara, antes de leer el tema guardado o el modo
+ * oscuro del móvil): con otro tema, o en oscuro, quedaban colores mezclados de los dos.
+ */
+export function themed<T extends object>(factory: () => T, kind: "object" | "array" = "object"): T {
+  let cache: T | null = null;
+  let version = -1;
+  const current = (): T => {
+    if (cache === null || version !== paletteVersion) {
+      cache = factory();
+      version = paletteVersion;
+    }
+    return cache;
+  };
+  // El factory no se llama al importar (podría leer constantes del fichero declaradas más abajo): solo al leer.
+  const target = (kind === "array" ? [] : {}) as T;
+  return new Proxy(target, {
+    get: (_t, key) => {
+      const value = Reflect.get(current(), key);
+      return typeof value === "function" ? value.bind(current()) : value;
+    },
+    has: (_t, key) => key in current(),
+    ownKeys: () => Reflect.ownKeys(current()),
+    getOwnPropertyDescriptor: (_t, key) => {
+      const desc = Reflect.getOwnPropertyDescriptor(current(), key);
+      return desc ? { ...desc, configurable: true } : undefined;
+    },
+  });
+}
+
+/** `StyleSheet.create` que sigue al tema: igual que `themed`, se recalcula cuando cambia la paleta. */
+export function themedStyles<T extends StyleSheet.NamedStyles<T>>(factory: () => T): T {
+  return themed(() => StyleSheet.create(factory()));
 }
 
 export const radius = {

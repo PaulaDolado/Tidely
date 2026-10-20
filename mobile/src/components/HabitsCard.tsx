@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Alert, LayoutChangeEvent } from "react-native";
+import { View, Pressable, ScrollView, Alert, LayoutChangeEvent } from "react-native";
 import { Text, TextInput } from "./AppText";
 import Svg, { Circle, G, Line, Path, Text as SvgText } from "react-native-svg";
 import { runSync } from "../sync";
@@ -12,7 +12,7 @@ import {
   deleteHabitLocal,
 } from "../db/habitsRepo";
 import { LocalHabit } from "../types";
-import { colors, fonts, radius, withAlpha } from "../theme";
+import { colors, fonts, radius, withAlpha, themedStyles } from "../theme";
 
 const DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 
@@ -458,7 +458,7 @@ function HabitsProgressPanel({ habits, weekDays }: { habits: HabitWithLogs[]; we
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // rounded-3xl border-habit/30 bg-habit/10 p-6 de la web.
   card: {
     borderRadius: radius.card,
@@ -573,4 +573,4 @@ const styles = StyleSheet.create({
   summaryTextBox: { flex: 1, minWidth: 0 },
   summaryTitle: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.foreground },
   summaryDetail: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
-});
+}));

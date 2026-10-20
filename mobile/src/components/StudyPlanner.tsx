@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet, Modal, Alert, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Pressable, ScrollView, Modal, Alert, Platform, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
@@ -20,7 +20,7 @@ import {
   timerArcs,
   topicNameOf,
 } from "../utils/study";
-import { colors, fonts, radius, shadow, withAlpha } from "../theme";
+import { colors, fonts, radius, shadow, withAlpha, themedStyles } from "../theme";
 
 // Plantilla "estudio" de las páginas personalizadas — puerto de dashboard/src/components/StudyPlannerTemplate.tsx:
 // plan de estudio, temporizador, exámenes próximos y una tarjeta por asignatura, apilados en una sola columna.
@@ -992,7 +992,7 @@ function TimeField({ label, value, onChange, defaultTime }: { label: string; val
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
@@ -1095,4 +1095,4 @@ const styles = StyleSheet.create({
   modalTitle: { fontFamily: fonts.serif, fontSize: 24, color: colors.foreground, marginBottom: 16 },
   cancelButton: { alignItems: "center", padding: 10 },
   cancelButtonText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground },
-});
+}));

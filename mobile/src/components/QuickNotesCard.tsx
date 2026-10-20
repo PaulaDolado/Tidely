@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import { View, Pressable } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { runSync } from "../sync";
 import { listNotes, createNoteLocal, toggleNoteChecked, deleteNoteLocal } from "../db/notesRepo";
 import { LocalNote } from "../types";
-import { colors, fonts, radius, withAlpha } from "../theme";
+import { colors, fonts, radius, withAlpha, themedStyles } from "../theme";
 
 /**
  * Puerto de dashboard/src/components/QuickNotesCard.tsx — mismo estilo (bg-warning/10,
@@ -89,7 +89,7 @@ function Checkbox({ checked }: { checked: boolean }) {
   return <View style={[styles.checkbox, checked && styles.checkboxChecked]}>{checked && <Text style={styles.checkboxMark}>✓</Text>}</View>;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // rounded-3xl border-warning/30 bg-warning/10 p-6 de la web.
   card: {
     borderRadius: radius.card,
@@ -149,4 +149,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.foreground,
   },
-});
+}));
