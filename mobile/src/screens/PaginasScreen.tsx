@@ -1,4 +1,6 @@
+import { View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { SIDEBAR_CLIP_CLEARANCE, useSidebar } from "../navigation/SidebarContext";
 import { colors, fonts } from "../theme";
 import { PaginasListScreen } from "./PaginasListScreen";
 import { PaginaDetailScreen } from "./PaginaDetailScreen";
@@ -15,6 +17,7 @@ export type PaginasStackParamList = {
 const Stack = createNativeStackNavigator<PaginasStackParamList>();
 
 export function PaginasScreen() {
+  const { collapsed } = useSidebar();
   return (
     <Stack.Navigator>
       <Stack.Screen name="Lista" component={PaginasListScreen} options={{ headerShown: false }} />
@@ -38,6 +41,9 @@ export function PaginasScreen() {
           // (y quedando tapada bajo el clip flotante del menú, el mismo problema que ya arregló
           // DetailBackButton en Proyectos).
           headerBackVisible: false,
+          // Con el menú colapsado, el clip flotante queda en esta esquina: el título se aparta lo mismo que las cabeceras
+          // de las demás pantallas (ver SIDEBAR_CLIP_CLEARANCE). Sin esto, el clip tapaba la primera letra del título.
+          headerLeft: collapsed ? () => <View style={{ width: SIDEBAR_CLIP_CLEARANCE }} /> : undefined,
         })}
       />
     </Stack.Navigator>

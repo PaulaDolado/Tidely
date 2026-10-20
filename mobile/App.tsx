@@ -33,7 +33,7 @@ SplashScreen.preventAutoHideAsync();
 
 // 9 pestañas (Hoy / Agenda / Planificador / Horario / Objetivos / Finanzas / Ahorro / Páginas /
 // Proyectos). El propio `<Tab.Navigator>` sigue siendo `createBottomTabNavigator` (gestiona el
-// estado/foco de cada pestaña igual que siempre), pero con `tabBarPosition: "left"` y un `tabBar`
+// estado/foco de cada pestaña igual que siempre), pero con `tabBarPosition: "right"` (ver el porqué abajo) y un `tabBar`
 // personalizado (ver src/navigation/AppSidebar.tsx) se pinta como un menú lateral colapsable en
 // vez de la barra inferior — puerto del <aside> de escritorio
 // (dashboard/src/components/AppShell.tsx), que ahora SÍ agrupa Planificador+Horario bajo Agenda y
@@ -112,6 +112,9 @@ function storeTab(userId: number, route: string): void {
 // app se queda en la misma pantalla en vez de volver a la pestaña inicial. Lleva el id del usuario para no
 // heredarlo entre cuentas.
 let persistedNavigation: { userId: number; state: NavigationState } | null = null;
+// La pestaña guardada ya leída, por lo mismo: al volver a montar Root tras un cambio de tema no hay que esperar a
+// leerla otra vez (se veía un instante la pantalla de carga).
+let cachedRestoredTab: { userId: number; route: string | null } | null = null;
 
 // Root se monta de nuevo cada vez que cambia la paleta efectiva (paletteKey): así todas las pantallas se pintan con
 // los colores nuevos, incluidas las que no usan useTheme (sus estilos son themedStyles, ver theme.ts). Pasa al
@@ -128,7 +131,9 @@ function Root() {
   // está lista no se monta el navegador: `initialRouteName` solo cuenta en el primer montaje, y leer el
   // almacenamiento tarda un instante. Los hooks van antes de los `return` tempranos de abajo.
   const userId = user?.id;
-  const [restoredTab, setRestoredTab] = useState<{ userId: number; route: string | null } | null>(null);
+  const [restoredTab, setRestoredTab] = useState<{ userId: number; route: string | null } | null>(() =>
+    cachedRestoredTab && cachedRestoredTab.userId === user?.id ? cachedRestoredTab : null
+  );
   const lastStoredRoute = useRef<string | null>(null);
   useEffect(() => {
     if (userId === undefined) {
@@ -139,7 +144,8 @@ function Root() {
     readStoredTab(userId).then((route) => {
       if (cancelled) return;
       lastStoredRoute.current = route;
-      setRestoredTab({ userId, route });
+      cachedRestoredTab = { userId, route };
+      setRestoredTab(cachedRestoredTab);
     });
     return () => {
       cancelled = true;
@@ -219,7 +225,11 @@ function Root() {
           tabBar={(props) => <AppSidebar {...props} />}
           screenOptions={{
             headerShown: false,
-            tabBarPosition: "left",
+            // "right", no "left", aunque el menú salga por la izquierda: el navegador pinta la barra ANTES de las
+            // pantallas con "left" y DESPUÉS con "right". Nuestra barra no ocupa sitio (todo en AppSidebar va con
+            // position:absolute sobre la pantalla entera), así que la posición no cambia nada visible salvo el orden:
+            // con "left", Android dibujaba las pantallas encima del menú y ni el panel ni el clip se veían.
+            tabBarPosition: "right",
           }}
         >
           <Tab.Screen name="Hoy" component={HoyScreen} />
