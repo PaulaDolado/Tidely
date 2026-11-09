@@ -13,10 +13,11 @@ import {
   markNotificationRead,
 } from "../api/notifications";
 import { ColorPalette, fonts, radius } from "../theme";
+import { presentNewServerNotifications } from "../notifications/systemNotifications";
 
-// Cada cuánto se vuelve a preguntar cuántas hay sin leer — modesto a propósito: no hay push del
-// sistema (ver api/notifications.ts), así que esto es lo único que las trae mientras la app está
-// abierta; al volver a primer plano se refresca además al instante (ver el AppState de abajo).
+// Cada cuánto se vuelve a preguntar cuántas hay sin leer mientras la app está abierta (no hay push del
+// servidor; con la app cerrada las trae la tarea en segundo plano, ver notifications/backgroundTask.ts);
+// al volver a primer plano se refresca además al instante (ver el AppState de abajo).
 const POLL_INTERVAL_MS = 60_000;
 
 /**
@@ -25,18 +26,22 @@ const POLL_INTERVAL_MS = 60_000;
  * distingue "no hay ninguna" de "no he podido preguntar" (sin red / sesión caducada), para no
  * mostrar un 0 engañoso.
  */
-export function useUnreadNotifications() {
+export function useUnreadNotifications(userId?: number) {
   const [count, setCount] = useState(0);
   const [offline, setOffline] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      setCount(await getUnreadCount());
+      const unread = await getUnreadCount();
+      setCount(unread);
       setOffline(false);
+      // Con avisos sin leer, los que aún no se hayan mostrado salen también en la bandeja del teléfono
+      // (con la app cerrada lo hace la tarea en segundo plano, ver notifications/backgroundTask.ts).
+      if (unread > 0 && userId !== undefined) void presentNewServerNotifications(userId);
     } catch {
       setOffline(true);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     refresh();

@@ -25,6 +25,7 @@ import { MetasAhorroScreen } from "./src/screens/MetasAhorroScreen";
 import { PaginasScreen, PaginasStackParamList } from "./src/screens/PaginasScreen";
 import { ProyectosScreen, ProyectosStackParamList } from "./src/screens/ProyectosScreen";
 import { ENABLED_SECTIONS } from "./src/types";
+import { NotificationsManager, flushNotificationTarget, navigationRef } from "./src/notifications/NotificationsManager";
 
 // Mantiene la splash nativa visible hasta que las fuentes (ver más abajo) terminen de cargar —
 // llamada en scope global, no dentro de un componente, tal y como pide la propia documentación
@@ -209,6 +210,8 @@ function Root() {
     // colapsado el menú?" — ver SidebarContext.tsx para el porqué.
     <SidebarProvider>
       <NavigationContainer
+        ref={navigationRef}
+        onReady={flushNotificationTarget}
         theme={navigationTheme}
         initialState={initialNavigationState}
         onStateChange={(state) => {
@@ -272,6 +275,7 @@ export default function App() {
         <FontSizeProvider>
           <AuthProvider>
             <ThemedRoot />
+            <NotificationsManager />
             <ThemedStatusBar />
           </AuthProvider>
         </FontSizeProvider>

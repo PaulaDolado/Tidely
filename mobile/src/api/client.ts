@@ -28,6 +28,12 @@ export function setTokens(token: string | null, newRefreshToken: string | null):
 }
 
 // Se rellena desde AuthContext para no crear un ciclo de imports (client → storage → client).
+/** Si este runtime de JS ya tiene sesión cargada (la app abierta) o está vacío (la tarea en segundo plano
+ * arrancada sin la app, ver notifications/backgroundTask.ts). */
+export function hasTokens(): boolean {
+  return accessToken !== null;
+}
+
 let onRefreshed: ((token: string, refreshToken: string) => void) | null = null;
 let onAuthExpired: (() => void) | null = null;
 export function setAuthCallbacks(handlers: {

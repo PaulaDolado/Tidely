@@ -49,6 +49,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (stored) {
         setTokens(stored.token, stored.refreshToken);
         if (mounted.current) setUser(stored.user);
+        // La copia guardada solo sirve para arrancar sin esperar a la red: sin este refresco, lo que
+        // cambie en el servidor después del login (apartados nuevos que añade una migración, como
+        // Recetas, o cambios hechos desde la web) no llegaba nunca al móvil. Igual que la web
+        // (dashboard/src/context/AuthContext.tsx). Sin red se queda la copia guardada.
+        api
+          .get<User>("/auth/me")
+          .then((fresh) => {
+            if (!mounted.current) return;
+            setUser(fresh);
+            void persistUser(fresh);
+          })
+          .catch(() => {});
       }
       if (mounted.current) setReady(true);
     });

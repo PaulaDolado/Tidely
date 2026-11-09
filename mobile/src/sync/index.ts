@@ -1,5 +1,6 @@
 import { pushToServer } from "./push";
 import { pullFromServer } from "./pull";
+import { rescheduleEventReminders } from "../notifications/systemNotifications";
 
 export interface SyncResult {
   success: boolean;
@@ -27,6 +28,9 @@ export function runSync(): Promise<SyncResult> {
   if (inFlight) return inFlight;
   inFlight = runSyncNow().finally(() => {
     inFlight = null;
+    // Los recordatorios del teléfono salen de la agenda local: tras cada sync (también si falló, porque
+    // una edición sin conexión ya está guardada en local) se reprograman con lo que haya ahora.
+    void rescheduleEventReminders();
   });
   return inFlight;
 }
