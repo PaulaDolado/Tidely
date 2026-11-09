@@ -14,7 +14,9 @@
     "android": {
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM"
       ],
       "package": "com.tidely.app",
       "adaptiveIcon": {
@@ -39,7 +41,15 @@
           "backgroundColor": "#F7F4F1"
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-background-task",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#C8962E"
+        }
+      ]
     ],
     "extra": {
       "eas": {

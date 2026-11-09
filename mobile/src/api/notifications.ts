@@ -1,7 +1,8 @@
 import { api } from "./client";
 
 // Mismo shape que Notification en dashboard/src/types.ts (backend: src/services/
-// notificationService.ts) — notificaciones solo dentro de la app (no hay push del sistema).
+// notificationService.ts). Además de la campana de la app, salen en la bandeja del teléfono (ver
+// notifications/systemNotifications.ts).
 export interface AppNotification {
   id: number;
   type: "event_reminder" | "goal_at_risk" | "task_due" | "event_invitation" | "budget_exceeded";

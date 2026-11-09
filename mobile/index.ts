@@ -1,5 +1,8 @@
 import { registerRootComponent } from 'expo';
 
+// Antes que nada: define la tarea en segundo plano de las notificaciones, que Android puede lanzar
+// sin la app abierta (ver src/notifications/backgroundTask.ts).
+import './src/notifications/backgroundTask';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

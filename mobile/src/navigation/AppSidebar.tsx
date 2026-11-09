@@ -375,7 +375,7 @@ export function AppSidebar({ state, navigation }: BottomTabBarProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   // AppSidebar vive siempre montado (es el tabBar), así que el sondeo del contador de notificaciones
   // corre mientras haya sesión sin importar la pantalla abierta — ver useUnreadNotifications.
-  const notifications = useUnreadNotifications();
+  const notifications = useUnreadNotifications(user?.id);
   const refreshNotifications = notifications.refresh;
 
   const activeRoute = state.routes[state.index].name;
